@@ -1,0 +1,1 @@
+export class Scheduler{private active=false;async run<T>(task:()=>Promise<T>):Promise<T>{if(this.active)throw new Error("Another job is already active");this.active=true;try{return await task();}finally{this.active=false;}}get busy(){return this.active;}}

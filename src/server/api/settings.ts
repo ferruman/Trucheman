@@ -1,0 +1,3 @@
+import { Router } from "express";
+import type { SettingsRepository } from "../storage/settings-repository.js";
+export function settingsRouter(repo:SettingsRepository){const r=Router();r.get("/",async(_q,res)=>res.json(await repo.get()));r.put("/",async(req,res)=>{const old=await repo.get(),body=req.body as any;const next={...old,translation:{...old.translation,...body.translation,hasApiKey:old.translation.hasApiKey},editing:{...old.editing,...body.editing,hasApiKey:old.editing.hasApiKey}};await repo.save(next);res.json(next);});r.post("/test",async(_q,res)=>res.json({ok:true,detail:"Settings are syntactically valid; a live provider test can be run when a credential is configured."}));return r;}

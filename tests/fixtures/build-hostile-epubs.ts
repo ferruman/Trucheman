@@ -1,0 +1,1 @@
+export const hostileArchiveCases=[{name:"traversal",fileName:"../secret"},{name:"absolute",fileName:"/etc/passwd"},{name:"backslash",fileName:"OPS\\chapter.xhtml"},{name:"duplicate",fileName:"OPS/chapter.xhtml"},{name:"encrypted",fileName:"secret",encrypted:true}];

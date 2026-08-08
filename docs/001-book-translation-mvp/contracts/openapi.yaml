@@ -1,0 +1,508 @@
+openapi: 3.1.0
+info:
+  title: Book Translator Local API
+  version: 0.1.0
+  description: >-
+    Loopback-only API for the local-first MVP. The persisted job state is the
+    source of truth; server-sent events are an update convenience.
+servers:
+  - url: http://127.0.0.1:3000
+paths:
+  /api/health:
+    get:
+      operationId: getHealth
+      responses:
+        "200":
+          description: Server is ready for local requests.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /api/settings:
+    get:
+      operationId: getSettings
+      responses:
+        "200":
+          description: Non-secret settings and credential-presence flags.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsView"
+    put:
+      operationId: updateSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsInput"
+      responses:
+        "200":
+          description: Updated settings without credential values.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsView"
+        "400":
+          $ref: "#/components/responses/Problem"
+
+  /api/settings/test:
+    post:
+      operationId: testProviderSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [profile]
+              properties:
+                profile:
+                  enum: [translation, editing]
+      responses:
+        "200":
+          description: Sanitized provider connection result.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, profile, message]
+                properties:
+                  ok: { type: boolean }
+                  profile: { enum: [translation, editing] }
+                  message: { type: string }
+                  model: { type: string }
+        "422":
+          $ref: "#/components/responses/Problem"
+
+  /api/jobs:
+    get:
+      operationId: listJobs
+      responses:
+        "200":
+          description: Jobs ordered by most recently updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobs]
+                properties:
+                  jobs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/JobSummary"
+    post:
+      operationId: createJob
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [book, targetLanguage]
+              properties:
+                book:
+                  type: string
+                  format: binary
+                sourceLanguage:
+                  type: string
+                  description: Optional user override; otherwise detected/defaulted.
+                targetLanguage:
+                  type: string
+      responses:
+        "201":
+          description: Job created; preparation and name analysis may continue asynchronously.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobDetail"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+
+  /api/jobs/{jobId}:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    get:
+      operationId: getJob
+      responses:
+        "200":
+          description: Current persisted job state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobDetail"
+        "404":
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteJob
+      parameters:
+        - name: confirm
+          in: query
+          required: true
+          schema:
+            type: boolean
+            const: true
+      responses:
+        "204":
+          description: Exactly this job and its local files were deleted.
+        "409":
+          $ref: "#/components/responses/Problem"
+
+  /api/jobs/{jobId}/config:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    put:
+      operationId: updateJobConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobConfigInput"
+      responses:
+        "200":
+          description: Updated job configuration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobDetail"
+        "409":
+          description: Explicit invalidation confirmation is required.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+
+  /api/jobs/{jobId}/names/analyze:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      operationId: analyzeNames
+      responses:
+        "202":
+          description: Name analysis started or resumed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobDetail"
+        "409":
+          $ref: "#/components/responses/Problem"
+
+  /api/jobs/{jobId}/start:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      operationId: startOrResumeJob
+      responses:
+        "202":
+          description: Job scheduled from its first unfinished step.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobDetail"
+        "409":
+          $ref: "#/components/responses/Problem"
+
+  /api/jobs/{jobId}/pause:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      operationId: pauseJob
+      responses:
+        "202":
+          description: Safe pause requested; response may show stopping until the in-flight request settles.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobDetail"
+        "409":
+          $ref: "#/components/responses/Problem"
+
+  /api/jobs/{jobId}/retry:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      operationId: retryJobScope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [scope, batchId, stage]
+                  properties:
+                    scope: { const: batch }
+                    batchId: { type: string }
+                    stage: { enum: [translation, editing] }
+                - type: object
+                  required: [scope, documentId]
+                  properties:
+                    scope: { const: chapter }
+                    documentId: { type: string }
+                    fromStage:
+                      enum: [translation, editing]
+                      default: translation
+      responses:
+        "202":
+          description: Selected work invalidated and scheduled; previous successful output remains until replacement succeeds.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobDetail"
+        "409":
+          $ref: "#/components/responses/Problem"
+
+  /api/jobs/{jobId}/build:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      operationId: rebuildJobOutput
+      responses:
+        "202":
+          description: Validation and atomic output rebuild started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobDetail"
+        "409":
+          $ref: "#/components/responses/Problem"
+
+  /api/jobs/{jobId}/events:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+      - name: Last-Event-ID
+        in: header
+        required: false
+        schema:
+          type: string
+    get:
+      operationId: streamJobEvents
+      responses:
+        "200":
+          description: Server-sent events with `id`, `event`, and JSON `data`; heartbeat comments may be sent.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/Problem"
+
+  /api/jobs/{jobId}/download:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    get:
+      operationId: downloadJobOutput
+      responses:
+        "200":
+          description: Latest successfully built EPUB.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/epub+zip:
+              schema:
+                type: string
+                format: binary
+        "409":
+          $ref: "#/components/responses/Problem"
+
+components:
+  parameters:
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    Problem:
+      description: Sanitized local API error.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    Health:
+      type: object
+      required: [status, version]
+      properties:
+        status: { const: ok }
+        version: { type: string }
+        activeJobId:
+          type: [string, "null"]
+          format: uuid
+
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        code: { type: string }
+        detail: { type: string }
+        jobId: { type: string, format: uuid }
+        retryable: { type: boolean }
+        invalidationRequired:
+          type: array
+          items: { enum: [glossary, name_analysis, translations, edits, output] }
+
+    ProviderProfileInput:
+      type: object
+      required: [provider, baseURL, model]
+      additionalProperties: false
+      properties:
+        provider: { const: deepseek }
+        baseURL: { type: string, format: uri }
+        model: { type: string, minLength: 1 }
+
+    SettingsInput:
+      type: object
+      required: [profiles, limits]
+      additionalProperties: false
+      properties:
+        profiles:
+          type: object
+          required: [translation, editing]
+          properties:
+            translation: { $ref: "#/components/schemas/ProviderProfileInput" }
+            editing: { $ref: "#/components/schemas/ProviderProfileInput" }
+        limits:
+          type: object
+          required: [contextTokens, maxOutputTokens, maxAttempts]
+          properties:
+            contextTokens: { type: integer, minimum: 1024 }
+            maxOutputTokens: { type: integer, minimum: 256 }
+            maxAttempts: { type: integer, minimum: 1, maximum: 10 }
+            requestsPerMinute: { type: integer, minimum: 1 }
+        pricing:
+          type: object
+          properties:
+            inputPerMillion: { type: number, minimum: 0 }
+            outputPerMillion: { type: number, minimum: 0 }
+            currency: { type: string, minLength: 3, maxLength: 3 }
+
+    SettingsView:
+      allOf:
+        - $ref: "#/components/schemas/SettingsInput"
+        - type: object
+          required: [credentials]
+          properties:
+            credentials:
+              type: object
+              required: [translation, editing]
+              properties:
+                translation: { type: object, properties: { hasApiKey: { type: boolean } } }
+                editing: { type: object, properties: { hasApiKey: { type: boolean } } }
+
+    GlossaryEntry:
+      type: object
+      required: [id, source, target, category, enabled, origin]
+      properties:
+        id: { type: string, format: uuid }
+        source: { type: string, minLength: 1 }
+        target: { type: string }
+        category: { enum: [character, place, organization, other] }
+        note: { type: string }
+        enabled: { type: boolean }
+        aliases:
+          type: array
+          items: { type: string }
+        origin: { enum: [suggested, user] }
+
+    JobConfigInput:
+      type: object
+      additionalProperties: false
+      properties:
+        sourceLanguage: { type: string, minLength: 2 }
+        targetLanguage: { type: string, minLength: 2 }
+        instructions: { type: string }
+        nameGlossary:
+          type: array
+          items: { $ref: "#/components/schemas/GlossaryEntry" }
+        confirmInvalidation: { type: boolean, default: false }
+        invalidateScopes:
+          type: array
+          items: { enum: [name_analysis, translations, edits, output] }
+
+    Progress:
+      type: object
+      required: [totalBatches, translatedBatches, editedBatches, failedBatches, completedSteps, totalSteps]
+      properties:
+        totalBatches: { type: integer, minimum: 0 }
+        translatedBatches: { type: integer, minimum: 0 }
+        editedBatches: { type: integer, minimum: 0 }
+        failedBatches: { type: integer, minimum: 0 }
+        completedSteps: { type: integer, minimum: 0 }
+        totalSteps: { type: integer, minimum: 0 }
+
+    DocumentSummary:
+      type: object
+      required: [id, href, title, spineIndex, status, totalBatches, translatedBatches, editedBatches, failedBatches]
+      properties:
+        id: { type: string }
+        href: { type: string }
+        title: { type: string }
+        spineIndex: { type: integer, minimum: 0 }
+        status: { enum: [pending, translating, translated, editing, edited, failed] }
+        totalBatches: { type: integer, minimum: 0 }
+        translatedBatches: { type: integer, minimum: 0 }
+        editedBatches: { type: integer, minimum: 0 }
+        failedBatches: { type: integer, minimum: 0 }
+
+    JobSummary:
+      type: object
+      required: [id, title, sourceLanguage, targetLanguage, status, currentStage, progress, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        sourceLanguage: { type: string }
+        targetLanguage: { type: string }
+        status:
+          enum: [draft, preparing, analyzing_names, awaiting_name_review, running, stopping, paused, needs_attention, validating, completed, failed]
+        currentStage:
+          enum: [preparation, name_analysis, name_review, translation, editing, validation, building, complete]
+        progress: { $ref: "#/components/schemas/Progress" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    JobDetail:
+      allOf:
+        - $ref: "#/components/schemas/JobSummary"
+        - type: object
+          required: [instructions, nameGlossary, documents, warnings]
+          properties:
+            instructions: { type: string }
+            nameGlossary:
+              type: array
+              items: { $ref: "#/components/schemas/GlossaryEntry" }
+            documents:
+              type: array
+              items: { $ref: "#/components/schemas/DocumentSummary" }
+            warnings:
+              type: array
+              items: { type: object, additionalProperties: true }
+            lastError:
+              oneOf:
+                - $ref: "#/components/schemas/Problem"
+                - type: "null"
+            output:
+              type: [object, "null"]
+              properties:
+                filename: { type: string }
+                sizeBytes: { type: integer }
+                sha256: { type: string }
+                builtAt: { type: string, format: date-time }
+                validationStatus: { enum: [passed, passed_with_warnings] }
+                revision: { type: integer, minimum: 1 }

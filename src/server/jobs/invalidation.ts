@@ -1,0 +1,1 @@
+export function invalidationScope(previous:{targetLanguage:string;glossaryHash:string},next:{targetLanguage:string;glossaryHash:string}){return {targetChanged:previous.targetLanguage!==next.targetLanguage,glossaryChanged:previous.glossaryHash!==next.glossaryHash,requiresConfirmation:previous.targetLanguage!==next.targetLanguage||previous.glossaryHash!==next.glossaryHash};}

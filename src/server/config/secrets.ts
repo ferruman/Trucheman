@@ -1,0 +1,4 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+export type SecretStore = Readonly<{ translationApiKey?:string; editingApiKey?:string }>;
+export function loadSecrets(path = resolve(process.cwd(), ".env.local")): SecretStore { let text=""; try { text=readFileSync(path,"utf8"); } catch { return Object.freeze({}); } const values:Record<string,string>={}; for (const line of text.split(/\r?\n/)) { const m=line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/); if(m) values[m[1]]=m[2].replace(/^['"]|['"]$/g,""); } return Object.freeze({translationApiKey:values.BOOK_TRANSLATOR_TRANSLATION_API_KEY||undefined,editingApiKey:values.BOOK_TRANSLATOR_EDITING_API_KEY||undefined}); }

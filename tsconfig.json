@@ -1,0 +1,5 @@
+{
+  "files": [],
+  "references": [{"path":"./tsconfig.server.json"},{"path":"./tsconfig.client.json"}],
+  "compilerOptions": {"strict": true, "skipLibCheck": true, "moduleResolution":"Bundler"}
+}

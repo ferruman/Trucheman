@@ -1,0 +1,3 @@
+import { describe, expect, it } from "vitest";
+import { validateProviderResponse } from "../../src/server/providers/response-validator.js";
+describe("provider response validation",()=>{it("requires exact ordered IDs",()=>{const expected=[{id:"a",text:"one"},{id:"b",text:"two"}];expect(validateProviderResponse({segments:expected,finishReason:"stop"},expected).segments).toEqual(expected);expect(()=>validateProviderResponse({segments:[expected[1],expected[0]],finishReason:"stop"},expected)).toThrow();});it("rejects truncated responses",()=>{expect(()=>validateProviderResponse({segments:[{id:"a",text:"ok"}],finishReason:"length"},[{id:"a",text:"a"}])).toThrow();});});

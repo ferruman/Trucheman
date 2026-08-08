@@ -1,0 +1,1 @@
+export function ProgressPanel({translated=0,edited=0,total=0}:{translated?:number;edited?:number;total?:number}){return <section aria-label="Progress"><p>Translated: {translated}/{total}</p><p>Edited: {edited}/{total}</p></section>;}
