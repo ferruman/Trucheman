@@ -11,7 +11,7 @@ Date: 2026-08-08
 | `npm run lint` | Passed |
 | `npm test` | Passed; 26 test files, 37 tests |
 | `npm run build` | Passed; server and Vite client built |
-| `npm run e2e` | Not run in this environment; Playwright browsers were not installed |
+| `npm run e2e` | Passed; 3 browser tests |
 
 ## Covered evidence
 
@@ -25,4 +25,4 @@ Date: 2026-08-08
 
 ## Limitations
 
-The live external-provider acceptance run and browser execution require configured provider credentials and installed Playwright browsers. They remain release-gate follow-up work for a machine with those external prerequisites.
+The live external-provider acceptance run requires configured provider credentials. It remains the final release-gate follow-up for a machine with those external prerequisites.

@@ -5,7 +5,7 @@
   "type": "module",
   "engines": { "node": ">=24" },
   "scripts": {
-    "dev": "tsx src/server/index.ts --dev",
+    "dev": "node --import tsx/esm src/server/index.ts --dev",
     "start": "node dist/server/src/server/index.js",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
