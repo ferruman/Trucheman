@@ -16,6 +16,10 @@ import type { PersistedJob } from "../domain/job.js";
 export type PreparedDocument = { id:string; path:string; title:string; segments:TextSegment[]; batches:Batch[] };
 export type PreparedBook = { staging:string; documents:PreparedDocument[] };
 
+export function buildJobInstructions(job:Pick<PersistedJob,"sourceLanguage"|"targetLanguage"|"instructions">):string{
+  return [`Translate from ${job.sourceLanguage} to ${job.targetLanguage}.`,job.instructions.trim()].filter(Boolean).join("\n");
+}
+
 export async function prepareBook(root:string):Promise<PreparedBook>{
   const staging=join(root,"staging");
   await rm(staging,{recursive:true,force:true});
@@ -47,8 +51,9 @@ export async function runPreparedBook(root:string,job:PersistedJob,update:(patch
   const provider=useExternal?new DeepSeekProvider():new FakeProvider();
   const translationProfile={name:useExternal?"deepseek-translation":"deterministic-local",endpoint:secrets.translationEndpoint??process.env.BOOK_TRANSLATOR_TRANSLATION_ENDPOINT??"https://api.deepseek.com/chat/completions",model:secrets.translationModel??process.env.BOOK_TRANSLATOR_TRANSLATION_MODEL??"deepseek-chat",apiKey:secrets.translationApiKey};
   const editingProfile={name:useExternal?"deepseek-editing":"deterministic-local",endpoint:secrets.editingEndpoint??process.env.BOOK_TRANSLATOR_EDITING_ENDPOINT??"https://api.deepseek.com/chat/completions",model:secrets.editingModel??process.env.BOOK_TRANSLATOR_EDITING_MODEL??"deepseek-chat",apiKey:secrets.editingApiKey};
+  const instructions=buildJobInstructions(job);
   let translated=0,edited=0;
-  const result=await runTwoPass(batches,provider,{root,translationProfile,editingProfile,onProgress:async(stage)=>{
+  const result=await runTwoPass(batches,provider,{root,translationProfile,editingProfile,instructions,glossary:job.glossary,onProgress:async(stage)=>{
     if(stage==="translation")translated++; else edited++;
     await update({stage,status:"running",progress:{...job.progress,translated,edited,total:batches.length}});
   }});

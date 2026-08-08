@@ -9,5 +9,6 @@ data/
 .DS_Store
 .vscode/
 .idea/
+.codebase-memory/
 .agents
 .github/agents
