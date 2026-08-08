@@ -14,7 +14,7 @@ npm run build
 npm run dev
 ```
 
-The server binds to `127.0.0.1` by default. Copy `.env.example` to `.env.local` and add provider credentials only to the server-side environment file. Credentials are never sent to the browser or written to job state.
+The server binds to `127.0.0.1` by default. Copy `.env.example` to `.env.local` or configure `.env`; `.env.local` takes precedence. Add provider credentials only to a server-side environment file. Credentials are never sent to the browser or written to job state.
 
 ## Using the application
 
@@ -30,7 +30,7 @@ BOOK_TRANSLATOR_TRANSLATION_API_KEY=your-key
 BOOK_TRANSLATOR_EDITING_API_KEY=your-key
 ```
 
-Restart the server after changing `.env.local`. The external-provider mode sends eligible book text to the configured service.
+Restart the server after changing `.env.local` or `.env`. The external-provider mode sends eligible book text to the configured service.
 
 ## Design boundaries
 

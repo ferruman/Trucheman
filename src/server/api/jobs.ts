@@ -45,8 +45,8 @@ export function jobsRouter(repo:JobRepository){
   router.post("/:id/analyze",async(req,res)=>{try{res.status(202).json(toJobView(await analyzeJob(repo,req.params.id)));}catch(error){problemResponse(res,error,req);}});
   router.post("/:id/names/analyze",async(req,res)=>{try{res.status(202).json(toJobView(await analyzeJob(repo,req.params.id)));}catch(error){problemResponse(res,error,req);}});
   router.post("/:id/start",async(req,res)=>{try{
-    const job=await repo.get(req.params.id);if(job.status!=="ready")throw new Error("Analyze the uploaded EPUB before starting");
-    const root=jobRoot(repo.dataDir,job.id),running:PersistedJob={...job,status:"running",stage:"translation",updatedAt:new Date().toISOString()};await repo.save(running);res.status(202).json(toJobView(running));
+    const job=await repo.get(req.params.id);if(!["ready","completed","failed"].includes(job.status))throw new Error("Analyze the uploaded EPUB before starting");
+    const root=jobRoot(repo.dataDir,job.id),running:PersistedJob={...job,status:"running",stage:"translation",progress:{...job.progress,translated:0,edited:0,failed:0},updatedAt:new Date().toISOString()};await repo.save(running);res.status(202).json(toJobView(running));
     void runPreparedBook(root,running,async patch=>{const current=await repo.get(job.id);await repo.save({...current,...patch,updatedAt:new Date().toISOString()});}).then(async()=>{const current=await repo.get(job.id);await repo.save({...current,status:"completed",stage:"complete",updatedAt:new Date().toISOString()});}).catch(async error=>{const current=await repo.get(job.id);await repo.save({...current,status:"failed",stage:"validation",updatedAt:new Date().toISOString(),warnings:current.warnings+1});console.error(error);});
   }catch(error){problemResponse(res,error,req);}});
   router.get("/:id/download",async(req,res)=>{try{const path=join(jobRoot(repo.dataDir,req.params.id),"output.epub");await access(path);res.type("application/epub+zip");createReadStream(path).on("error",error=>problemResponse(res,error,req)).pipe(res);}catch(error){problemResponse(res,error,req);}});

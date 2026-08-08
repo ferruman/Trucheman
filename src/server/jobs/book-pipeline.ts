@@ -43,7 +43,7 @@ export async function runPreparedBook(root:string,job:PersistedJob,update:(patch
   const prepared=JSON.parse(await readFile(join(root,"prepared.json"),"utf8")) as PreparedBook;
   const batches=prepared.documents.flatMap(document=>document.batches);
   const secrets=loadSecrets();
-  const useExternal=Boolean(secrets.translationApiKey&&secrets.editingApiKey);
+  const useExternal=process.env.BOOK_TRANSLATOR_PROVIDER!=="deterministic"&&Boolean(secrets.translationApiKey&&secrets.editingApiKey);
   const provider=useExternal?new DeepSeekProvider():new FakeProvider();
   const translationProfile={name:useExternal?"deepseek-translation":"deterministic-local",endpoint:secrets.translationEndpoint??process.env.BOOK_TRANSLATOR_TRANSLATION_ENDPOINT??"https://api.deepseek.com/chat/completions",model:secrets.translationModel??process.env.BOOK_TRANSLATOR_TRANSLATION_MODEL??"deepseek-chat",apiKey:secrets.translationApiKey};
   const editingProfile={name:useExternal?"deepseek-editing":"deterministic-local",endpoint:secrets.editingEndpoint??process.env.BOOK_TRANSLATOR_EDITING_ENDPOINT??"https://api.deepseek.com/chat/completions",model:secrets.editingModel??process.env.BOOK_TRANSLATOR_EDITING_MODEL??"deepseek-chat",apiKey:secrets.editingApiKey};
