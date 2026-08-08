@@ -8,6 +8,8 @@ import { parseXml, serializeXml } from "../epub/xml-dom.js";
 import { buildEpub } from "../epub/build.js";
 import { validateEpub } from "../epub/validate.js";
 import { FakeProvider } from "../providers/fake-provider.js";
+import { DeepSeekProvider } from "../providers/deepseek.js";
+import { loadSecrets } from "../config/secrets.js";
 import { runTwoPass } from "./job-runner.js";
 import type { PersistedJob } from "../domain/job.js";
 
@@ -40,9 +42,13 @@ export async function prepareBook(root:string):Promise<PreparedBook>{
 export async function runPreparedBook(root:string,job:PersistedJob,update:(patch:Partial<PersistedJob>)=>Promise<void>){
   const prepared=JSON.parse(await readFile(join(root,"prepared.json"),"utf8")) as PreparedBook;
   const batches=prepared.documents.flatMap(document=>document.batches);
-  const profile={name:"deterministic-local",endpoint:"local",model:"deterministic"};
+  const secrets=loadSecrets();
+  const useExternal=Boolean(secrets.translationApiKey&&secrets.editingApiKey);
+  const provider=useExternal?new DeepSeekProvider():new FakeProvider();
+  const translationProfile={name:useExternal?"deepseek-translation":"deterministic-local",endpoint:secrets.translationEndpoint??process.env.BOOK_TRANSLATOR_TRANSLATION_ENDPOINT??"https://api.deepseek.com/chat/completions",model:secrets.translationModel??process.env.BOOK_TRANSLATOR_TRANSLATION_MODEL??"deepseek-chat",apiKey:secrets.translationApiKey};
+  const editingProfile={name:useExternal?"deepseek-editing":"deterministic-local",endpoint:secrets.editingEndpoint??process.env.BOOK_TRANSLATOR_EDITING_ENDPOINT??"https://api.deepseek.com/chat/completions",model:secrets.editingModel??process.env.BOOK_TRANSLATOR_EDITING_MODEL??"deepseek-chat",apiKey:secrets.editingApiKey};
   let translated=0,edited=0;
-  const result=await runTwoPass(batches,new FakeProvider(),{root,translationProfile:profile,editingProfile:profile,onProgress:async(stage)=>{
+  const result=await runTwoPass(batches,provider,{root,translationProfile,editingProfile,onProgress:async(stage)=>{
     if(stage==="translation")translated++; else edited++;
     await update({stage,status:"running",progress:{...job.progress,translated,edited,total:batches.length}});
   }});

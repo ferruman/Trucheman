@@ -16,6 +16,22 @@ npm run dev
 
 The server binds to `127.0.0.1` by default. Copy `.env.example` to `.env.local` and add provider credentials only to the server-side environment file. Credentials are never sent to the browser or written to job state.
 
+## Using the application
+
+1. Open `http://127.0.0.1:4173`.
+2. Choose **New book**, select an EPUB, choose different source and target languages, and select **Upload and analyze**.
+3. Review the prepared job and choose **Start translation**.
+4. Wait for the job to reach `completed`, then choose **Download translated EPUB**.
+
+Without credentials, the application uses the deterministic local provider so the complete flow can be exercised safely. To use DeepSeek, place both translation and editing credentials in `.env.local`:
+
+```dotenv
+BOOK_TRANSLATOR_TRANSLATION_API_KEY=your-key
+BOOK_TRANSLATOR_EDITING_API_KEY=your-key
+```
+
+Restart the server after changing `.env.local`. The external-provider mode sends eligible book text to the configured service.
+
 ## Design boundaries
 
 - EPUB archives are checked for unsafe paths, encryption, unsupported compression, and expansion limits before processing.
