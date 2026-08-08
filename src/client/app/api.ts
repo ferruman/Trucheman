@@ -39,6 +39,10 @@ export async function uploadSource(id: string, file: File): Promise<void> {
 }
 
 export const jobActions = {
+  configure: (id: string, body: unknown) => request<JobView>(`/jobs/${id}/config`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  }),
   analyze: (id: string) => request<JobView>(`/jobs/${id}/analyze`, { method: "POST" }),
   start: (id: string) => request<JobView>(`/jobs/${id}/start`, { method: "POST" }),
   pause: (id: string) => request<{ status: string }>(`/jobs/${id}/pause`, { method: "POST" }),
