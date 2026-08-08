@@ -11,7 +11,7 @@ Date: 2026-08-08
 | `npm run lint` | Passed |
 | `npm test` | Passed; 26 test files, 37 tests |
 | `npm run build` | Passed; server and Vite client built |
-| `npm run e2e` | Passed; 3 browser tests |
+| `npm run e2e` | Passed; 4 browser tests, including EPUB upload-to-download flow |
 
 ## Covered evidence
 
@@ -22,6 +22,7 @@ Date: 2026-08-08
 - Server-only credential boundaries and redaction.
 - Startup recovery, pause control, resume planning, retry policy, SSE replay, output validation, optional EPUBCheck, and statistics.
 - English/Russian and German/Polish language controls in the browser test specifications.
+- Deterministic EPUB upload, package analysis, two-pass processing, completion polling, and download in a real Chromium browser.
 
 ## Limitations
 

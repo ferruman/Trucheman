@@ -8,7 +8,7 @@ import { defaultArchiveLimits, validateArchiveEntries } from "./archive-policy.j
 export async function extractEpub(source: string, destination: string): Promise<string[]> {
   await mkdir(destination, { recursive: true });
   const zip = await new Promise<yauzl.ZipFile>((resolve, reject) => {
-    yauzl.open(source, { lazyEntries: true, decodeStrings: true, strictFileNames: true, validateEntrySizes: true }, (error, opened) => error ? reject(error) : resolve(opened));
+    yauzl.open(source, { autoClose: false, lazyEntries: true, decodeStrings: true, strictFileNames: true, validateEntrySizes: true }, (error, opened) => error ? reject(error) : resolve(opened));
   });
   const entries: Entry[] = [];
   await new Promise<void>((resolve, reject) => {

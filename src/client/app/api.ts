@@ -1,3 +1,5 @@
 import type { JobView } from "../../shared/domain/job";
 async function request<T>(path:string,init?:RequestInit):Promise<T>{const r=await fetch(`/api${path}`,{headers:{"content-type":"application/json",...(init?.headers??{})},...init});if(!r.ok)throw new Error((await r.json().catch(()=>null))?.detail??`HTTP ${r.status}`);return r.status===204?undefined as T:r.json();}
 export const api={list:()=>request<JobView[]>("/jobs"),get:(id:string)=>request<JobView>(`/jobs/${id}`),create:(body:unknown)=>request<JobView>("/jobs",{method:"POST",body:JSON.stringify(body)}),settings:()=>request("/settings")};
+export async function uploadSource(id:string,file:File){const response=await fetch(`/api/jobs/${id}/source`,{method:"PUT",headers:{"content-type":"application/epub+zip"},body:file});if(!response.ok)throw new Error(`Upload failed (${response.status})`);}
+export const jobActions={analyze:(id:string)=>request<JobView>(`/jobs/${id}/analyze`,{method:"POST"}),start:(id:string)=>request<JobView>(`/jobs/${id}/start`,{method:"POST"})};
