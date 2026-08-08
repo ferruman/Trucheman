@@ -2,30 +2,27 @@ import { Router } from "express";
 import { createReadStream } from "node:fs";
 import { access, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { z } from "zod";
 import { assertLanguagePair } from "../../shared/languages.js";
+import { glossaryEntrySchema, languageSchema } from "../../shared/api/schemas.js";
 import { newJobId, jobRoot } from "../storage/job-paths.js";
 import { type JobRepository } from "../storage/job-repository.js";
 import { type PersistedJob, toJobView } from "../domain/job.js";
 import { problemResponse } from "./problem.js";
 import { DomainError } from "../domain/errors.js";
-import { prepareBook, runPreparedBook } from "../jobs/book-pipeline.js";
+import { JobOrchestrator } from "../jobs/job-orchestrator.js";
+import { atomicWrite } from "../storage/atomic-file.js";
 
-async function analyzeJob(repo:JobRepository,id:string){
-  const job=await repo.get(id),root=jobRoot(repo.dataDir,id);
-  await repo.save({...job,status:"analyzing",stage:"analysis",updatedAt:new Date().toISOString()});
-  try{
-    const prepared=await prepareBook(root),total=prepared.documents.reduce((sum,document)=>sum+document.batches.length,0);
-    const next:PersistedJob={...job,status:"ready",stage:"analysis",progress:{translated:0,edited:0,total,failed:0},documents:prepared.documents.map(document=>({id:document.id,path:document.id,title:document.title,total:document.batches.length,translated:0,edited:0,status:"ready"})),updatedAt:new Date().toISOString()};
-    await repo.save(next);return next;
-  }catch(error){await repo.save({...job,status:"failed",stage:"analysis",updatedAt:new Date().toISOString()});throw error;}
-}
+const createJobSchema=z.object({title:z.string().trim().min(1).max(500).default("Untitled book"),sourceLanguage:languageSchema.default("en"),targetLanguage:languageSchema}).strict();
+const configSchema=z.object({sourceLanguage:languageSchema.optional(),targetLanguage:languageSchema.optional(),instructions:z.string().max(100_000).optional(),glossary:z.array(glossaryEntrySchema).max(10_000).optional()}).strict();
+function parseBody<T>(schema:z.ZodType<T>,value:unknown):T{const result=schema.safeParse(value);if(!result.success)throw new DomainError("invalid_request",result.error.issues.map(issue=>issue.message).join("; "),400);return result.data;}
+export function parseJobConfig(value:unknown){return parseBody(configSchema,value);}
 
-export function jobsRouter(repo:JobRepository){
+export function jobsRouter(repo:JobRepository,orchestrator:JobOrchestrator){
   const router=Router();
   router.get("/",async(_req,res)=>res.json((await repo.list()).map(toJobView)));
   router.post("/",async(req,res)=>{try{
-    const {title="Untitled book",sourceLanguage="en",targetLanguage}=req.body as Record<string,string>;
-    if(!targetLanguage)throw new Error("targetLanguage is required");
+    const {title,sourceLanguage,targetLanguage}=parseBody(createJobSchema,req.body);
     assertLanguagePair(sourceLanguage as any,targetLanguage as any);
     const id=newJobId(),now=new Date().toISOString();
     const job:PersistedJob={version:1,id,title,sourceLanguage,targetLanguage,status:"created",stage:"import",progress:{translated:0,edited:0,total:0,failed:0},createdAt:now,updatedAt:now,warnings:0,documents:[],instructions:"",glossary:[]};
@@ -33,25 +30,26 @@ export function jobsRouter(repo:JobRepository){
   }catch(error){problemResponse(res,error,req);}});
   router.get("/:id",async(req,res)=>{try{res.json(toJobView(await repo.get(req.params.id)));}catch(error){problemResponse(res,error,req);}});
   router.put("/:id/config",async(req,res)=>{try{
-    const job=await repo.get(req.params.id),body=req.body as Partial<PersistedJob>;
-    const next:PersistedJob={...job,sourceLanguage:body.sourceLanguage??job.sourceLanguage,targetLanguage:body.targetLanguage??job.targetLanguage,instructions:body.instructions??job.instructions,glossary:body.glossary??job.glossary,updatedAt:new Date().toISOString()};
+    const job=await repo.get(req.params.id);orchestrator.assertMutable(job.id,job);const body=parseJobConfig(req.body);
+    const changesWork=(body.sourceLanguage!==undefined&&body.sourceLanguage!==job.sourceLanguage)||(body.targetLanguage!==undefined&&body.targetLanguage!==job.targetLanguage)||(body.instructions!==undefined&&body.instructions!==job.instructions)||(body.glossary!==undefined&&JSON.stringify(body.glossary)!==JSON.stringify(job.glossary));
+    const base=changesWork?await orchestrator.invalidate(job.id):job;
+    const next:PersistedJob={...base,sourceLanguage:body.sourceLanguage??base.sourceLanguage,targetLanguage:body.targetLanguage??base.targetLanguage,instructions:body.instructions??base.instructions,glossary:body.glossary??base.glossary,updatedAt:new Date().toISOString()};
     assertLanguagePair(next.sourceLanguage as any,next.targetLanguage as any);await repo.save(next);res.json(toJobView(next));
   }catch(error){problemResponse(res,error,req);}});
   router.put("/:id/source",async(req,res)=>{try{
-    const job=await repo.get(req.params.id),root=jobRoot(repo.dataDir,job.id);await mkdir(root,{recursive:true});
+    const job=await repo.get(req.params.id);orchestrator.assertMutable(job.id,job);const root=jobRoot(repo.dataDir,job.id);await mkdir(root,{recursive:true});
     if(!Buffer.isBuffer(req.body)||req.body.length===0)throw new DomainError("upload_missing","An EPUB upload is required",400);
-    await BunlessWrite(root,req.body);res.status(204).end();
+    const base=job.status==="created"?job:await orchestrator.invalidate(job.id);
+    await BunlessWrite(root,req.body);
+    await repo.save({...base,status:"created",stage:"import",progress:{translated:0,edited:0,total:0,failed:0},documents:[],updatedAt:new Date().toISOString()});
+    res.status(204).end();
   }catch(error){console.error("EPUB upload failed",error instanceof Error?error.message:"unknown error");problemResponse(res,error,req);}});
-  router.post("/:id/analyze",async(req,res)=>{try{res.status(202).json(toJobView(await analyzeJob(repo,req.params.id)));}catch(error){problemResponse(res,error,req);}});
-  router.post("/:id/names/analyze",async(req,res)=>{try{res.status(202).json(toJobView(await analyzeJob(repo,req.params.id)));}catch(error){problemResponse(res,error,req);}});
-  router.post("/:id/start",async(req,res)=>{try{
-    const job=await repo.get(req.params.id);if(!["ready","completed","failed"].includes(job.status))throw new Error("Analyze the uploaded EPUB before starting");
-    const root=jobRoot(repo.dataDir,job.id),running:PersistedJob={...job,status:"running",stage:"translation",progress:{...job.progress,translated:0,edited:0,failed:0},updatedAt:new Date().toISOString()};await repo.save(running);res.status(202).json(toJobView(running));
-    void runPreparedBook(root,running,async patch=>{const current=await repo.get(job.id);await repo.save({...current,...patch,updatedAt:new Date().toISOString()});}).then(async()=>{const current=await repo.get(job.id);await repo.save({...current,status:"completed",stage:"complete",updatedAt:new Date().toISOString()});}).catch(async error=>{const current=await repo.get(job.id);await repo.save({...current,status:"failed",stage:"validation",updatedAt:new Date().toISOString(),warnings:current.warnings+1});console.error(error);});
-  }catch(error){problemResponse(res,error,req);}});
-  router.get("/:id/download",async(req,res)=>{try{const path=join(jobRoot(repo.dataDir,req.params.id),"output.epub");await access(path);res.type("application/epub+zip");createReadStream(path).on("error",error=>problemResponse(res,error,req)).pipe(res);}catch(error){problemResponse(res,error,req);}});
-  router.delete("/:id",async(req,res)=>{try{await repo.remove(req.params.id);res.status(204).end();}catch(error){problemResponse(res,error,req);}});
+  router.post("/:id/analyze",async(req,res)=>{try{res.status(202).json(toJobView(await orchestrator.analyze(req.params.id)));}catch(error){problemResponse(res,error,req);}});
+  router.post("/:id/names/analyze",async(req,res)=>{try{res.status(202).json(toJobView(await orchestrator.analyze(req.params.id)));}catch(error){problemResponse(res,error,req);}});
+  router.post("/:id/start",async(req,res)=>{try{res.status(202).json(toJobView(await orchestrator.start(req.params.id)));}catch(error){problemResponse(res,error,req);}});
+  router.get("/:id/download",async(req,res)=>{try{const job=await repo.get(req.params.id);if(job.status!=="completed")throw new DomainError("output_not_ready","The translated EPUB is not ready",409);const path=join(jobRoot(repo.dataDir,req.params.id),"output.epub");await access(path);res.type("application/epub+zip");createReadStream(path).on("error",error=>problemResponse(res,error,req)).pipe(res);}catch(error){problemResponse(res,error,req);}});
+  router.delete("/:id",async(req,res)=>{try{const job=await repo.get(req.params.id);orchestrator.assertMutable(job.id,job);await repo.remove(req.params.id);res.status(204).end();}catch(error){problemResponse(res,error,req);}});
   return router;
 }
 
-async function BunlessWrite(root:string,body:Buffer){const {writeFile}=await import("node:fs/promises");await writeFile(join(root,"source.epub"),body);}
+async function BunlessWrite(root:string,body:Buffer){await atomicWrite(join(root,"source.epub"),body);}

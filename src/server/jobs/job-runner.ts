@@ -1,7 +1,52 @@
-import { appendJournal } from "../storage/ndjson-journal.js";
-import type { LanguageModelProvider, ProviderProfile } from "../providers/provider.js";
+import { createHash } from "node:crypto";
+import { appendJournal, readJournal } from "../storage/ndjson-journal.js";
+import type { LanguageModelProvider, ProviderInputSegment, ProviderProfile, ProviderSegment } from "../providers/provider.js";
+import { PROMPT_VERSION } from "../providers/prompts.js";
 import type { Batch } from "../epub/batcher.js";
 import { processBatch } from "./translation-service.js";
-import { editBatch } from "./editing-service.js";
+import { buildEditingSegments, editBatch } from "./editing-service.js";
 export type RunnerOptions={root:string;translationProfile:ProviderProfile;editingProfile:ProviderProfile;instructions?:string;glossary?:unknown[];onProgress?:(stage:"translation"|"editing",batch:Batch)=>Promise<void>|void;signal?:AbortSignal};
-export async function runTwoPass(batches:Batch[],provider:LanguageModelProvider,options:RunnerOptions){const drafts=new Map<string,{id:string;text:string}[]>(),edits=new Map<string,{id:string;text:string}[]>();for(const batch of batches){if(options.signal?.aborted)throw new Error("Job paused");const request=batch.segments.map(s=>({id:s.id,text:s.text}));const translated=await processBatch(provider,options.translationProfile,"translation",request,options.instructions,options.glossary,3,options.signal);drafts.set(batch.id,translated.result.segments);await appendJournal(`${options.root}/drafts.ndjson`,{batchId:batch.id,segments:translated.result.segments,attempts:translated.attempts,warnings:translated.warnings,profile:options.translationProfile.name});await options.onProgress?.("translation",batch);if(options.signal?.aborted)throw new Error("Job paused");const edited=await editBatch(provider,options.editingProfile,request,translated.result.segments,options.instructions,options.glossary,options.signal);edits.set(batch.id,edited.result.segments);await appendJournal(`${options.root}/edits.ndjson`,{batchId:batch.id,segments:edited.result.segments,attempts:edited.attempts,warnings:edited.warnings,profile:options.editingProfile.name});await options.onProgress?.("editing",batch);}return {drafts,edits};}
+type Checkpoint={batchId:string;segments:ProviderSegment[];checkpointKey?:string};
+
+function checkpointMap(records:Checkpoint[]){
+  const result=new Map<string,Checkpoint>();
+  for(const record of records)if(record&&typeof record.batchId==="string"&&Array.isArray(record.segments))result.set(record.batchId,record);
+  return result;
+}
+
+function checkpointKey(mode:"translation"|"editing",profile:ProviderProfile,segments:ProviderInputSegment[],instructions:string|undefined,glossary:unknown[]|undefined){return createHash("sha256").update(JSON.stringify({promptVersion:PROMPT_VERSION,mode,profile:{name:profile.name,endpoint:profile.endpoint,model:profile.model},segments,instructions:instructions??"",glossary:glossary??[]})).digest("hex");}
+
+function throwIfAborted(signal?:AbortSignal){
+  if(signal?.aborted)throw signal.reason instanceof Error?signal.reason:new Error("Job paused");
+}
+
+export async function runTwoPass(batches:Batch[],provider:LanguageModelProvider,options:RunnerOptions){
+  const draftRecords=checkpointMap(await readJournal<Checkpoint>(`${options.root}/drafts.ndjson`));
+  const editRecords=checkpointMap(await readJournal<Checkpoint>(`${options.root}/edits.ndjson`));
+  const drafts=new Map<string,ProviderSegment[]>(),edits=new Map<string,ProviderSegment[]>();
+  for(const batch of batches){
+    throwIfAborted(options.signal);
+    const request=batch.segments.map(s=>({id:s.id,text:s.text}));
+    const expectedDraftKey=checkpointKey("translation",options.translationProfile,request,options.instructions,options.glossary);
+    const savedDraft=draftRecords.get(batch.id);
+    let draft=savedDraft?.checkpointKey===expectedDraftKey?savedDraft.segments:undefined;
+    if(!draft){
+      const translated=await processBatch(provider,options.translationProfile,"translation",request,options.instructions,options.glossary,3,options.signal);
+      draft=translated.result.segments;
+      await appendJournal(`${options.root}/drafts.ndjson`,{batchId:batch.id,segments:draft,checkpointKey:expectedDraftKey,attempts:translated.attempts,warnings:translated.warnings,profile:options.translationProfile.name});
+    }
+    drafts.set(batch.id,draft);
+    await options.onProgress?.("translation",batch);
+    throwIfAborted(options.signal);
+    const expectedEditKey=checkpointKey("editing",options.editingProfile,buildEditingSegments(request,draft),options.instructions,options.glossary);
+    const savedEdit=editRecords.get(batch.id);
+    if(savedEdit?.checkpointKey===expectedEditKey)edits.set(batch.id,savedEdit.segments);
+    else{
+      const edited=await editBatch(provider,options.editingProfile,request,draft,options.instructions,options.glossary,options.signal);
+      edits.set(batch.id,edited.result.segments);
+      await appendJournal(`${options.root}/edits.ndjson`,{batchId:batch.id,segments:edited.result.segments,checkpointKey:expectedEditKey,attempts:edited.attempts,warnings:edited.warnings,profile:options.editingProfile.name});
+    }
+    await options.onProgress?.("editing",batch);
+  }
+  return {drafts,edits};
+}

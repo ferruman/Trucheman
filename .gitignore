@@ -12,3 +12,4 @@ data/
 .codebase-memory/
 .agents
 .github/agents
+.github/prompts

@@ -1,3 +1,51 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DeepSeekProvider } from "../../src/server/providers/deepseek.js";
-describe("DeepSeek provider",()=>it("requires a server-side credential",async()=>await expect(new DeepSeekProvider().complete({profile:{name:"x",endpoint:"x",model:"x"},mode:"translation",segments:[]})).rejects.toMatchObject({kind:"configuration"})));
+
+describe("DeepSeek provider", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("requires a server-side credential", async () => {
+    await expect(
+      new DeepSeekProvider().complete({
+        profile: { name: "x", endpoint: "x", model: "x" },
+        mode: "translation",
+        segments: [],
+      }),
+    ).rejects.toMatchObject({ kind: "configuration" });
+  });
+
+  it("sends rules and book data in separate messages", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        requestBody = JSON.parse(String(init?.body));
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: { content: '{"segments":[{"id":"s1","text":"Привет"}]}' },
+                finish_reason: "stop",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }),
+    );
+
+    await new DeepSeekProvider().complete({
+      profile: { name: "x", endpoint: "https://provider.test", model: "x", apiKey: "secret" },
+      mode: "translation",
+      instructions: "Translate from English to Russian",
+      segments: [{ id: "s1", text: "Hello" }],
+    });
+
+    const messages = requestBody?.messages as Array<{ role: string; content: string }>;
+    expect(messages.map(({ role }) => role)).toEqual(["system", "user"]);
+    expect(messages[0]?.content).not.toContain("Hello");
+    expect(JSON.parse(messages[1]?.content ?? "").segments).toEqual([
+      { id: "s1", text: "Hello" },
+    ]);
+  });
+});

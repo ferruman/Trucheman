@@ -1,3 +1,39 @@
-import type { LanguageModelProvider, ProviderProfile, ProviderSegment } from "../providers/provider.js";
+import type {
+  LanguageModelProvider,
+  ProviderInputSegment,
+  ProviderProfile,
+  ProviderSegment,
+} from "../providers/provider.js";
 import { processBatch } from "./translation-service.js";
-export async function editBatch(provider:LanguageModelProvider,profile:ProviderProfile,original:ProviderSegment[],draft:ProviderSegment[],instructions="",glossary:unknown[]=[],signal?:AbortSignal){const segments=original.map((item,index)=>({id:item.id,text:`Original: ${item.text}\nDraft: ${draft[index]?.text??""}`}));return processBatch(provider,profile,"editing",segments,instructions,glossary,3,signal);}
+
+export function buildEditingSegments(
+  original: ProviderSegment[],
+  draft: ProviderSegment[],
+): ProviderInputSegment[] {
+  return original.map((item, index) => ({
+    id: item.id,
+    original: item.text,
+    draft: draft[index]?.text ?? "",
+  }));
+}
+
+export async function editBatch(
+  provider: LanguageModelProvider,
+  profile: ProviderProfile,
+  original: ProviderSegment[],
+  draft: ProviderSegment[],
+  instructions = "",
+  glossary: unknown[] = [],
+  signal?: AbortSignal,
+) {
+  return processBatch(
+    provider,
+    profile,
+    "editing",
+    buildEditingSegments(original, draft),
+    instructions,
+    glossary,
+    3,
+    signal,
+  );
+}
