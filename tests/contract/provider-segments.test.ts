@@ -3,6 +3,7 @@ import {
   buildPrompt,
   buildPromptInput,
   buildPromptMessages,
+  PROMPT_INPUT_VERSION,
   PROMPT_VERSION,
 } from "../../src/server/providers/prompts.js";
 import { validateProviderResponse } from "../../src/server/providers/response-validator.js";
@@ -53,9 +54,14 @@ describe("provider prompt contract", () => {
 
     expect(payload).toEqual({
       promptVersion: PROMPT_VERSION,
+      promptInputVersion: PROMPT_INPUT_VERSION,
       task: "translation",
       sourceLanguage: { tag: "en", name: "English" },
       targetLanguage: { tag: "ru", name: "Russian" },
+      targetStyle: {
+        yo: "Use ё consistently where standard Russian spelling requires it.",
+        quotes: "Use «ёлочки» and nested „лапки“ consistently.",
+      },
       responseContract: {
         format: "json",
         segmentCount: 1,

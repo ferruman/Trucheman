@@ -4,7 +4,11 @@ import { loadSecrets } from "../config/secrets.js";
 import { DeepSeekProvider } from "../providers/deepseek.js";
 import { FakeProvider } from "../providers/fake-provider.js";
 import type { LanguageModelProvider, ProviderProfile } from "../providers/provider.js";
-import { PROMPT_VERSIONS, resolvePromptVersion } from "../providers/prompts.js";
+import {
+  PROMPT_INPUT_VERSION,
+  PROMPT_VERSIONS,
+  resolvePromptVersion,
+} from "../providers/prompts.js";
 import {
   evaluateLiteraryOutput,
   HUMAN_REVIEW_DIMENSIONS,
@@ -152,6 +156,7 @@ async function main() {
     schemaVersion: 1,
     createdAt: new Date().toISOString(),
     promptVersion,
+    promptInputVersion: PROMPT_INPUT_VERSION,
     corpus: { path: corpusPath, version: corpus.version, description: corpus.description },
     selection: { offset, limit: limit ?? null },
     provider: {

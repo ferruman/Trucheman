@@ -37,6 +37,13 @@ export function updatePackageLanguage(doc: Document, targetLanguage: string) {
 export function updateContentLanguage(doc: Document, targetLanguage: string) {
   const root = doc.documentElement;
   if (!root) throw new Error("EPUB content document is missing");
-  root.setAttributeNS(XML_NAMESPACE, "xml:lang", targetLanguage);
-  if (localName(root).toLowerCase() === "html") root.setAttribute("lang", targetLanguage);
+  const isHtml = localName(root).toLowerCase() === "html";
+  walkElements(root, (element) => {
+    if (element === root || element.hasAttribute("xml:lang")) {
+      element.setAttributeNS(XML_NAMESPACE, "xml:lang", targetLanguage);
+    }
+    if (isHtml && (element === root || element.hasAttribute("lang"))) {
+      element.setAttribute("lang", targetLanguage);
+    }
+  });
 }

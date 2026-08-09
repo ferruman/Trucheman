@@ -70,6 +70,10 @@ describe("DeepSeek provider", () => {
     });
     expect(input.sourceLanguage).toEqual({ tag: "en", name: "English" });
     expect(input.targetLanguage).toEqual({ tag: "ru", name: "Russian" });
+    expect(input.targetStyle).toEqual({
+      yo: "Use ё consistently where standard Russian spelling requires it.",
+      quotes: "Use «ёлочки» and nested „лапки“ consistently.",
+    });
     expect(input.userPreferences).toBe("Preserve formal dialogue");
     expect(input.segments).toEqual([{ id: "s0001", text: "Hello" }]);
     expect(response.segments).toEqual([{ id: "document-3:a", text: "Привет" }]);

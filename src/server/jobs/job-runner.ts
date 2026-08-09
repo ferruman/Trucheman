@@ -7,7 +7,7 @@ import type {
   ProviderProfile,
   ProviderSegment,
 } from "../providers/provider.js";
-import { PROMPT_VERSION } from "../providers/prompts.js";
+import { PROMPT_INPUT_VERSION, PROMPT_VERSION } from "../providers/prompts.js";
 import type { Batch } from "../epub/batcher.js";
 import { processBatch } from "./translation-service.js";
 import { buildEditingSegments, editBatch } from "./editing-service.js";
@@ -45,6 +45,7 @@ function checkpointKey(
     .update(
       JSON.stringify({
         promptVersion: profile.promptVersion ?? PROMPT_VERSION,
+        promptInputVersion: PROMPT_INPUT_VERSION,
         mode,
         profile: {
           name: profile.name,

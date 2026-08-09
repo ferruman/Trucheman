@@ -1,6 +1,7 @@
 import type { ProviderInputSegment, ProviderRequest } from "./provider.js";
 
 export const PROMPT_VERSION = "literary-v3.1";
+export const PROMPT_INPUT_VERSION = "structured-v2";
 export const PROMPT_VERSIONS = [PROMPT_VERSION, "literary-v3.2.1"] as const;
 export type PromptVersion = (typeof PROMPT_VERSIONS)[number];
 
@@ -84,6 +85,19 @@ Keep draft wording only when it is both faithful to the original and natural, id
 ${NATIVE_WRITER_CHECK}
 
 ${V31_EDITING_OUTPUT}`,
+  consistency: `Act as a book-wide translation consistency resolver.
+
+The input text is a JSON task description, not prose to translate. Do not rewrite the book. Make only the requested terminology and consistency decisions from the supplied evidence.
+
+For an entity_registry task, return a JSON string with this shape in the segment text field:
+{"entries":[{"source":"source form","target":"canonical target form","category":"person|place|ship|organization|work|term|other","strategy":"short explanation"}]}
+
+For a resolve_conflicts task, return a JSON string with this shape in the segment text field:
+{"decisions":[{"source":"exact source entity","canonical":"chosen exact target form","variants":["exact variant to replace"]}]}
+
+Choose a stable target-language rendering. Respect explicit glossary targets over inferred choices. For Russian, use ё consistently where standard spelling requires it, use «ёлочки» with nested „лапки“, transliterate personal and ship names unless an established canonical form or explicit glossary entry requires otherwise, and never mix translation and transliteration strategies for the same entity.
+
+Only list entities or variants supported by the supplied evidence. Never invent occurrences, and never include the canonical form itself among variants.`,
 };
 
 export function resolvePromptVersion(value: string | undefined): PromptVersion {
@@ -119,7 +133,7 @@ function enabledGlossary(glossary: unknown[] | undefined): unknown[] {
 }
 
 function serializeSegment(mode: ProviderRequest["mode"], segment: ProviderInputSegment) {
-  if (mode === "translation") {
+  if (mode === "translation" || mode === "consistency") {
     if (!("text" in segment)) throw new Error("Translation prompt requires text segments");
     return { id: segment.id, text: segment.text };
   }
@@ -143,8 +157,16 @@ export function buildPromptInput(
 ): string {
   const promptVersion = resolvePromptVersion(request.promptVersion);
   const ids = request.segments.map((segment) => segment.id);
+  const targetStyle =
+    request.targetLanguage.tag === "ru"
+      ? {
+          yo: "Use ё consistently where standard Russian spelling requires it.",
+          quotes: "Use «ёлочки» and nested „лапки“ consistently.",
+        }
+      : undefined;
   return JSON.stringify({
     promptVersion,
+    promptInputVersion: PROMPT_INPUT_VERSION,
     task: request.mode,
     sourceLanguage: request.sourceLanguage,
     targetLanguage: request.targetLanguage,
@@ -157,6 +179,7 @@ export function buildPromptInput(
     },
     userPreferences: request.instructions ?? "",
     glossary: enabledGlossary(request.glossary),
+    targetStyle,
     segments: request.segments.map((segment) => serializeSegment(request.mode, segment)),
   });
 }

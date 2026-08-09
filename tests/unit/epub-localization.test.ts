@@ -19,10 +19,13 @@ describe("EPUB localization", () => {
   });
 
   it("sets HTML language attributes and only xml:lang on NCX", () => {
-    const html = parseXml(`<html><body/></html>`);
+    const html = parseXml(`<html><body><header lang="en" xml:lang="en"/></body></html>`);
     updateContentLanguage(html, "ru");
     expect(html.documentElement.getAttribute("lang")).toBe("ru");
     expect(html.documentElement.getAttribute("xml:lang")).toBe("ru");
+    const header = html.getElementsByTagName("header").item(0)!;
+    expect(header.getAttribute("lang")).toBe("ru");
+    expect(header.getAttribute("xml:lang")).toBe("ru");
 
     const ncx = parseXml(`<ncx><navMap/></ncx>`);
     updateContentLanguage(ncx, "de");

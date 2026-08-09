@@ -37,6 +37,11 @@ evaluated prompt independently of the translation pass. For the OpenAI Terra edi
 `BOOK_TRANSLATOR_EDITING_MODEL=gpt-5.6-terra` and
 `BOOK_TRANSLATOR_EDITING_PROMPT_VERSION=literary-v3.2.1`.
 
+External-provider runs also make up to two cached DeepSeek consistency requests: one builds a
+book-wide entity registry before translation, and one resolves detected variants after editing.
+The model returns decisions only; exact replacements are validated and applied by code. Mechanical
+quote and `ё` diagnostics are saved as `consistency-report.json` in the local job directory.
+
 Restart the server after changing `.env.local` or `.env`. The external-provider mode sends eligible book text to the configured service.
 
 ## Literary editor evaluation
@@ -55,6 +60,7 @@ To exercise corpus loading, reporting, and scoring without making external reque
 
 - EPUB archives are checked for unsafe paths, encryption, unsupported compression, and expansion limits before processing.
 - Translation and editing use separate provider profiles and exact segment identifiers.
+- Book-wide entity choices are cached and reused across retries; user glossary entries take priority.
 - Drafts and edits are stored in separate append-only journals.
 - The final build uses edited text only and is validated before output promotion.
 - The browser displays only sanitized job state and progress events.

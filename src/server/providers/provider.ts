@@ -16,7 +16,7 @@ export type ProviderLanguage = { tag: string; name: string };
 
 export type ProviderRequest = {
   profile: ProviderProfile;
-  mode: "translation" | "editing";
+  mode: "translation" | "editing" | "consistency";
   sourceLanguage: ProviderLanguage;
   targetLanguage: ProviderLanguage;
   segments: ProviderInputSegment[];

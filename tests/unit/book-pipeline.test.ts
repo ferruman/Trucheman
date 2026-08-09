@@ -87,6 +87,7 @@ describe("book pipeline instructions", () => {
     expect(packageXml).toMatch(/<dc:language>ru<\/dc:language>/);
     expect(chapter.documentElement.getAttribute("lang")).toBe("ru");
     expect(chapter.documentElement.getAttribute("xml:lang")).toBe("ru");
+    expect(chapter.getElementsByTagName("header").item(0)?.getAttribute("lang")).toBe("ru");
     expect(nav.documentElement.getAttribute("lang")).toBe("ru");
     expect(nav.documentElement.textContent).toContain("[translated] The call of Cthulhu");
     expect(nav.getElementsByTagName("a").item(0)?.getAttribute("href")).toBe("chapter.xhtml");

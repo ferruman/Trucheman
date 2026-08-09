@@ -16,6 +16,16 @@ import { LANGUAGES } from "../../shared/languages.js";
 import { runTwoPass } from "./job-runner.js";
 import type { PersistedJob } from "../domain/job.js";
 import { syncParentDirectory } from "../storage/atomic-file.js";
+import {
+  applyConsistencyDecisions,
+  buildConsistencyReport,
+  isGlossaryEntry,
+  mergeGlossaries,
+  resolveConsistencyConflicts,
+  resolveEntityRegistry,
+  type ConsistencyDocument,
+  type GlossaryEntry,
+} from "./consistency-service.js";
 
 export type PreparedDocument = {
   id: string;
@@ -111,6 +121,30 @@ export async function runPreparedBook(
   const instructions = job.instructions.trim();
   const sourceLanguage = providerLanguage(job.sourceLanguage),
     targetLanguage = providerLanguage(job.targetLanguage);
+  const consistencyErrors: string[] = [];
+  let generatedGlossary: GlossaryEntry[] = [];
+  if (useExternal) {
+    try {
+      generatedGlossary = await resolveEntityRegistry(
+        provider,
+        translationProfile,
+        sourceLanguage,
+        targetLanguage,
+        prepared.documents.map((document) => ({
+          id: document.id,
+          sourceSegments: document.segments,
+          editedSegments: [],
+        })),
+        root,
+        signal,
+      );
+    } catch (error) {
+      consistencyErrors.push(
+        `Entity registry unavailable: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+    }
+  }
+  const glossary = mergeGlossaries(job.glossary, generatedGlossary);
   let translated = 0,
     edited = 0;
   const result = await runTwoPass(batches, provider, {
@@ -120,7 +154,7 @@ export async function runPreparedBook(
     sourceLanguage,
     targetLanguage,
     instructions,
-    glossary: job.glossary,
+    glossary,
     signal,
     onProgress: async (stage) => {
       if (stage === "translation") translated++;
@@ -132,10 +166,53 @@ export async function runPreparedBook(
       });
     },
   });
+  const consistencyDocuments: ConsistencyDocument[] = prepared.documents.map((document) => ({
+    id: document.id,
+    sourceSegments: document.segments,
+    editedSegments: document.batches.flatMap((batch) => result.edits.get(batch.id) ?? []),
+  }));
+  const consistencyReport = buildConsistencyReport(
+    consistencyDocuments,
+    glossary.filter(isGlossaryEntry),
+  );
+  let decisions: Awaited<ReturnType<typeof resolveConsistencyConflicts>> = [];
+  let applied = 0;
+  if (useExternal && consistencyReport.entityEvidence.length) {
+    try {
+      decisions = await resolveConsistencyConflicts(
+        provider,
+        translationProfile,
+        sourceLanguage,
+        targetLanguage,
+        consistencyReport,
+        root,
+        signal,
+      );
+      applied = applyConsistencyDecisions(consistencyDocuments, decisions);
+    } catch (error) {
+      consistencyErrors.push(
+        `Consistency resolver unavailable: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+    }
+  }
+  await writeFile(
+    join(root, "consistency-report.json"),
+    JSON.stringify(
+      { ...consistencyReport, decisions, applied, errors: consistencyErrors },
+      null,
+      2,
+    ),
+  );
+  if (consistencyReport.warningCount || consistencyErrors.length) {
+    await update({
+      warnings: job.warnings + consistencyReport.warningCount + consistencyErrors.length,
+    });
+  }
   for (const document of prepared.documents) {
-    const values = new Map<string, string>();
-    for (const batch of document.batches)
-      for (const segment of result.edits.get(batch.id) ?? []) values.set(segment.id, segment.text);
+    const editedDocument = consistencyDocuments.find((candidate) => candidate.id === document.id);
+    const values = new Map(
+      editedDocument?.editedSegments.map((segment) => [segment.id, segment.text]) ?? [],
+    );
     const path = document.path,
       dom = parseXml(await readFile(path));
     reinsertText(dom, document.segments, values);
