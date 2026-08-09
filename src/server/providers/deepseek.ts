@@ -58,28 +58,54 @@ function normalizeResponseSegments(
         ];
   const inputFields = new Set(["id", "original", "source", "sourceText", "source_text"]);
 
-  return value.map((segment) => {
-    if (typeof segment !== "object" || segment === null || !("id" in segment)) return segment;
-    if ("text" in segment && typeof segment.text === "string") return segment;
-    const record = segment as Record<string, unknown>;
-    const preferred = preferredFields.find((field) => typeof record[field] === "string");
-    if (preferred) return { id: segment.id, text: record[preferred] };
+  const extractOutputText = (fieldValue: unknown, depth = 0): string | undefined => {
+    if (typeof fieldValue === "string") return fieldValue;
+    if (
+      depth >= 3 ||
+      typeof fieldValue !== "object" ||
+      fieldValue === null ||
+      Array.isArray(fieldValue)
+    ) {
+      return undefined;
+    }
+
+    const record = fieldValue as Record<string, unknown>;
+    for (const field of ["text", ...preferredFields]) {
+      if (!(field in record)) continue;
+      const nested = extractOutputText(record[field], depth + 1);
+      if (nested !== undefined) return nested;
+    }
 
     const candidates = Object.entries(record).filter(
-      ([field, fieldValue]) => !inputFields.has(field) && typeof fieldValue === "string",
+      ([field, nestedValue]) => !inputFields.has(field) && typeof nestedValue === "string",
     );
-    if (candidates.length === 1) {
-      return { id: segment.id, text: candidates[0][1] };
-    }
+    return candidates.length === 1 ? (candidates[0][1] as string) : undefined;
+  };
+
+  return value.map((segment) => {
+    if (typeof segment !== "object" || segment === null || !("id" in segment)) return segment;
+    const record = segment as Record<string, unknown>;
+    const text = extractOutputText(record);
+    if (text !== undefined) return { id: segment.id, text };
     return segment;
   }) as ProviderResponse["segments"];
+}
+
+function valueShape(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  if (typeof value !== "object") return typeof value;
+  return `object{${Object.keys(value).sort().join(",")}}`;
 }
 
 function responseFieldSummary(value: unknown): string | undefined {
   if (!Array.isArray(value)) return undefined;
   const first = value.find((segment) => typeof segment === "object" && segment !== null);
   if (!first) return undefined;
-  return Object.keys(first).sort().join(", ");
+  return Object.entries(first)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([field, fieldValue]) => `${field}:${valueShape(fieldValue)}`)
+    .join(", ");
 }
 
 export class DeepSeekProvider implements LanguageModelProvider {

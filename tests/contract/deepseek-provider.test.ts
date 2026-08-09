@@ -62,8 +62,11 @@ describe("DeepSeek provider", () => {
                   message: {
                     content: JSON.stringify({
                       segments: [
-                        { id: "s0001", original: "Unknown", edited_text: "Неизвестно" },
-                        { id: "s0002", original: "Part", polished: "Часть" },
+                        {
+                          id: "s0001",
+                          text: { edited_text: "Неизвестно" },
+                        },
+                        { id: "s0002", text: { value: "Часть" } },
                       ],
                     }),
                   },
