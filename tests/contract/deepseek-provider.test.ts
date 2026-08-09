@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DeepSeekProvider } from "../../src/server/providers/deepseek.js";
 
+const languages = {
+  sourceLanguage: { tag: "en", name: "English" },
+  targetLanguage: { tag: "ru", name: "Russian" },
+};
+
 describe("DeepSeek provider", () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -9,6 +14,7 @@ describe("DeepSeek provider", () => {
       new DeepSeekProvider().complete({
         profile: { name: "x", endpoint: "x", model: "x" },
         mode: "translation",
+        ...languages,
         segments: [],
       }),
     ).rejects.toMatchObject({ kind: "configuration" });
@@ -37,7 +43,8 @@ describe("DeepSeek provider", () => {
     const response = await new DeepSeekProvider().complete({
       profile: { name: "x", endpoint: "https://provider.test", model: "x", apiKey: "secret" },
       mode: "translation",
-      instructions: "Translate from English to Russian",
+      ...languages,
+      instructions: "Preserve formal dialogue",
       segments: [{ id: "document-3:a", text: "Hello" }],
     });
 
@@ -52,6 +59,9 @@ describe("DeepSeek provider", () => {
       segmentKeys: ["id", "text"],
       textType: "string",
     });
+    expect(input.sourceLanguage).toEqual({ tag: "en", name: "English" });
+    expect(input.targetLanguage).toEqual({ tag: "ru", name: "Russian" });
+    expect(input.userPreferences).toBe("Preserve formal dialogue");
     expect(input.segments).toEqual([{ id: "s0001", text: "Hello" }]);
     expect(response.segments).toEqual([{ id: "document-3:a", text: "Привет" }]);
   });
@@ -88,6 +98,7 @@ describe("DeepSeek provider", () => {
     const response = await new DeepSeekProvider().complete({
       profile: { name: "x", endpoint: "https://provider.test", model: "x", apiKey: "secret" },
       mode: "editing",
+      ...languages,
       segments: [
         { id: "document-3:0", original: "Unknown", draft: "Неизвестно" },
         { id: "document-3:1", original: "Part", draft: "Часть" },

@@ -1,6 +1,7 @@
 import type {
   LanguageModelProvider,
   ProviderInputSegment,
+  ProviderLanguage,
   ProviderProfile,
   ProviderSegment,
 } from "../providers/provider.js";
@@ -22,6 +23,7 @@ export async function editBatch(
   profile: ProviderProfile,
   original: ProviderSegment[],
   draft: ProviderSegment[],
+  languages: { sourceLanguage: ProviderLanguage; targetLanguage: ProviderLanguage },
   instructions = "",
   glossary: unknown[] = [],
   signal?: AbortSignal,
@@ -31,6 +33,7 @@ export async function editBatch(
     profile,
     "editing",
     buildEditingSegments(original, draft),
+    languages,
     instructions,
     glossary,
     3,

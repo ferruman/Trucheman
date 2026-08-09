@@ -8,12 +8,14 @@ export type ProviderProfile = {
 
 export type ProviderSegment = { id: string; text: string };
 export type ProviderInputSegment =
-  | ProviderSegment
-  | { id: string; original: string; draft: string };
+  ProviderSegment | { id: string; original: string; draft: string };
+export type ProviderLanguage = { tag: string; name: string };
 
 export type ProviderRequest = {
   profile: ProviderProfile;
   mode: "translation" | "editing";
+  sourceLanguage: ProviderLanguage;
+  targetLanguage: ProviderLanguage;
   segments: ProviderInputSegment[];
   instructions?: string;
   glossary?: unknown[];

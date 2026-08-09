@@ -30,6 +30,10 @@ describe("translation service", () => {
       { name: "test", endpoint: "local", model: "test" },
       "translation",
       segments,
+      {
+        sourceLanguage: { tag: "en", name: "English" },
+        targetLanguage: { tag: "ru", name: "Russian" },
+      },
       "",
       [],
       0,

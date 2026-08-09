@@ -2,6 +2,7 @@ import { MAX_BATCH_SEGMENTS } from "../epub/batcher.js";
 import type {
   LanguageModelProvider,
   ProviderInputSegment,
+  ProviderLanguage,
   ProviderProfile,
   ProviderResponse,
 } from "../providers/provider.js";
@@ -13,6 +14,7 @@ export async function processBatch(
   profile: ProviderProfile,
   mode: "translation" | "editing",
   segments: ProviderInputSegment[],
+  languages: { sourceLanguage: ProviderLanguage; targetLanguage: ProviderLanguage },
   instructions = "",
   glossary: unknown[] = [],
   maxRetries = 3,
@@ -25,7 +27,7 @@ export async function processBatch(
       attempts++;
       try {
         const result = await provider.complete(
-          { profile, mode, segments: chunk, instructions, glossary },
+          { profile, mode, segments: chunk, ...languages, instructions, glossary },
           signal,
         );
         return validateProviderResponse(result, chunk);
