@@ -95,7 +95,7 @@ For an entity_registry task, return a JSON string with this shape in the segment
 For a resolve_conflicts task, return a JSON string with this shape in the segment text field:
 {"decisions":[{"source":"exact source entity","canonical":"chosen exact target form","variants":["exact variant to replace"]}]}
 
-Choose a stable target-language rendering. Respect explicit glossary targets over inferred choices. For Russian, use ё consistently where standard spelling requires it, use «ёлочки» with nested „лапки“, transliterate personal and ship names unless an established canonical form or explicit glossary entry requires otherwise, and never mix translation and transliteration strategies for the same entity.
+Choose a stable target-language rendering. Respect explicit glossary targets over inferred choices. For Russian, use ё consistently where standard spelling requires it, use «ёлочки» with nested „лапки“, transliterate personal and ship names unless an established canonical form or explicit glossary entry requires otherwise, and never mix translation and transliteration strategies for the same entity. Render English street names consistently as a transliterated name plus -стрит (for example, Thomas Street → Томас-стрит) unless an established canonical form requires otherwise.
 
 Only list entities or variants supported by the supplied evidence. Never invent occurrences, and never include the canonical form itself among variants.`,
 };

@@ -9,7 +9,7 @@ import type {
   ProviderSegment,
 } from "../providers/provider.js";
 
-const CONSISTENCY_VERSION = 1;
+const CONSISTENCY_VERSION = 2;
 
 export type ConsistencyDocument = {
   id: string;
@@ -84,6 +84,8 @@ const resolutionSchema = z.object({
 });
 
 const sourceNamePattern = /(?<![\p{L}\p{N}])\p{Lu}[\p{L}\p{M}'’.-]{2,}/gu;
+const sourcePlacePattern =
+  /(?<![\p{L}\p{N}])\p{Lu}[\p{L}\p{M}'’-]{2,}\s+(?:Street|St\.|Avenue|Ave\.|Road|Rd\.|Lane|Square|Place)(?![\p{L}\p{N}])/gu;
 const wordPattern = /[\p{L}\p{M}]*[её][\p{L}\p{M}]*/giu;
 const sourceStopWords = new Set([
   "the",
@@ -115,6 +117,15 @@ const sourceStopWords = new Set([
   "doctor",
   "mister",
   "missus",
+  "street",
+  "st",
+  "avenue",
+  "ave",
+  "road",
+  "rd",
+  "lane",
+  "square",
+  "place",
 ]);
 
 function clipped(value: string, max = 320) {
@@ -151,25 +162,47 @@ export function extractRepeatedSourceEntities(documents: ConsistencyDocument[]):
       source: string;
       occurrences: number;
       nonInitialOccurrences: number;
+      isolatedOccurrences: number;
+      highConfidence: boolean;
       contexts: Array<{ source: string; target?: string }>;
     }
   >();
   for (const document of documents) {
     const edited = new Map(document.editedSegments.map((segment) => [segment.id, segment.text]));
     for (const segment of document.sourceSegments) {
-      for (const match of segment.text.matchAll(sourceNamePattern)) {
-        const source = match[0].replace(/[.-]+$/u, "").trim();
+      const candidates = [
+        ...[...segment.text.matchAll(sourcePlacePattern)].map((match) => ({
+          match,
+          highConfidence: true,
+        })),
+        ...[...segment.text.matchAll(sourceNamePattern)].map((match) => ({
+          match,
+          highConfidence: false,
+        })),
+      ];
+      for (const { match, highConfidence } of candidates) {
+        const source = match[0]
+          .replace(/[.-]+$/u, "")
+          .trim()
+          .replace(/\s+/gu, " ");
         const key = source.toLocaleLowerCase();
         if (sourceStopWords.has(key)) continue;
         const entry = found.get(key) ?? {
           source,
           occurrences: 0,
           nonInitialOccurrences: 0,
+          isolatedOccurrences: 0,
+          highConfidence: false,
           contexts: [],
         };
         entry.occurrences++;
+        entry.highConfidence ||= highConfidence;
         const preceding = segment.text.slice(0, match.index).trimEnd().at(-1);
         if (preceding && !/[.!?]/u.test(preceding)) entry.nonInitialOccurrences++;
+        const withoutCandidate = `${segment.text.slice(0, match.index)}${segment.text.slice(
+          (match.index ?? 0) + match[0].length,
+        )}`.replace(/[\s"'«»„“”()[\].,:;!?—-]/gu, "");
+        if (!withoutCandidate) entry.isolatedOccurrences++;
         if (entry.contexts.length < 8) {
           entry.contexts.push({ source: clipped(segment.text), target: edited.get(segment.id) });
         }
@@ -178,13 +211,111 @@ export function extractRepeatedSourceEntities(documents: ConsistencyDocument[]):
     }
   }
   return [...found.values()]
-    .filter((entry) => entry.occurrences >= 2 && entry.nonInitialOccurrences > 0)
-    .map(({ nonInitialOccurrences: _nonInitialOccurrences, ...entry }) => entry)
+    .filter(
+      (entry) =>
+        entry.highConfidence ||
+        (entry.occurrences >= 2 &&
+          (entry.nonInitialOccurrences > 0 || entry.isolatedOccurrences > 0)),
+    )
+    .map(
+      ({
+        nonInitialOccurrences: _nonInitialOccurrences,
+        isolatedOccurrences: _isolatedOccurrences,
+        highConfidence: _highConfidence,
+        ...entry
+      }) => entry,
+    )
     .sort(
       (left, right) =>
         right.occurrences - left.occurrences || left.source.localeCompare(right.source),
     )
     .slice(0, 250);
+}
+
+function replaceCounted(
+  value: string,
+  pattern: RegExp,
+  replacement: (...values: string[]) => string,
+) {
+  let count = 0;
+  const text = value.replace(pattern, (...values: string[]) => {
+    count++;
+    return replacement(...values);
+  });
+  return { text, count };
+}
+
+export function normalizeRussianConsistencyMechanics(documents: ConsistencyDocument[]) {
+  let applied = 0;
+  const rules: Array<[RegExp, (...values: string[]) => string]> = [
+    [
+      /(\d{1,3})\s*°\s*(\d{1,2})\s*[′´']/gu,
+      (_match, degrees, minutes) => `${degrees}° ${minutes}′`,
+    ],
+    [/"\s*([^"\n]{1,240}?)\s*»/gu, (_match, content) => `«${content.trim()}»`],
+    [/«\s*([^«\n]{1,240}?)\s*"/gu, (_match, content) => `«${content.trim()}»`],
+    [/"\s*([^"\n]{1,240}?)\s*"/gu, (_match, content) => `«${content.trim()}»`],
+    [/«[\t ]+/gu, () => "«"],
+    [/[\t ]+»/gu, () => "»"],
+    [/«\s*«/gu, () => "«"],
+    [/»\s*»/gu, () => "»"],
+  ];
+  for (const document of documents) {
+    const lengths = document.editedSegments.map((segment) => segment.text.length);
+    const joined = document.editedSegments.map((segment) => segment.text).join("");
+    const straightQuotes = replaceCounted(joined, /"/gu, (_match, offset) => {
+      const index = Number(offset);
+      const previous = joined[index - 1] ?? "";
+      const nextNonSpace = joined.slice(index + 1).match(/\S/u)?.[0] ?? "";
+      const opening =
+        (!previous || /\s|[([{—:;,]/u.test(previous)) && /[\p{L}\p{N}]/u.test(nextNonSpace);
+      return opening ? "«" : "»";
+    });
+    applied += straightQuotes.count;
+    let position = 0;
+    for (const [index, segment] of document.editedSegments.entries()) {
+      segment.text = straightQuotes.text.slice(position, position + lengths[index]);
+      position += lengths[index];
+    }
+    const unmatchedOpenings: number[] = [];
+    let unmatchedClosings = 0;
+    for (const [index, character] of [...straightQuotes.text].entries()) {
+      if (character === "«") unmatchedOpenings.push(index);
+      else if (character === "»") {
+        if (unmatchedOpenings.length) unmatchedOpenings.pop();
+        else unmatchedClosings++;
+      }
+    }
+    if (unmatchedOpenings.length === 1 && unmatchedClosings === 0) {
+      let openingSegment = -1;
+      let boundary = 0;
+      for (const [index, length] of lengths.entries()) {
+        boundary += length;
+        if (unmatchedOpenings[0] < boundary) {
+          openingSegment = index;
+          break;
+        }
+      }
+      const inlineContent = document.editedSegments[openingSegment + 1];
+      if (
+        inlineContent &&
+        inlineContent.text.trim().length > 0 &&
+        inlineContent.text.length <= 200 &&
+        !/[«»]/u.test(inlineContent.text)
+      ) {
+        inlineContent.text += "»";
+        applied++;
+      }
+    }
+    for (const segment of document.editedSegments) {
+      for (const [pattern, replacement] of rules) {
+        const result = replaceCounted(segment.text, pattern, replacement);
+        segment.text = result.text;
+        applied += result.count;
+      }
+    }
+  }
+  return applied;
 }
 
 function quoteReport(text: string) {
@@ -384,7 +515,12 @@ export function applyConsistencyDecisions(
     const edited = new Map(document.editedSegments.map((segment) => [segment.id, segment.text]));
     for (const sourceSegment of document.sourceSegments) {
       for (const decision of decisions) {
-        if (!sourceSegment.text.toLocaleLowerCase().includes(decision.source.toLocaleLowerCase())) {
+        if (
+          !sourceSegment.text
+            .replace(/\s+/gu, " ")
+            .toLocaleLowerCase()
+            .includes(decision.source.toLocaleLowerCase())
+        ) {
           continue;
         }
         const values = alignedTargets.get(decision.source.toLocaleLowerCase()) ?? [];

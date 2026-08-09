@@ -7,6 +7,7 @@ import { makeBatches, type Batch } from "../epub/batcher.js";
 import { extractTextSegments, reinsertText, type TextSegment } from "../epub/text-segments.js";
 import { parseXml, serializeXml } from "../epub/xml-dom.js";
 import { buildEpub } from "../epub/build.js";
+import { auditEpubArchive } from "../epub/consistency-audit.js";
 import { resolveEpubPath, validateEpubArchive } from "../epub/validate.js";
 import { updateContentLanguage, updatePackageLanguage } from "../epub/localization.js";
 import { FakeProvider } from "../providers/fake-provider.js";
@@ -22,6 +23,7 @@ import {
   buildConsistencyReport,
   isGlossaryEntry,
   mergeGlossaries,
+  normalizeRussianConsistencyMechanics,
   resolveConsistencyConflicts,
   resolveEntityRegistry,
   type ConsistencyDocument,
@@ -197,20 +199,24 @@ export async function runPreparedBook(
     sourceSegments: document.segments,
     editedSegments: document.batches.flatMap((batch) => result.edits.get(batch.id) ?? []),
   }));
-  const consistencyReport = buildConsistencyReport(
+  const mechanicalApplied =
+    targetLanguage.tag.toLocaleLowerCase().split("-")[0] === "ru"
+      ? normalizeRussianConsistencyMechanics(consistencyDocuments)
+      : 0;
+  const resolverReport = buildConsistencyReport(
     consistencyDocuments,
     glossary.filter(isGlossaryEntry),
   );
   let decisions: Awaited<ReturnType<typeof resolveConsistencyConflicts>> = [];
   let applied = 0;
-  if (useExternal && consistencyReport.entityEvidence.length) {
+  if (useExternal && resolverReport.entityEvidence.length) {
     try {
       decisions = await resolveConsistencyConflicts(
         provider,
         consistencyProfile,
         sourceLanguage,
         targetLanguage,
-        consistencyReport,
+        resolverReport,
         root,
         signal,
       );
@@ -221,10 +227,20 @@ export async function runPreparedBook(
       );
     }
   }
+  const consistencyReport = buildConsistencyReport(
+    consistencyDocuments,
+    glossary.filter(isGlossaryEntry),
+  );
   await writeFile(
     join(root, "consistency-report.json"),
     JSON.stringify(
-      { ...consistencyReport, decisions, applied, errors: consistencyErrors },
+      {
+        ...consistencyReport,
+        decisions,
+        applied,
+        mechanicalApplied,
+        errors: consistencyErrors,
+      },
       null,
       2,
     ),
@@ -261,6 +277,12 @@ export async function runPreparedBook(
     }
     const report = await validateEpubArchive(temporary);
     if (!report.ok) throw new Error(`Output validation failed: ${report.errors.join(", ")}`);
+    const outputAudit = await auditEpubArchive(temporary, targetLanguage.tag);
+    await writeFile(
+      join(root, "output-consistency-audit.json"),
+      JSON.stringify(outputAudit, null, 2),
+    );
+    report.warnings.push(...outputAudit.warnings);
     await rename(temporary, output);
     await syncParentDirectory(output);
     return report;

@@ -6,6 +6,7 @@ import {
   buildConsistencyReport,
   extractRepeatedSourceEntities,
   mergeGlossaries,
+  normalizeRussianConsistencyMechanics,
   resolveEntityRegistry,
   type ConsistencyDocument,
 } from "../../src/server/jobs/consistency-service.js";
@@ -54,6 +55,37 @@ describe("book-wide consistency", () => {
     );
   });
 
+  it("keeps repeated names isolated by EPUB markup", () => {
+    const values: ConsistencyDocument[] = [
+      {
+        id: "isolated",
+        sourceSegments: [
+          sourceSegment("isolated:0", "Vigilant"),
+          sourceSegment("isolated:1", "Vigilant"),
+        ],
+        editedSegments: [],
+      },
+    ];
+
+    expect(extractRepeatedSourceEntities(values)).toContainEqual(
+      expect.objectContaining({ source: "Vigilant", occurrences: 2 }),
+    );
+  });
+
+  it("extracts high-confidence street names even when they occur once", () => {
+    const values: ConsistencyDocument[] = [
+      {
+        id: "streets",
+        sourceSegments: [sourceSegment("streets:0", "He lived in Waterman\nStreet.")],
+        editedSegments: [],
+      },
+    ];
+
+    expect(extractRepeatedSourceEntities(values)).toContainEqual(
+      expect.objectContaining({ source: "Waterman Street", occurrences: 1 }),
+    );
+  });
+
   it("reports quote and yo inconsistencies without rewriting prose", () => {
     const report = buildConsistencyReport(documents());
 
@@ -63,6 +95,71 @@ describe("book-wide consistency", () => {
       variants: ["мертвый", "мёртвый"],
     });
     expect(report.warningCount).toBeGreaterThan(0);
+  });
+
+  it("normalizes Russian quote mechanics and coordinate minute marks", () => {
+    const values: ConsistencyDocument[] = [
+      {
+        id: "mechanics",
+        sourceSegments: [],
+        editedSegments: [
+          {
+            id: "mechanics:0",
+            text: '« Ктулху » и « Р’льех "; " Ктулху фхтагн ". 49° 51´, 47°9\'.',
+          },
+        ],
+      },
+    ];
+
+    expect(normalizeRussianConsistencyMechanics(values)).toBeGreaterThan(0);
+    expect(values[0].editedSegments[0].text).toBe(
+      "«Ктулху» и «Р’льех»; «Ктулху фхтагн». 49° 51′, 47° 9′.",
+    );
+    expect(buildConsistencyReport(values).documents[0].quotes).toMatchObject({
+      balanced: true,
+      straight: 0,
+    });
+  });
+
+  it("normalizes quote pairs split across XHTML text nodes", () => {
+    const values: ConsistencyDocument[] = [
+      {
+        id: "split-quotes",
+        sourceSegments: [],
+        editedSegments: [
+          { id: "split-quotes:0", text: 'Он услышал: "' },
+          { id: "split-quotes:1", text: "Ктулху фхтагн" },
+          { id: "split-quotes:2", text: '", "' },
+          { id: "split-quotes:3", text: "Р’льех" },
+          { id: "split-quotes:4", text: '".' },
+        ],
+      },
+    ];
+
+    expect(normalizeRussianConsistencyMechanics(values)).toBe(4);
+    expect(values[0].editedSegments.map((segment) => segment.text).join("")).toBe(
+      "Он услышал: «Ктулху фхтагн», «Р’льех».",
+    );
+    expect(buildConsistencyReport(values).documents[0].quotes.balanced).toBe(true);
+  });
+
+  it("closes a dangling guillemet around a short inline title node", () => {
+    const values: ConsistencyDocument[] = [
+      {
+        id: "inline-title",
+        sourceSegments: [],
+        editedSegments: [
+          { id: "inline-title:0", text: "Электронная книга «" },
+          { id: "inline-title:1", text: "Зов Ктулху" },
+          { id: "inline-title:2", text: " для чтения." },
+        ],
+      },
+    ];
+
+    expect(normalizeRussianConsistencyMechanics(values)).toBe(1);
+    expect(values[0].editedSegments.map((segment) => segment.text).join("")).toBe(
+      "Электронная книга «Зов Ктулху» для чтения.",
+    );
   });
 
   it("flags a long document region that unexpectedly stops using ё", () => {

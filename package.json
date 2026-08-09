@@ -17,6 +17,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
+    "audit:epub": "node --import tsx/esm src/server/evals/run-epub-consistency-audit.ts",
     "eval:literary": "node --import tsx/esm src/server/evals/run-literary-editor-eval.ts"
   },
   "dependencies": {
