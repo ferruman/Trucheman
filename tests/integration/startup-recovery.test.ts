@@ -22,6 +22,7 @@ describe("startup recovery", () =>
       documents: [],
       instructions: "",
       glossary: [],
+      qualityMode: "standard",
     });
     await recoverActiveJobs(repo);
     expect((await repo.get("12345678-1234-4234-8234-123456789012")).status).toBe("paused");

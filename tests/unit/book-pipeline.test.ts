@@ -42,6 +42,7 @@ describe("book pipeline instructions", () => {
       documents: [],
       instructions: "",
       glossary: [],
+      qualityMode: "standard",
     };
     await runPreparedBook(root, job, async () => undefined);
     const firstDrafts = await readFile(join(root, "drafts.ndjson"), "utf8"),
@@ -74,6 +75,7 @@ describe("book pipeline instructions", () => {
       documents: [],
       instructions: "",
       glossary: [],
+      qualityMode: "standard",
     };
 
     await runPreparedBook(root, job, async () => undefined);
@@ -85,6 +87,7 @@ describe("book pipeline instructions", () => {
     const ncx = parseXml(await readFile(join(extracted, "OEBPS/toc.ncx"), "utf8"));
 
     expect(packageXml).toMatch(/<dc:language>ru<\/dc:language>/);
+    expect(parseXml(packageXml).documentElement.getAttribute("xml:lang")).toBe("ru");
     expect(chapter.documentElement.getAttribute("lang")).toBe("ru");
     expect(chapter.documentElement.getAttribute("xml:lang")).toBe("ru");
     expect(chapter.getElementsByTagName("header").item(0)?.getAttribute("lang")).toBe("ru");
@@ -94,5 +97,18 @@ describe("book pipeline instructions", () => {
     expect(ncx.documentElement.getAttribute("xml:lang")).toBe("ru");
     expect(ncx.documentElement.textContent).toContain("[translated] The CALL of CTHULHU");
     expect(ncx.getElementsByTagName("content").item(0)?.getAttribute("src")).toBe("chapter.xhtml");
+
+    const outputAudit = JSON.parse(
+      await readFile(join(root, "output-consistency-audit.json"), "utf8"),
+    );
+    expect(outputAudit.checks.language.packageLanguage).toBe("ru");
+    expect(outputAudit.checks.language.documents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ lang: "ru", xmlLang: "ru", matches: true }),
+      ]),
+    );
+    expect(outputAudit.warnings).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/language/i)]),
+    );
   });
 });

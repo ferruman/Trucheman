@@ -2,6 +2,7 @@ import type { ProviderInputSegment, ProviderRequest } from "./provider.js";
 
 export const PROMPT_VERSION = "literary-v3.1";
 export const PROMPT_INPUT_VERSION = "structured-v2";
+export const QUALITY_PROMPT_VERSION = "selective-quality-v1";
 export const PROMPT_VERSIONS = [PROMPT_VERSION, "literary-v3.2.1"] as const;
 export type PromptVersion = (typeof PROMPT_VERSIONS)[number];
 
@@ -94,6 +95,35 @@ Keep draft wording only when it is both faithful to the original and natural, id
 ${NATIVE_WRITER_CHECK}
 
 ${V31_EDITING_OUTPUT}`,
+  audit: `Act as a conservative literary translation quality judge.
+
+Inspect each original, initialTranslation, and editedTranslation. Diagnose the editedTranslation; do not rewrite it. Use neighboring segments in the same request only as context.
+
+Report only concrete defects that justify another paid editing call:
+- a semantic error, omission, addition, or lost ambiguity relative to the original;
+- source-language interference, including calqued vocabulary, metaphor, syntax, or nominal structure;
+- objectively unnatural target-language grammar, government, collocation, idiom, or reference;
+- a context error or glossary inconsistency;
+- a clear regression where the initialTranslation was better than the editedTranslation.
+
+Do not flag a passage merely because another stylistic wording is possible or smoother. Prefer no issue when the editedTranslation is faithful, natural, and stylistically appropriate. Never invent a span: every span must be copied exactly from editedTranslation.
+
+For each segment, put a JSON object encoded as a string in text:
+{"issues":[{"span":"exact suspicious span","type":"semantic_error|source_language_interference|unnatural_language|context_error|glossary_inconsistency|editor_regression","severity":"medium|high","reason":"concise concrete reason"}]}
+
+Example for a clean segment:
+{"segments":[{"id":"s0001","text":"{\\"issues\\":[]}"}]}
+
+Use an empty issues array when no repair is warranted. Do not report low-severity polish, alternatives, rewritten text, or hidden reasoning.`,
+  repair: `Act as a targeted senior literary translation repairer.
+
+Each segment contains the original, initialTranslation, editedTranslation, and a validated list of medium/high issues. Return a corrected final translation.
+
+Fix every listed issue while preserving the editedTranslation everywhere else. Prefer the edited wording whenever it remains faithful, natural, and stylistically appropriate. You may change nearby words only when grammar or coherence requires it. Do not rewrite passages merely to make them different or smoother. A stylistic alternative is not by itself an improvement.
+
+Use the original to protect meaning and authorial effect, the initialTranslation as a possible fallback when the editor regressed, neighboring request segments as context, and the glossary as binding terminology guidance.
+
+Output only the final repaired wording in text. Do not output issue labels, alternatives, explanations, or reasoning.`,
   consistency: `Act as a book-wide translation consistency resolver.
 
 The input text is a JSON task description, not prose to translate. Do not rewrite the book. Make only the requested terminology and consistency decisions from the supplied evidence.
@@ -117,7 +147,19 @@ export function resolvePromptVersion(value: string | undefined): PromptVersion {
   return version as PromptVersion;
 }
 
-function modeRules(mode: ProviderRequest["mode"], promptVersion: PromptVersion): string {
+export function promptVersionForMode(
+  mode: ProviderRequest["mode"],
+  value: string | undefined,
+): PromptVersion | typeof QUALITY_PROMPT_VERSION {
+  return mode === "audit" || mode === "repair"
+    ? QUALITY_PROMPT_VERSION
+    : resolvePromptVersion(value);
+}
+
+function modeRules(
+  mode: ProviderRequest["mode"],
+  promptVersion: PromptVersion | typeof QUALITY_PROMPT_VERSION,
+): string {
   const rules = MODE_RULES[mode];
   if (mode !== "editing" || promptVersion === PROMPT_VERSION) return rules;
   return rules.replace(
@@ -126,9 +168,13 @@ function modeRules(mode: ProviderRequest["mode"], promptVersion: PromptVersion):
   );
 }
 
+function baseLanguageTag(tag: string) {
+  return tag.toLocaleLowerCase().split("-")[0];
+}
+
 function targetLanguageRules(targetLanguage: ProviderRequest["targetLanguage"] | undefined) {
   if (!targetLanguage) return "";
-  const baseTag = targetLanguage.tag.toLocaleLowerCase().split("-")[0];
+  const baseTag = baseLanguageTag(targetLanguage.tag);
   const rules = TARGET_LANGUAGE_RULES[baseTag];
   return rules ? `\n\nTarget-language rules for ${targetLanguage.name}:\n${rules}` : "";
 }
@@ -137,7 +183,7 @@ export function buildPrompt(
   request: Pick<ProviderRequest, "mode" | "promptVersion"> &
     Partial<Pick<ProviderRequest, "targetLanguage">>,
 ): string {
-  const promptVersion = resolvePromptVersion(request.promptVersion);
+  const promptVersion = promptVersionForMode(request.mode, request.promptVersion);
   return `${COMMON_RULES}\n\nTask: ${modeRules(request.mode, promptVersion)}${targetLanguageRules(request.targetLanguage)}\n\n${OUTPUT_CONTRACT}`;
 }
 
@@ -155,6 +201,31 @@ function serializeSegment(mode: ProviderRequest["mode"], segment: ProviderInputS
   if (mode === "translation" || mode === "consistency") {
     if (!("text" in segment)) throw new Error("Translation prompt requires text segments");
     return { id: segment.id, text: segment.text };
+  }
+  if (mode === "audit" || mode === "repair") {
+    if (
+      !("original" in segment) ||
+      !("initialTranslation" in segment) ||
+      !("editedTranslation" in segment)
+    ) {
+      throw new Error(
+        `${mode === "audit" ? "Audit" : "Repair"} prompt requires translation history`,
+      );
+    }
+    const history = {
+      id: segment.id,
+      original: segment.original,
+      initialTranslation: segment.initialTranslation,
+      editedTranslation: segment.editedTranslation,
+    };
+    if (mode === "audit") return history;
+    if (!("issues" in segment)) throw new Error("Repair prompt requires validated issues");
+    return {
+      ...history,
+      contextBefore: segment.contextBefore,
+      contextAfter: segment.contextAfter,
+      issues: segment.issues,
+    };
   }
   if (!("original" in segment) || !("draft" in segment)) {
     throw new Error("Editing prompt requires separate original and draft fields");
@@ -174,10 +245,10 @@ export function buildPromptInput(
     | "promptVersion"
   >,
 ): string {
-  const promptVersion = resolvePromptVersion(request.promptVersion);
+  const promptVersion = promptVersionForMode(request.mode, request.promptVersion);
   const ids = request.segments.map((segment) => segment.id);
   const targetStyle =
-    request.targetLanguage.tag === "ru"
+    baseLanguageTag(request.targetLanguage.tag) === "ru"
       ? {
           yo: "Use ё consistently where standard Russian spelling requires it.",
           quotes: "Use «ёлочки» and nested „лапки“ consistently.",

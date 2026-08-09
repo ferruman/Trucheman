@@ -118,6 +118,47 @@ describe("provider prompt contract", () => {
     expect(prompt).toContain("Do not output the audit, labels, alternatives, explanations");
   });
 
+  it("keeps quality audit diagnostic and repair targeted", () => {
+    const auditSegment = {
+      id: "s1",
+      original: "Piecing together of dissociated knowledge",
+      initialTranslation: "Соединение разрознённых знаний",
+      editedTranslation: "Соединение разрознённых знаний",
+    };
+    const auditPrompt = buildPrompt({ mode: "audit" });
+    const auditPayload = JSON.parse(
+      buildPromptInput({ mode: "audit", ...languages, segments: [auditSegment] }),
+    );
+    const repairPrompt = buildPrompt({ mode: "repair" });
+    const repairPayload = JSON.parse(
+      buildPromptInput({
+        mode: "repair",
+        ...languages,
+        segments: [
+          {
+            ...auditSegment,
+            issues: [
+              {
+                span: auditSegment.editedTranslation,
+                type: "source_language_interference",
+                severity: "medium" as const,
+                reason: "Source-shaped nominal construction",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(auditPrompt).toContain("do not rewrite it");
+    expect(auditPrompt).toContain("Do not flag a passage merely because another stylistic wording");
+    expect(auditPayload.promptVersion).toBe("selective-quality-v1");
+    expect(auditPayload.segments[0]).toEqual(auditSegment);
+    expect(repairPrompt).toContain("Fix every listed issue");
+    expect(repairPrompt).toContain("Do not rewrite passages merely to make them different");
+    expect(repairPayload.segments[0].issues).toHaveLength(1);
+  });
+
   it("adds target-language rules only for their matching language", () => {
     const russianPrompt = buildPrompt({
       mode: "consistency",
@@ -134,6 +175,34 @@ describe("provider prompt contract", () => {
     expect(frenchPrompt).not.toContain("Russian rules");
     expect(frenchPrompt).not.toContain("Thomas Street → Томас-стрит");
     expect(frenchPrompt).not.toContain("Use ё consistently");
+  });
+
+  it("normalizes regional and case-variant tags for structured target style", () => {
+    for (const tag of ["ru", "ru-RU", "RU-ru"]) {
+      const payload = JSON.parse(
+        buildPromptInput({
+          mode: "translation",
+          sourceLanguage: languages.sourceLanguage,
+          targetLanguage: { tag, name: "Russian" },
+          segments: [{ id: "s1", text: "Hello" }],
+        }),
+      );
+
+      expect(payload.targetStyle, tag).toEqual({
+        yo: "Use ё consistently where standard Russian spelling requires it.",
+        quotes: "Use «ёлочки» and nested „лапки“ consistently.",
+      });
+    }
+
+    const frenchPayload = JSON.parse(
+      buildPromptInput({
+        mode: "translation",
+        sourceLanguage: languages.sourceLanguage,
+        targetLanguage: { tag: "fr-FR", name: "French" },
+        segments: [{ id: "s1", text: "Hello" }],
+      }),
+    );
+    expect(frenchPayload.targetStyle).toBeUndefined();
   });
 
   it("enforces exact response IDs", () => {

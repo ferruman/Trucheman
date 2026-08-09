@@ -24,6 +24,7 @@ export function NewJobPage() {
   const [target, setTarget] = useState("ru");
   const [file, setFile] = useState<File>();
   const [instructions, setInstructions] = useState("");
+  const [qualityMode, setQualityMode] = useState<"standard" | "high">("standard");
   const [glossary, setGlossary] = useState<GlossaryDraft[]>([]);
   const [createdJobId, setCreatedJobId] = useState("");
   const [error, setError] = useState("");
@@ -32,6 +33,7 @@ export function NewJobPage() {
   async function prepare(jobId: string, selectedFile: File) {
     await jobActions.configure(jobId, {
       instructions,
+      qualityMode,
       glossary: glossary.map((entry, index) => ({
         ...entry,
         id: `glossary-${index + 1}`,
@@ -141,6 +143,21 @@ export function NewJobPage() {
               </option>
             ))}
           </select>
+        </label>
+        <label>
+          Quality mode
+          <select
+            disabled={busy}
+            value={qualityMode}
+            onChange={(event) => setQualityMode(event.target.value as "standard" | "high")}
+          >
+            <option value="standard">Standard — translation and literary edit</option>
+            <option value="high">High — audit and selective repair</option>
+          </select>
+          <small className="field-help">
+            High quality audits every edited segment, then pays for another model call only for
+            segments with a concrete medium or high-severity defect.
+          </small>
         </label>
         <section className="glossary-editor" aria-labelledby="glossary-heading">
           <div>

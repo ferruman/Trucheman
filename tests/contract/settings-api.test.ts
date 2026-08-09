@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { profilesView, resolveProfiles } from "../../src/server/config/profiles.js";
+import {
+  defaultEditingPromptVersion,
+  profilesView,
+  resolveProfiles,
+} from "../../src/server/config/profiles.js";
 
 describe("settings API boundary", () => {
   it("reports endpoint and model but never the credential itself", () => {
@@ -36,5 +40,11 @@ describe("settings API boundary", () => {
     const profiles = resolveProfiles({ BOOK_TRANSLATOR_PROVIDER: "deterministic" });
     expect(profiles.useExternal).toBe(false);
     expect(profilesView(profiles).provider).toBe("deterministic");
+  });
+
+  it("selects the evaluated editor prompt for Terra without changing other model defaults", () => {
+    expect(defaultEditingPromptVersion("gpt-5.6-terra")).toBe("literary-v3.2.1");
+    expect(defaultEditingPromptVersion("openai/gpt-5.6-terra")).toBe("literary-v3.2.1");
+    expect(defaultEditingPromptVersion("deepseek-v4-flash")).toBeUndefined();
   });
 });

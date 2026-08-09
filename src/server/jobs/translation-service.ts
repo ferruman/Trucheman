@@ -4,6 +4,7 @@ import type {
   ProviderInputSegment,
   ProviderLanguage,
   ProviderProfile,
+  ProviderRequest,
   ProviderResponse,
 } from "../providers/provider.js";
 import { qualityWarnings, validateProviderResponse } from "../providers/response-validator.js";
@@ -12,7 +13,7 @@ import { abortableDelay, retryDecision } from "../providers/retry-policy.js";
 export async function processBatch(
   provider: LanguageModelProvider,
   profile: ProviderProfile,
-  mode: "translation" | "editing",
+  mode: ProviderRequest["mode"],
   segments: ProviderInputSegment[],
   languages: { sourceLanguage: ProviderLanguage; targetLanguage: ProviderLanguage },
   instructions = "",

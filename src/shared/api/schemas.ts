@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { JOB_STAGES, JOB_STATUSES } from "../domain/job.js";
+import { JOB_STAGES, JOB_STATUSES, QUALITY_MODES } from "../domain/job.js";
 import { LANGUAGES } from "../languages.js";
 export const languageSchema = z.enum(LANGUAGES.map((x) => x.tag) as [string, ...string[]]);
 export const jobStatusSchema = z.enum(JOB_STATUSES);
@@ -22,6 +22,7 @@ export const jobViewSchema = z.object({
   updatedAt: z.string(),
   currentDocument: z.string().optional(),
   warnings: z.number().int().nonnegative(),
+  qualityMode: z.enum(QUALITY_MODES),
 });
 export const glossaryEntrySchema = z.object({
   id: z.string(),

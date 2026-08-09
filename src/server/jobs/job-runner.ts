@@ -1,16 +1,29 @@
 import { createHash } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import { appendJournal, readJournal } from "../storage/ndjson-journal.js";
 import type {
   LanguageModelProvider,
   ProviderInputSegment,
   ProviderLanguage,
   ProviderProfile,
+  ProviderRequest,
   ProviderSegment,
 } from "../providers/provider.js";
-import { PROMPT_INPUT_VERSION, PROMPT_VERSION } from "../providers/prompts.js";
+import { PROMPT_INPUT_VERSION, promptVersionForMode } from "../providers/prompts.js";
 import type { Batch } from "../epub/batcher.js";
 import { processBatch } from "./translation-service.js";
 import { buildEditingSegments, editBatch } from "./editing-service.js";
+import {
+  applySelectiveRepairs,
+  auditBatch,
+  buildQualityAuditSegments,
+  buildRepairSegments,
+  parseQualityFindings,
+  repairBatch,
+  type QualityFinding,
+} from "./quality-service.js";
+
+export type RunnerStage = "translation" | "editing" | "audit" | "repair";
 export type RunnerOptions = {
   root: string;
   translationProfile: ProviderProfile;
@@ -19,7 +32,8 @@ export type RunnerOptions = {
   targetLanguage: ProviderLanguage;
   instructions?: string;
   glossary?: unknown[];
-  onProgress?: (stage: "translation" | "editing", batch: Batch) => Promise<void> | void;
+  qualityMode?: "standard" | "high";
+  onProgress?: (stage: RunnerStage, batch: Batch) => Promise<void> | void;
   signal?: AbortSignal;
 };
 type Checkpoint = { batchId: string; segments: ProviderSegment[]; checkpointKey?: string };
@@ -33,7 +47,7 @@ function checkpointMap(records: Checkpoint[]) {
 }
 
 function checkpointKey(
-  mode: "translation" | "editing",
+  mode: ProviderRequest["mode"],
   profile: ProviderProfile,
   segments: ProviderInputSegment[],
   sourceLanguage: ProviderLanguage,
@@ -44,7 +58,7 @@ function checkpointKey(
   return createHash("sha256")
     .update(
       JSON.stringify({
-        promptVersion: profile.promptVersion ?? PROMPT_VERSION,
+        promptVersion: promptVersionForMode(mode, profile.promptVersion),
         promptInputVersion: PROMPT_INPUT_VERSION,
         mode,
         profile: {
@@ -78,8 +92,15 @@ export async function runTwoPass(
     await readJournal<Checkpoint>(`${options.root}/drafts.ndjson`),
   );
   const editRecords = checkpointMap(await readJournal<Checkpoint>(`${options.root}/edits.ndjson`));
+  const auditRecords = checkpointMap(
+    await readJournal<Checkpoint>(`${options.root}/audits.ndjson`),
+  );
+  const repairRecords = checkpointMap(
+    await readJournal<Checkpoint>(`${options.root}/repairs.ndjson`),
+  );
   const drafts = new Map<string, ProviderSegment[]>(),
     edits = new Map<string, ProviderSegment[]>();
+  const qualityFindings: Array<{ batchId: string; findings: QualityFinding[] }> = [];
   for (const batch of batches) {
     throwIfAborted(options.signal);
     const request = batch.segments.map((s) => ({ id: s.id, text: s.text }));
@@ -129,8 +150,8 @@ export async function runTwoPass(
       options.glossary,
     );
     const savedEdit = editRecords.get(expectedEditKey);
-    if (savedEdit) edits.set(batch.id, savedEdit.segments);
-    else {
+    let editedSegments = savedEdit?.segments;
+    if (!editedSegments) {
       const edited = await editBatch(
         provider,
         options.editingProfile,
@@ -141,7 +162,7 @@ export async function runTwoPass(
         options.glossary,
         options.signal,
       );
-      edits.set(batch.id, edited.result.segments);
+      editedSegments = edited.result.segments;
       await appendJournal(`${options.root}/edits.ndjson`, {
         batchId: batch.id,
         segments: edited.result.segments,
@@ -152,6 +173,103 @@ export async function runTwoPass(
       });
     }
     await options.onProgress?.("editing", batch);
+    if (options.qualityMode === "high") {
+      throwIfAborted(options.signal);
+      const auditSegments = buildQualityAuditSegments(request, draft, editedSegments);
+      const expectedAuditKey = checkpointKey(
+        "audit",
+        options.editingProfile,
+        auditSegments,
+        options.sourceLanguage,
+        options.targetLanguage,
+        options.instructions,
+        options.glossary,
+      );
+      const savedAudit = auditRecords.get(expectedAuditKey);
+      let findings: QualityFinding[];
+      if (savedAudit) {
+        findings = parseQualityFindings(auditSegments, savedAudit.segments);
+      } else {
+        const audited = await auditBatch(
+          provider,
+          options.editingProfile,
+          auditSegments,
+          { sourceLanguage: options.sourceLanguage, targetLanguage: options.targetLanguage },
+          options.instructions,
+          options.glossary,
+          options.signal,
+        );
+        findings = audited.findings;
+        await appendJournal(`${options.root}/audits.ndjson`, {
+          batchId: batch.id,
+          segments: audited.result.segments,
+          checkpointKey: expectedAuditKey,
+          attempts: audited.attempts,
+          warnings: audited.warnings,
+          profile: options.editingProfile.name,
+        });
+      }
+      qualityFindings.push({ batchId: batch.id, findings });
+      await options.onProgress?.("audit", batch);
+      const repairSegments = buildRepairSegments(auditSegments, findings);
+      if (repairSegments.length) {
+        throwIfAborted(options.signal);
+        const expectedRepairKey = checkpointKey(
+          "repair",
+          options.editingProfile,
+          repairSegments,
+          options.sourceLanguage,
+          options.targetLanguage,
+          options.instructions,
+          options.glossary,
+        );
+        const savedRepair = repairRecords.get(expectedRepairKey);
+        let repairs = savedRepair?.segments;
+        if (!repairs) {
+          const repaired = await repairBatch(
+            provider,
+            options.editingProfile,
+            repairSegments,
+            { sourceLanguage: options.sourceLanguage, targetLanguage: options.targetLanguage },
+            options.instructions,
+            options.glossary,
+            options.signal,
+          );
+          repairs = repaired.result.segments;
+          await appendJournal(`${options.root}/repairs.ndjson`, {
+            batchId: batch.id,
+            segments: repairs,
+            checkpointKey: expectedRepairKey,
+            attempts: repaired.attempts,
+            warnings: repaired.warnings,
+            profile: options.editingProfile.name,
+          });
+        }
+        editedSegments = applySelectiveRepairs(editedSegments, repairs);
+        await options.onProgress?.("repair", batch);
+      }
+    }
+    edits.set(batch.id, editedSegments);
+  }
+  if (options.qualityMode === "high") {
+    const allFindings = qualityFindings.flatMap(({ batchId, findings }) =>
+      findings.map((finding) => ({ batchId, ...finding })),
+    );
+    await writeFile(
+      `${options.root}/quality-report.json`,
+      JSON.stringify(
+        {
+          version: 1,
+          auditedSegments: allFindings.length,
+          flaggedSegments: allFindings.filter((finding) => finding.issues.length).length,
+          repairedSegments: allFindings.filter((finding) => finding.issues.length).length,
+          rejectedIssues: allFindings.reduce((total, finding) => total + finding.rejectedIssues, 0),
+          findings: allFindings.filter((finding) => finding.issues.length),
+        },
+        null,
+        2,
+      ),
+    );
   }
   return { drafts, edits };
 }

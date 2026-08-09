@@ -26,6 +26,7 @@ const configSchema = z
     targetLanguage: languageSchema.optional(),
     instructions: z.string().max(100_000).optional(),
     glossary: z.array(glossaryEntrySchema).max(10_000).optional(),
+    qualityMode: z.enum(["standard", "high"]).optional(),
   })
   .strict();
 function parseBody<T>(schema: z.ZodType<T>, value: unknown): T {
@@ -66,6 +67,7 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
         documents: [],
         instructions: "",
         glossary: [],
+        qualityMode: "standard",
       };
       await repo.save(job);
       res.status(201).json(toJobView(job));
@@ -85,19 +87,25 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
       const job = await repo.get(req.params.id);
       orchestrator.assertMutable(job.id, job);
       const body = parseJobConfig(req.body);
-      const changesWork =
+      const changesContent =
         (body.sourceLanguage !== undefined && body.sourceLanguage !== job.sourceLanguage) ||
         (body.targetLanguage !== undefined && body.targetLanguage !== job.targetLanguage) ||
         (body.instructions !== undefined && body.instructions !== job.instructions) ||
         (body.glossary !== undefined &&
           JSON.stringify(body.glossary) !== JSON.stringify(job.glossary));
-      const base = changesWork ? await orchestrator.invalidate(job.id) : job;
+      const changesQuality = body.qualityMode !== undefined && body.qualityMode !== job.qualityMode;
+      const base = changesContent
+        ? await orchestrator.invalidate(job.id)
+        : changesQuality && job.status !== "created"
+          ? await orchestrator.invalidateQuality(job.id)
+          : job;
       const next: PersistedJob = {
         ...base,
         sourceLanguage: body.sourceLanguage ?? base.sourceLanguage,
         targetLanguage: body.targetLanguage ?? base.targetLanguage,
         instructions: body.instructions ?? base.instructions,
         glossary: body.glossary ?? base.glossary,
+        qualityMode: body.qualityMode ?? base.qualityMode,
         updatedAt: new Date().toISOString(),
       };
       assertLanguagePair(next.sourceLanguage, next.targetLanguage);

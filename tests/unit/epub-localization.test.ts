@@ -12,10 +12,12 @@ describe("EPUB localization", () => {
     );
     updatePackageLanguage(existing, "ru");
     expect(serializeXml(existing)).toContain(">ru</dc:language>");
+    expect(existing.documentElement.getAttribute("xml:lang")).toBe("ru");
 
     const absent = parseXml(`<package><metadata><title>Book</title></metadata></package>`);
     updatePackageLanguage(absent, "pl");
     expect(serializeXml(absent)).toContain(">pl</dc:language>");
+    expect(absent.documentElement.getAttribute("xml:lang")).toBe("pl");
   });
 
   it("sets HTML language attributes and only xml:lang on NCX", () => {

@@ -45,6 +45,8 @@ export type JobResults = {
     edited: number;
     translationAttempts: number;
     editingAttempts: number;
+    auditAttempts: number;
+    repairAttempts: number;
     warnings: number;
     outputAvailable: boolean;
   };
@@ -275,6 +277,9 @@ export class JobOrchestrator {
     const root = jobRoot(this.repo.dataDir, id);
     const drafts = await this.filterJournal(join(root, "drafts.ndjson"), batchId);
     const edits = await this.filterJournal(join(root, "edits.ndjson"), batchId);
+    await this.filterJournal(join(root, "audits.ndjson"), batchId);
+    await this.filterJournal(join(root, "repairs.ndjson"), batchId);
+    await rm(join(root, "quality-report.json"), { force: true });
     await rm(join(root, "output.epub"), { force: true });
     let prepared = true;
     try {
@@ -298,6 +303,37 @@ export class JobOrchestrator {
       "invalidated",
       "Completed work was invalidated",
       batchId ? { batchId } : undefined,
+    );
+    return next;
+  }
+
+  async invalidateQuality(id: string): Promise<PersistedJob> {
+    const job = await this.repo.get(id);
+    this.assertMutable(id, job);
+    const root = jobRoot(this.repo.dataDir, id);
+    const drafts = await readJournal<JournalRecord>(join(root, "drafts.ndjson"));
+    const edits = await readJournal<JournalRecord>(join(root, "edits.ndjson"));
+    await rm(join(root, "audits.ndjson"), { force: true });
+    await rm(join(root, "repairs.ndjson"), { force: true });
+    await rm(join(root, "quality-report.json"), { force: true });
+    await rm(join(root, "output.epub"), { force: true });
+    const next: PersistedJob = {
+      ...job,
+      status: "ready",
+      stage: "translation",
+      progress: {
+        translated: new Set(drafts.map((record) => record.batchId)).size,
+        edited: new Set(edits.map((record) => record.batchId)).size,
+        total: job.progress.total,
+        failed: 0,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    await this.repo.save(next);
+    await this.emit(
+      id,
+      "quality_invalidated",
+      "Quality pass was reset; drafts and edits were kept",
     );
     return next;
   }
@@ -350,7 +386,9 @@ export class JobOrchestrator {
     await this.repo.get(id);
     const root = jobRoot(this.repo.dataDir, id),
       drafts = await readJournal<JournalRecord>(join(root, "drafts.ndjson")),
-      edits = await readJournal<JournalRecord>(join(root, "edits.ndjson"));
+      edits = await readJournal<JournalRecord>(join(root, "edits.ndjson")),
+      audits = await readJournal<JournalRecord>(join(root, "audits.ndjson")),
+      repairs = await readJournal<JournalRecord>(join(root, "repairs.ndjson"));
     let outputAvailable = true;
     try {
       await access(join(root, "output.epub"));
@@ -372,7 +410,12 @@ export class JobOrchestrator {
         edited: new Set(edits.map((x) => x.batchId)).size,
         translationAttempts: drafts.reduce((n, x) => n + (x.attempts ?? 0), 0),
         editingAttempts: edits.reduce((n, x) => n + (x.attempts ?? 0), 0),
-        warnings: [...drafts, ...edits].reduce((n, x) => n + (x.warnings?.length ?? 0), 0),
+        auditAttempts: audits.reduce((n, x) => n + (x.attempts ?? 0), 0),
+        repairAttempts: repairs.reduce((n, x) => n + (x.attempts ?? 0), 0),
+        warnings: [...drafts, ...edits, ...audits, ...repairs].reduce(
+          (n, x) => n + (x.warnings?.length ?? 0),
+          0,
+        ),
         outputAvailable,
       },
     };

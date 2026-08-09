@@ -34,9 +34,10 @@ BOOK_TRANSLATOR_CONSISTENCY_MODEL=deepseek-v4-flash
 ```
 
 Translation and editing models are configured independently. The editing pass can also select an
-evaluated prompt independently of the translation pass. For the OpenAI Terra editing profile, use
-`BOOK_TRANSLATOR_EDITING_MODEL=gpt-5.6-terra` and
-`BOOK_TRANSLATOR_EDITING_PROMPT_VERSION=literary-v3.2.1`.
+evaluated prompt independently of the translation pass. The OpenAI Terra editing model
+(`BOOK_TRANSLATOR_EDITING_MODEL=gpt-5.6-terra`) automatically selects the evaluated
+`literary-v3.2.1` prompt. Set `BOOK_TRANSLATOR_EDITING_PROMPT_VERSION` only to override the
+model-specific default; other models continue to use `literary-v3.1` unless explicitly configured.
 
 External-provider runs also make up to two cached DeepSeek consistency requests: one builds a
 book-wide entity registry before translation, and one resolves detected variants after editing.
@@ -46,6 +47,19 @@ The consistency profile is configured with `BOOK_TRANSLATOR_CONSISTENCY_API_KEY`
 `BOOK_TRANSLATOR_CONSISTENCY_ENDPOINT`, `BOOK_TRANSLATOR_CONSISTENCY_MODEL`, and
 `BOOK_TRANSLATOR_CONSISTENCY_THINKING`. Its API key, endpoint, and model fall back to the translation
 profile when omitted.
+
+Each book has a quality mode:
+
+- **Standard** runs translation and literary editing, followed by book-wide consistency.
+- **High** adds a conservative audit after editing. The audit sees the original, initial
+  translation, and edited translation, but cannot rewrite. Only segments with validated medium or
+  high-severity findings are sent through targeted repair; unflagged edits are preserved exactly.
+
+High mode always adds audit inference for every eligible segment. Repair inference is selective, so
+its additional cost depends on how many concrete defects the critic finds. Audit and repair results
+are checkpointed in `audits.ndjson` and `repairs.ndjson`; the local `quality-report.json` records the
+flagged spans and applied repair count. Switching quality modes keeps completed translation and
+editing checkpoints.
 
 Restart the server after changing `.env.local` or `.env`. The external-provider mode sends eligible book text to the configured service.
 

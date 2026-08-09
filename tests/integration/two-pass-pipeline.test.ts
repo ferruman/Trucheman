@@ -2,6 +2,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { FakeProvider } from "../../src/server/providers/fake-provider.js";
+import type { LanguageModelProvider } from "../../src/server/providers/provider.js";
 import { runTwoPass } from "../../src/server/jobs/job-runner.js";
 
 const languages = {
@@ -106,5 +107,70 @@ describe("two-pass pipeline", () => {
     );
     expect(provider.requests).toHaveLength(2);
     expect(result.edits.get("chapter-1-batch-1")?.[0]?.text).toBe("[translated] Hello");
+  });
+
+  it("audits every edited segment and repairs only flagged segments in high-quality mode", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-selective-quality-`);
+    const provider: LanguageModelProvider & { requests: string[] } = {
+      requests: [],
+      async complete(request) {
+        this.requests.push(request.mode);
+        return {
+          segments: request.segments.map((input) => {
+            if (request.mode === "translation") {
+              return { id: input.id, text: "Черновик" };
+            }
+            if (request.mode === "editing") {
+              return { id: input.id, text: input.id.endsWith(":0") ? "Плохая калька" : "Хорошо" };
+            }
+            if (request.mode === "audit") {
+              return {
+                id: input.id,
+                text: JSON.stringify({
+                  issues: input.id.endsWith(":0")
+                    ? [
+                        {
+                          span: "Плохая калька",
+                          type: "source_language_interference",
+                          severity: "medium",
+                          reason: "Literal source construction",
+                        },
+                      ]
+                    : [],
+                }),
+              };
+            }
+            return { id: input.id, text: "Исправлено" };
+          }),
+          finishReason: "stop",
+        };
+      },
+    };
+    const profile = { name: "fake", endpoint: "local", model: "fake" };
+    const second = { ...segment, id: "chapter-1:1", text: "World" };
+    const options = {
+      root,
+      translationProfile: profile,
+      editingProfile: profile,
+      qualityMode: "high" as const,
+      ...languages,
+    };
+    const batches = [{ id: "batch-quality", documentId: "chapter-1", segments: [segment, second] }];
+
+    const result = await runTwoPass(batches, provider, options);
+    await runTwoPass(batches, provider, options);
+
+    expect(provider.requests).toEqual(["translation", "editing", "audit", "repair"]);
+    expect(result.edits.get("batch-quality")).toEqual([
+      { id: "chapter-1:0", text: "Исправлено" },
+      { id: "chapter-1:1", text: "Хорошо" },
+    ]);
+    const report = JSON.parse(await readFile(`${root}/quality-report.json`, "utf8"));
+    expect(report).toMatchObject({
+      auditedSegments: 2,
+      flaggedSegments: 1,
+      repairedSegments: 1,
+      rejectedIssues: 0,
+    });
   });
 });

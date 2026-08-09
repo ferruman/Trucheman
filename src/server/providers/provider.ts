@@ -10,13 +10,28 @@ export type ProviderProfile = {
 };
 
 export type ProviderSegment = { id: string; text: string };
+export type ProviderEditingInputSegment = { id: string; original: string; draft: string };
+export type ProviderAuditInputSegment = {
+  id: string;
+  original: string;
+  initialTranslation: string;
+  editedTranslation: string;
+};
+export type ProviderRepairInputSegment = ProviderAuditInputSegment & {
+  issues: Array<{ span: string; type: string; severity: "medium" | "high"; reason: string }>;
+  contextBefore?: string;
+  contextAfter?: string;
+};
 export type ProviderInputSegment =
-  ProviderSegment | { id: string; original: string; draft: string };
+  | ProviderSegment
+  | ProviderEditingInputSegment
+  | ProviderAuditInputSegment
+  | ProviderRepairInputSegment;
 export type ProviderLanguage = { tag: string; name: string };
 
 export type ProviderRequest = {
   profile: ProviderProfile;
-  mode: "translation" | "editing" | "consistency";
+  mode: "translation" | "editing" | "audit" | "repair" | "consistency";
   sourceLanguage: ProviderLanguage;
   targetLanguage: ProviderLanguage;
   segments: ProviderInputSegment[];

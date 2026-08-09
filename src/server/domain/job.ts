@@ -33,6 +33,7 @@ export const persistedJobSchema = z.object({
     .default([]),
   instructions: z.string().default(""),
   glossary: z.array(z.unknown()).default([]),
+  qualityMode: z.enum(["standard", "high"]).default("standard"),
 });
 export type PersistedJob = z.infer<typeof persistedJobSchema>;
 export function validateJob(value: unknown): PersistedJob {
@@ -58,5 +59,6 @@ export function toJobView(job: PersistedJob) {
     updatedAt: job.updatedAt,
     currentDocument: job.documents.find((d) => d.status === "running")?.title,
     warnings: job.warnings,
+    qualityMode: job.qualityMode,
   });
 }

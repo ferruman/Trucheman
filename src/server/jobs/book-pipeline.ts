@@ -132,10 +132,11 @@ export async function runPreparedBook(
     targetLanguage,
     instructions,
     glossary,
+    qualityMode: job.qualityMode,
     signal,
     onProgress: async (stage) => {
       if (stage === "translation") translated++;
-      else edited++;
+      else if (stage === "editing") edited++;
       await update({
         stage,
         status: "running",

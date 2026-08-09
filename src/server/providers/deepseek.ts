@@ -25,7 +25,7 @@ function normalizeResponseSegments(
     return value as ProviderResponse["segments"];
   }
   const preferredFields =
-    mode === "editing"
+    mode === "editing" || mode === "repair"
       ? [
           "edited",
           "editedText",

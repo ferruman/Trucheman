@@ -798,6 +798,14 @@ label {
   font: 600 0.75rem/1.4 var(--mono);
   letter-spacing: 0.025em;
 }
+.field-help {
+  max-width: 72ch;
+  color: var(--muted);
+  font:
+    400 0.75rem/1.5 system-ui,
+    sans-serif;
+  letter-spacing: 0;
+}
 input,
 select,
 textarea {

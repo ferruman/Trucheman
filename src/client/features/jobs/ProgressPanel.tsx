@@ -5,6 +5,8 @@ const STAGE_LABELS: Record<JobStage, string> = {
   analysis: "Inspect",
   translation: "Translate",
   editing: "Edit",
+  audit: "Audit",
+  repair: "Repair",
   building: "Build",
   validation: "Validate",
   complete: "Complete",
@@ -20,7 +22,7 @@ const PIPELINE = [
 ] as const;
 
 function pipelineIndex(stage: JobStage) {
-  if (stage === "translation" || stage === "editing") return 2;
+  if (["translation", "editing", "audit", "repair"].includes(stage)) return 2;
   if (stage === "building") return 3;
   if (stage === "validation") return 4;
   if (stage === "complete") return 5;
@@ -65,8 +67,10 @@ export function ProgressPanel({ job }: { job: JobView }) {
         <div>
           <span className="section-label">Current stage</span>
           <h3>
-            {job.stage === "translation" || job.stage === "editing"
-              ? "Translation and editing cycle"
+            {["translation", "editing", "audit", "repair"].includes(job.stage)
+              ? job.qualityMode === "high"
+                ? "Translation, editing, and quality cycle"
+                : "Translation and editing cycle"
               : STAGE_LABELS[job.stage]}
           </h3>
         </div>
@@ -75,10 +79,14 @@ export function ProgressPanel({ job }: { job: JobView }) {
       <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         Status: {job.status}. Stage: {job.stage}.
       </p>
-      {(job.stage === "translation" || job.stage === "editing") && (
+      {["translation", "editing", "audit", "repair"].includes(job.stage) && (
         <p className="batch-cycle-note">
           <span>Batch cycle</span>
-          <strong>Translate → edit</strong>
+          <strong>
+            {job.qualityMode === "high"
+              ? "Translate → edit → audit → selective repair"
+              : "Translate → edit"}
+          </strong>
           <small>Repeats for each batch · now {STAGE_LABELS[job.stage].toLowerCase()}</small>
         </p>
       )}

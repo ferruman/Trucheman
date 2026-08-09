@@ -1,10 +1,11 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseJobConfig } from "../../src/server/api/jobs.js";
 import type { PersistedJob } from "../../src/server/domain/job.js";
 import { JobOrchestrator } from "../../src/server/jobs/job-orchestrator.js";
 import { JobRepository } from "../../src/server/storage/job-repository.js";
+import { jobRoot } from "../../src/server/storage/job-paths.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -31,6 +32,7 @@ async function fixture(status = "ready") {
     documents: [],
     instructions: "",
     glossary: [],
+    qualityMode: "standard",
   };
   await repo.save(job);
   return { repo, job };
@@ -69,6 +71,39 @@ describe("job lifecycle orchestration", () => {
     const { repo, job } = await fixture("created");
     expect(() => parseJobConfig({ instructions: {} })).toThrow();
     expect((await repo.get(job.id)).instructions).toBe("");
+  });
+
+  it("accepts only supported per-book quality modes", () => {
+    expect(parseJobConfig({ qualityMode: "high" })).toEqual({ qualityMode: "high" });
+    expect(() => parseJobConfig({ qualityMode: "maximum" })).toThrow();
+  });
+
+  it("resets only quality work when switching quality modes", async () => {
+    const { repo, job } = await fixture();
+    const root = jobRoot(repo.dataDir, job.id);
+    await mkdir(root, { recursive: true });
+    const checkpoint = `${JSON.stringify({ batchId: "batch-1", segments: [] })}\n`;
+    await Promise.all(
+      ["drafts.ndjson", "edits.ndjson", "audits.ndjson", "repairs.ndjson"].map((name) =>
+        writeFile(`${root}/${name}`, checkpoint),
+      ),
+    );
+    await writeFile(`${root}/quality-report.json`, "{}");
+    await writeFile(`${root}/output.epub`, "output");
+    const orchestrator = new JobOrchestrator(repo);
+
+    const next = await orchestrator.invalidateQuality(job.id);
+
+    expect(next).toMatchObject({
+      status: "ready",
+      progress: { translated: 1, edited: 1, total: 1, failed: 0 },
+    });
+    expect(await readFile(`${root}/drafts.ndjson`, "utf8")).toBe(checkpoint);
+    expect(await readFile(`${root}/edits.ndjson`, "utf8")).toBe(checkpoint);
+    await expect(access(`${root}/audits.ndjson`)).rejects.toThrow();
+    await expect(access(`${root}/repairs.ndjson`)).rejects.toThrow();
+    await expect(access(`${root}/quality-report.json`)).rejects.toThrow();
+    await expect(access(`${root}/output.epub`)).rejects.toThrow();
   });
 
   it("does not report fatal execution errors as quality warnings", async () => {

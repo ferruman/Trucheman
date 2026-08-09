@@ -46,9 +46,22 @@ describe("literary editor evaluation", () => {
       JSON.parse(await readFile("evals/literary-editor/cases.json", "utf8")),
     );
 
-    expect(corpus.cases).toHaveLength(12);
+    expect(corpus.cases).toHaveLength(15);
     expect(new Set(corpus.cases.map((item) => item.genre)).size).toBeGreaterThanOrEqual(5);
     expect(new Set(corpus.cases.map((item) => item.targetLanguage.tag)).size).toBeGreaterThan(1);
+  });
+
+  it("keeps a natural draft in the non-regression set", async () => {
+    const corpus = literaryEditorCorpusSchema.parse(
+      JSON.parse(await readFile("evals/literary-editor/cases.json", "utf8")),
+    );
+    const corpusCase = corpus.cases.find((item) => item.id === "lovecraft-strange-survivals");
+
+    expect(corpusCase).toBeDefined();
+    expect(evaluateLiteraryOutput(corpusCase!, corpusCase!.draft).passed).toBe(true);
+    expect(
+      evaluateLiteraryOutput(corpusCase!, "Они намекали на странные уцелевшие остатки.").passed,
+    ).toBe(false);
   });
 
   it("rejects the false positives found in the literary-v3.1 baseline", async () => {
@@ -97,6 +110,43 @@ describe("literary editor evaluation", () => {
         "Самое милосердное в мире — неспособность человеческого разума связать воедино всё, что в нём заключено.",
       ).passed,
     ).toBe(true);
+  });
+
+  it("accepts natural non-literal V3.2.1 reformulations without requiring one syntax", async () => {
+    const corpus = literaryEditorCorpusSchema.parse(
+      JSON.parse(await readFile("evals/literary-editor/cases.json", "utf8")),
+    );
+    const outputs = new Map([
+      [
+        "lovecraft-correlate-contents",
+        "Самое милосердное, я думаю, что есть на свете, — это неспособность человеческого разума сопоставить всё, что в нём содержится.",
+      ],
+      [
+        "lovecraft-piecing-knowledge",
+        "Собранные воедино разрозненные знания откроют перед нами такие ужасающие картины действительности.",
+      ],
+    ]);
+
+    for (const [id, output] of outputs) {
+      const corpusCase = corpus.cases.find((item) => item.id === id);
+      expect(corpusCase, `missing corpus case ${id}`).toBeDefined();
+      expect(evaluateLiteraryOutput(corpusCase!, output).passed, id).toBe(true);
+    }
+  });
+
+  it("rejects vague things phrasing across Russian case endings", async () => {
+    const corpus = literaryEditorCorpusSchema.parse(
+      JSON.parse(await readFile("evals/literary-editor/cases.json", "utf8")),
+    );
+    const corpusCase = corpus.cases.find((item) => item.id === "lovecraft-accidental-piecing");
+
+    expect(corpusCase).toBeDefined();
+    expect(
+      evaluateLiteraryOutput(
+        corpusCase!,
+        "Этот проблеск возник случайно: сошлись воедино разрозненные вещи — заметка и записи.",
+      ).passed,
+    ).toBe(false);
   });
 
   it("accepts an idiomatic put-together reformulation", async () => {

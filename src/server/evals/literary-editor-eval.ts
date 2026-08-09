@@ -8,6 +8,7 @@ const patternSchema = z
 export const literaryEditorCaseSchema = z
   .object({
     id: z.string().min(1),
+    bookId: z.string().min(8).optional(),
     genre: z.string().min(1),
     sourceLanguage: languageSchema,
     targetLanguage: languageSchema,

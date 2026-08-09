@@ -18,6 +18,7 @@ test("uploads, analyzes, translates, and exposes the EPUB download", async ({ pa
   await page.goto("/new");
   await page.getByLabel("EPUB file").setInputFiles(fixturePath);
   await page.getByLabel("Title").fill("Fixture book");
+  await page.getByLabel("Quality mode").selectOption("high");
   await page.getByRole("button", { name: "Add glossary term" }).click();
   await page.getByLabel("Glossary source term 1").fill("Cthulhu");
   await page.getByLabel("Glossary target term 1").fill("Ктулху");
@@ -29,7 +30,9 @@ test("uploads, analyzes, translates, and exposes the EPUB download", async ({ pa
       request.method() === "PUT",
   );
   await page.getByRole("button", { name: "Upload and analyze" }).click();
-  expect(JSON.parse((await configRequest).postData() ?? "{}").glossary).toEqual([
+  const submittedConfig = JSON.parse((await configRequest).postData() ?? "{}");
+  expect(submittedConfig.qualityMode).toBe("high");
+  expect(submittedConfig.glossary).toEqual([
     expect.objectContaining({
       source: "Cthulhu",
       target: "Ктулху",

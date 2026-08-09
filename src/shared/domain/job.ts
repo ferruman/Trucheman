@@ -15,11 +15,15 @@ export const JOB_STAGES = [
   "analysis",
   "translation",
   "editing",
+  "audit",
+  "repair",
   "building",
   "validation",
   "complete",
 ] as const;
 export type JobStage = (typeof JOB_STAGES)[number];
+export const QUALITY_MODES = ["standard", "high"] as const;
+export type QualityMode = (typeof QUALITY_MODES)[number];
 export type Progress = { translated: number; edited: number; total: number; failed: number };
 export type JobView = {
   id: string;
@@ -33,6 +37,7 @@ export type JobView = {
   updatedAt: string;
   currentDocument?: string;
   warnings: number;
+  qualityMode: QualityMode;
 };
 export function progressFor(
   translated: number,

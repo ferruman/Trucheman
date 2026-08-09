@@ -3,6 +3,7 @@ import type { ProviderProfile } from "../providers/provider.js";
 
 const DEEPSEEK_ENDPOINT = "https://api.deepseek.com/chat/completions";
 const DEEPSEEK_MODEL = "deepseek-v4-flash";
+const TERRA_MODEL = "gpt-5.6-terra";
 
 export type ResolvedProfiles = {
   useExternal: boolean;
@@ -17,6 +18,11 @@ function thinkingMode(value: string | undefined, endpoint: string): ProviderProf
     throw new Error("BOOK_TRANSLATOR_CONSISTENCY_THINKING must be enabled or disabled");
   }
   return configured;
+}
+
+export function defaultEditingPromptVersion(model: string): ProviderProfile["promptVersion"] {
+  const baseModel = model.toLocaleLowerCase().split("/").at(-1);
+  return baseModel === TERRA_MODEL ? "literary-v3.2.1" : undefined;
 }
 
 /**
@@ -34,6 +40,9 @@ export function resolveProfiles(env: NodeJS.ProcessEnv = process.env): ResolvedP
     secrets.editingEndpoint ?? env.BOOK_TRANSLATOR_EDITING_ENDPOINT ?? DEEPSEEK_ENDPOINT;
   const consistencyEndpoint =
     secrets.consistencyEndpoint ?? env.BOOK_TRANSLATOR_CONSISTENCY_ENDPOINT ?? translationEndpoint;
+  const editingModel = secrets.editingModel ?? env.BOOK_TRANSLATOR_EDITING_MODEL ?? DEEPSEEK_MODEL;
+  const editingPromptVersion =
+    secrets.editingPromptVersion ?? env.BOOK_TRANSLATOR_EDITING_PROMPT_VERSION;
   const translation: ProviderProfile = {
     name: useExternal ? "deepseek-translation" : "deterministic-local",
     endpoint: translationEndpoint,
@@ -47,10 +56,10 @@ export function resolveProfiles(env: NodeJS.ProcessEnv = process.env): ResolvedP
     editing: {
       name: useExternal ? "deepseek-editing" : "deterministic-local",
       endpoint: editingEndpoint,
-      model: secrets.editingModel ?? env.BOOK_TRANSLATOR_EDITING_MODEL ?? DEEPSEEK_MODEL,
+      model: editingModel,
       apiKey: secrets.editingApiKey,
       thinking: editingEndpoint.includes("api.deepseek.com") ? "disabled" : undefined,
-      promptVersion: secrets.editingPromptVersion ?? env.BOOK_TRANSLATOR_EDITING_PROMPT_VERSION,
+      promptVersion: editingPromptVersion || defaultEditingPromptVersion(editingModel),
     },
     consistency: {
       name: useExternal ? "consistency" : "deterministic-local",

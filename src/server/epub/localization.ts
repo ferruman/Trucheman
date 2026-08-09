@@ -13,6 +13,7 @@ function walkElements(node: Node, visit: (element: Element) => void) {
 
 export function updatePackageLanguage(doc: Document, targetLanguage: string) {
   if (!doc.documentElement) throw new Error("EPUB package document is missing");
+  doc.documentElement.setAttributeNS(XML_NAMESPACE, "xml:lang", targetLanguage);
   let metadata: Element | undefined;
   const languages: Element[] = [];
   walkElements(doc.documentElement, (element) => {

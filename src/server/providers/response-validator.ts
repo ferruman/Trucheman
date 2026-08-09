@@ -26,7 +26,9 @@ export function validateProviderResponse(
 }
 
 function comparisonText(segment: ProviderInputSegment): string {
-  return "text" in segment ? segment.text : segment.draft;
+  if ("text" in segment) return segment.text;
+  if ("editedTranslation" in segment) return segment.editedTranslation;
+  return segment.draft;
 }
 
 export function qualityWarnings(
