@@ -5,6 +5,7 @@ export type ProviderProfile = {
   apiKey?: string;
   timeoutMs?: number;
   temperature?: number;
+  thinking?: "enabled" | "disabled";
 };
 
 export type ProviderSegment = { id: string; text: string };

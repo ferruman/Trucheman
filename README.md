@@ -40,7 +40,7 @@ The committed regression corpus exercises the editing pass without translating a
 npm run eval:literary
 ```
 
-Use `-- --limit 3` for a smaller paid smoke run, or `-- --output path/to/report.json` to choose the report location. Reports are written under the ignored `eval-results/` directory by default. Automated checks reject known bad constructions without requiring one exact literary translation; the report also includes empty human-review fields for semantic fidelity, native-language naturalness, lexical/idiomatic naturalness, and voice preservation.
+Use `-- --limit 3` for a smaller paid smoke run, or `-- --output path/to/report.json` to choose the report location. Compare models explicitly with `-- --model deepseek-v4-pro --thinking disabled`; both values are recorded in the report. Reports are written under the ignored `eval-results/` directory by default. Automated checks reject known bad constructions without requiring one exact literary translation; the report also includes empty human-review fields for semantic fidelity, native-language naturalness, lexical/idiomatic naturalness, and voice preservation.
 
 To exercise corpus loading, reporting, and scoring without making external requests, run `npm run eval:literary -- --provider deterministic`.
 

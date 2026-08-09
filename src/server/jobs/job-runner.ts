@@ -51,6 +51,7 @@ function checkpointKey(
           endpoint: profile.endpoint,
           model: profile.model,
           temperature: profile.temperature,
+          thinking: profile.thinking,
         },
         sourceLanguage,
         targetLanguage,

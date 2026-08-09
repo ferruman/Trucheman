@@ -22,13 +22,18 @@ function timestamp() {
 
 async function main() {
   const corpusPath = resolve(argument("--corpus") ?? "evals/literary-editor/cases.json");
-  const outputPath = resolve(
-    argument("--output") ?? `eval-results/literary-editor/${PROMPT_VERSION}-${timestamp()}.json`,
-  );
   const limitValue = argument("--limit");
   const providerName = argument("--provider") ?? "deepseek";
+  const modelOverride = argument("--model");
+  const thinking = argument("--thinking");
   if (!new Set(["deepseek", "deterministic"]).has(providerName)) {
     throw new Error("--provider must be deepseek or deterministic");
+  }
+  if (thinking !== undefined && !new Set(["enabled", "disabled"]).has(thinking)) {
+    throw new Error("--thinking must be enabled or disabled");
+  }
+  if (providerName === "deterministic" && (modelOverride || thinking)) {
+    throw new Error("--model and --thinking require --provider deepseek");
   }
   const limit = limitValue ? Number.parseInt(limitValue, 10) : undefined;
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
@@ -42,14 +47,24 @@ async function main() {
     throw new Error("Editing provider credential is not configured");
   }
 
+  const model =
+    providerName === "deterministic"
+      ? "fake"
+      : (modelOverride ?? secrets.editingModel ?? "deepseek-chat");
+  const runLabel = [PROMPT_VERSION, model, thinking].filter(Boolean).join("-");
+  const outputPath = resolve(
+    argument("--output") ?? `eval-results/literary-editor/${runLabel}-${timestamp()}.json`,
+  );
+
   const profile: ProviderProfile =
     providerName === "deepseek"
       ? {
           name: "deepseek-literary-eval",
           endpoint: secrets.editingEndpoint ?? "https://api.deepseek.com/chat/completions",
-          model: secrets.editingModel ?? "deepseek-chat",
+          model,
           apiKey: secrets.editingApiKey,
-          temperature: 0,
+          temperature: thinking === "enabled" ? undefined : 0,
+          thinking: thinking as ProviderProfile["thinking"],
         }
       : { name: "deterministic-literary-eval", endpoint: "local", model: "fake" };
   const provider: LanguageModelProvider =
@@ -114,6 +129,7 @@ async function main() {
       endpoint: profile.endpoint,
       model: profile.model,
       temperature: profile.temperature,
+      thinking: profile.thinking,
     },
     summary: {
       total: results.length,

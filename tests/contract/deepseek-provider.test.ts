@@ -47,6 +47,7 @@ describe("DeepSeek provider", () => {
         model: "x",
         apiKey: "secret",
         temperature: 0,
+        thinking: "disabled",
       },
       mode: "translation",
       ...languages,
@@ -56,6 +57,7 @@ describe("DeepSeek provider", () => {
 
     const messages = requestBody?.messages as Array<{ role: string; content: string }>;
     expect(requestBody?.temperature).toBe(0);
+    expect(requestBody?.thinking).toEqual({ type: "disabled" });
     expect(messages.map(({ role }) => role)).toEqual(["system", "user"]);
     expect(messages[0]?.content).not.toContain("Hello");
     const input = JSON.parse(messages[1]?.content ?? "");
