@@ -30,6 +30,7 @@ BOOK_TRANSLATOR_TRANSLATION_API_KEY=your-key
 BOOK_TRANSLATOR_EDITING_API_KEY=your-key
 BOOK_TRANSLATOR_TRANSLATION_MODEL=deepseek-v4-flash
 BOOK_TRANSLATOR_EDITING_MODEL=deepseek-v4-flash
+BOOK_TRANSLATOR_CONSISTENCY_MODEL=deepseek-v4-flash
 ```
 
 Translation and editing models are configured independently. The editing pass can also select an
@@ -41,6 +42,10 @@ External-provider runs also make up to two cached DeepSeek consistency requests:
 book-wide entity registry before translation, and one resolves detected variants after editing.
 The model returns decisions only; exact replacements are validated and applied by code. Mechanical
 quote and `ё` diagnostics are saved as `consistency-report.json` in the local job directory.
+The consistency profile is configured with `BOOK_TRANSLATOR_CONSISTENCY_API_KEY`,
+`BOOK_TRANSLATOR_CONSISTENCY_ENDPOINT`, `BOOK_TRANSLATOR_CONSISTENCY_MODEL`, and
+`BOOK_TRANSLATOR_CONSISTENCY_THINKING`. Its API key, endpoint, and model fall back to the translation
+profile when omitted.
 
 Restart the server after changing `.env.local` or `.env`. The external-provider mode sends eligible book text to the configured service.
 

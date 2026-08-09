@@ -15,6 +15,7 @@ import { loadSecrets } from "../config/secrets.js";
 import { LANGUAGES } from "../../shared/languages.js";
 import { runTwoPass } from "./job-runner.js";
 import type { PersistedJob } from "../domain/job.js";
+import type { ProviderProfile } from "../providers/provider.js";
 import { syncParentDirectory } from "../storage/atomic-file.js";
 import {
   applyConsistencyDecisions,
@@ -40,6 +41,14 @@ export function providerLanguage(tag: string) {
   const language = LANGUAGES.find((candidate) => candidate.tag === tag);
   if (!language) throw new Error(`Unsupported language: ${tag}`);
   return { tag: language.tag, name: language.name };
+}
+
+function thinkingMode(value: string | undefined, endpoint: string): ProviderProfile["thinking"] {
+  const configured = value ?? (endpoint.includes("api.deepseek.com") ? "disabled" : undefined);
+  if (configured !== undefined && configured !== "enabled" && configured !== "disabled") {
+    throw new Error("BOOK_TRANSLATOR_CONSISTENCY_THINKING must be enabled or disabled");
+  }
+  return configured;
 }
 
 export async function prepareBook(root: string): Promise<PreparedBook> {
@@ -99,6 +108,10 @@ export async function runPreparedBook(
     secrets.editingEndpoint ??
     process.env.BOOK_TRANSLATOR_EDITING_ENDPOINT ??
     "https://api.deepseek.com/chat/completions";
+  const consistencyEndpoint =
+    secrets.consistencyEndpoint ??
+    process.env.BOOK_TRANSLATOR_CONSISTENCY_ENDPOINT ??
+    translationEndpoint;
   const translationProfile = {
     name: useExternal ? "deepseek-translation" : "deterministic-local",
     endpoint: translationEndpoint,
@@ -118,6 +131,19 @@ export async function runPreparedBook(
     promptVersion:
       secrets.editingPromptVersion ?? process.env.BOOK_TRANSLATOR_EDITING_PROMPT_VERSION,
   };
+  const consistencyProfile = {
+    name: useExternal ? "consistency" : "deterministic-local",
+    endpoint: consistencyEndpoint,
+    model:
+      secrets.consistencyModel ??
+      process.env.BOOK_TRANSLATOR_CONSISTENCY_MODEL ??
+      translationProfile.model,
+    apiKey: secrets.consistencyApiKey ?? secrets.translationApiKey,
+    thinking: thinkingMode(
+      secrets.consistencyThinking ?? process.env.BOOK_TRANSLATOR_CONSISTENCY_THINKING,
+      consistencyEndpoint,
+    ),
+  };
   const instructions = job.instructions.trim();
   const sourceLanguage = providerLanguage(job.sourceLanguage),
     targetLanguage = providerLanguage(job.targetLanguage);
@@ -127,7 +153,7 @@ export async function runPreparedBook(
     try {
       generatedGlossary = await resolveEntityRegistry(
         provider,
-        translationProfile,
+        consistencyProfile,
         sourceLanguage,
         targetLanguage,
         prepared.documents.map((document) => ({
@@ -181,7 +207,7 @@ export async function runPreparedBook(
     try {
       decisions = await resolveConsistencyConflicts(
         provider,
-        translationProfile,
+        consistencyProfile,
         sourceLanguage,
         targetLanguage,
         consistencyReport,
