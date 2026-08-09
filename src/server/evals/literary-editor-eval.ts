@@ -23,7 +23,7 @@ export const literaryEditorCaseSchema = z
 
 export const literaryEditorCorpusSchema = z
   .object({
-    version: z.literal(1),
+    version: z.number().int().positive(),
     description: z.string().min(1),
     cases: z.array(literaryEditorCaseSchema).min(1),
   })

@@ -50,4 +50,36 @@ describe("literary editor evaluation", () => {
     expect(new Set(corpus.cases.map((item) => item.genre)).size).toBeGreaterThanOrEqual(5);
     expect(new Set(corpus.cases.map((item) => item.targetLanguage.tag)).size).toBeGreaterThan(1);
   });
+
+  it("rejects the false positives found in the literary-v3.1 baseline", async () => {
+    const corpus = literaryEditorCorpusSchema.parse(
+      JSON.parse(await readFile("evals/literary-editor/cases.json", "utf8")),
+    );
+    const outputs = new Map([
+      [
+        "lovecraft-correlate-contents",
+        "Самое милосердное в мире — неспособность человеческого разума связать всё своё содержание.",
+      ],
+      [
+        "lovecraft-piecing-knowledge",
+        "Сопоставление разрозненных знаний откроет такие устрашающие горизонты реальности.",
+      ],
+      [
+        "lovecraft-accidental-piecing",
+        "Этот проблеск возник из случайного сопоставления разрозненных вещей.",
+      ],
+      ["lovecraft-put-together", "Надеюсь, никому другому не удастся завершить эту сборку."],
+    ]);
+
+    for (const [id, output] of outputs) {
+      const corpusCase = corpus.cases.find((item) => item.id === id);
+      expect(corpusCase, `missing corpus case ${id}`).toBeDefined();
+      const evaluation = evaluateLiteraryOutput(corpusCase!, output);
+      expect(evaluation.passed, id).toBe(false);
+      expect(
+        evaluation.checks.some((check) => check.name.startsWith("forbidden:") && !check.passed),
+        id,
+      ).toBe(true);
+    }
+  });
 });
