@@ -49,4 +49,13 @@ describe("job lifecycle orchestration",()=>{
     await vi.waitFor(async()=>expect((await repo.get(job.id)).status).toBe("failed"));
     expect((await repo.get(job.id)).warnings).toBe(0);
   });
+
+  it("emits a readable, redacted failure event",async()=>{
+    const {repo,job}=await fixture(),events:{type:string;message:string;data?:Record<string,unknown>}[]=[];
+    const orchestrator=new JobOrchestrator(repo,{runBook:async()=>{throw new Error("authorization: Bearer sk-sentinel12345");},onEvent:async(_id,type,message,data)=>{events.push({type,message,data});}});
+    await orchestrator.start(job.id);
+    await vi.waitFor(async()=>expect((await repo.get(job.id)).status).toBe("failed"));
+    expect(events).toContainEqual(expect.objectContaining({type:"execution_started",message:"Preparing translation workspace"}));
+    expect(events).toContainEqual(expect.objectContaining({type:"failed",message:"Translation failed",data:{error:"authorization=[redacted] [redacted]"}}));
+  });
 });
