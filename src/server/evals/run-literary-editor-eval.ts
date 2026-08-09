@@ -23,6 +23,7 @@ function timestamp() {
 async function main() {
   const corpusPath = resolve(argument("--corpus") ?? "evals/literary-editor/cases.json");
   const limitValue = argument("--limit");
+  const offsetValue = argument("--offset");
   const providerName = argument("--provider") ?? "deepseek";
   const modelOverride = argument("--model");
   const thinking = argument("--thinking");
@@ -48,9 +49,16 @@ async function main() {
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
     throw new Error("--limit must be a positive integer");
   }
+  const offset = offsetValue ? Number.parseInt(offsetValue, 10) : 0;
+  if (!Number.isInteger(offset) || offset < 0) {
+    throw new Error("--offset must be a non-negative integer");
+  }
 
   const corpus = literaryEditorCorpusSchema.parse(JSON.parse(await readFile(corpusPath, "utf8")));
-  const cases = limit ? corpus.cases.slice(0, limit) : corpus.cases;
+  const cases = corpus.cases.slice(offset, limit ? offset + limit : undefined);
+  if (!cases.length) {
+    throw new Error("The selected corpus range is empty");
+  }
   const secrets = loadSecrets();
   if (providerName === "deepseek" && !secrets.editingApiKey) {
     throw new Error("Editing provider credential is not configured");
@@ -133,6 +141,7 @@ async function main() {
     createdAt: new Date().toISOString(),
     promptVersion: PROMPT_VERSION,
     corpus: { path: corpusPath, version: corpus.version, description: corpus.description },
+    selection: { offset, limit: limit ?? null },
     provider: {
       name: profile.name,
       endpoint: profile.endpoint,
