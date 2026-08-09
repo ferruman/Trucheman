@@ -9,7 +9,7 @@ import type {
   ProviderSegment,
 } from "../providers/provider.js";
 
-const CONSISTENCY_VERSION = 2;
+const CONSISTENCY_VERSION = 3;
 
 export type ConsistencyDocument = {
   id: string;

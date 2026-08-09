@@ -48,6 +48,15 @@ const V321_SILENT_AUDIT = `Before editing each segment, perform this silent audi
 
 const V321_EDITING_OUTPUT = `Do not output the audit, labels, alternatives, explanations, or reasoning. Output only the final edited wording in the string field text.`;
 
+const TARGET_LANGUAGE_RULES: Record<string, string> = {
+  ru: `Russian rules:
+- Use ё consistently where standard spelling requires it.
+- Use «ёлочки» with nested „лапки“.
+- Transliterate personal and ship names unless an established canonical form or explicit glossary entry requires otherwise.
+- Never mix translation and transliteration strategies for the same entity.
+- Render English street names consistently as a transliterated name plus -стрит (for example, Thomas Street → Томас-стрит) unless an established canonical form requires otherwise.`,
+};
+
 const MODE_RULES: Record<ProviderRequest["mode"], string> = {
   translation: `Translate each segment from sourceLanguage into targetLanguage.
 
@@ -95,7 +104,7 @@ For an entity_registry task, return a JSON string with this shape in the segment
 For a resolve_conflicts task, return a JSON string with this shape in the segment text field:
 {"decisions":[{"source":"exact source entity","canonical":"chosen exact target form","variants":["exact variant to replace"]}]}
 
-Choose a stable target-language rendering. Respect explicit glossary targets over inferred choices. For Russian, use ё consistently where standard spelling requires it, use «ёлочки» with nested „лапки“, transliterate personal and ship names unless an established canonical form or explicit glossary entry requires otherwise, and never mix translation and transliteration strategies for the same entity. Render English street names consistently as a transliterated name plus -стрит (for example, Thomas Street → Томас-стрит) unless an established canonical form requires otherwise.
+Choose a stable target-language rendering. Respect explicit glossary targets over inferred choices.
 
 Only list entities or variants supported by the supplied evidence. Never invent occurrences, and never include the canonical form itself among variants.`,
 };
@@ -117,9 +126,19 @@ function modeRules(mode: ProviderRequest["mode"], promptVersion: PromptVersion):
   );
 }
 
-export function buildPrompt(request: Pick<ProviderRequest, "mode" | "promptVersion">): string {
+function targetLanguageRules(targetLanguage: ProviderRequest["targetLanguage"] | undefined) {
+  if (!targetLanguage) return "";
+  const baseTag = targetLanguage.tag.toLocaleLowerCase().split("-")[0];
+  const rules = TARGET_LANGUAGE_RULES[baseTag];
+  return rules ? `\n\nTarget-language rules for ${targetLanguage.name}:\n${rules}` : "";
+}
+
+export function buildPrompt(
+  request: Pick<ProviderRequest, "mode" | "promptVersion"> &
+    Partial<Pick<ProviderRequest, "targetLanguage">>,
+): string {
   const promptVersion = resolvePromptVersion(request.promptVersion);
-  return `${COMMON_RULES}\n\nTask: ${modeRules(request.mode, promptVersion)}\n\n${OUTPUT_CONTRACT}`;
+  return `${COMMON_RULES}\n\nTask: ${modeRules(request.mode, promptVersion)}${targetLanguageRules(request.targetLanguage)}\n\n${OUTPUT_CONTRACT}`;
 }
 
 function enabledGlossary(glossary: unknown[] | undefined): unknown[] {

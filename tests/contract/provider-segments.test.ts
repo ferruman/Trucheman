@@ -118,6 +118,24 @@ describe("provider prompt contract", () => {
     expect(prompt).toContain("Do not output the audit, labels, alternatives, explanations");
   });
 
+  it("adds target-language rules only for their matching language", () => {
+    const russianPrompt = buildPrompt({
+      mode: "consistency",
+      targetLanguage: { tag: "ru-RU", name: "Russian" },
+    });
+    const frenchPrompt = buildPrompt({
+      mode: "consistency",
+      targetLanguage: { tag: "fr", name: "French" },
+    });
+
+    expect(russianPrompt).toContain("Target-language rules for Russian");
+    expect(russianPrompt).toContain("Use ё consistently");
+    expect(russianPrompt).toContain("Thomas Street → Томас-стрит");
+    expect(frenchPrompt).not.toContain("Russian rules");
+    expect(frenchPrompt).not.toContain("Thomas Street → Томас-стрит");
+    expect(frenchPrompt).not.toContain("Use ё consistently");
+  });
+
   it("enforces exact response IDs", () => {
     expect(() =>
       validateProviderResponse({ segments: [{ id: "s2", text: "x" }] }, [
