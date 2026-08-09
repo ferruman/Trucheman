@@ -1,12 +1,6 @@
 import { z } from "zod";
 import { jobViewSchema } from "../../shared/api/schemas.js";
-import {
-  canTransition,
-  transition,
-  type JobStatus,
-  type JobStage,
-  type Progress,
-} from "../../shared/domain/job.js";
+import { transition, type JobStatus } from "../../shared/domain/job.js";
 export const persistedJobSchema = z.object({
   version: z.literal(1),
   id: z.string(),

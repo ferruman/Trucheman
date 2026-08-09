@@ -1,4 +1,4 @@
-import { resolve, relative, sep, join } from "node:path";
+import { resolve, relative, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 export function jobRoot(dataDir: string, id: string): string {
   if (!/^[a-f0-9-]{20,}$/.test(id)) throw new Error("Invalid job id");

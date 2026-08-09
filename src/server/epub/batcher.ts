@@ -3,8 +3,35 @@ export type Batch = { id: string; documentId: string; segments: TextSegment[] };
 
 export const MAX_BATCH_SEGMENTS = 20;
 
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 3.5);
+/**
+ * A text node larger than the batch budget is split across batches. Chunks carry a
+ * `<segment id>#<n>` suffix so they stay distinct all the way through the journals;
+ * `mergeChunkedSegments` puts them back together before reinsertion. Reusing the bare
+ * segment id here would make the pieces collide in the id-keyed reinsertion map and
+ * silently drop everything but the last chunk.
+ */
+const chunkSuffix = /#\d+$/;
+
+export function baseSegmentId(id: string): string {
+  return id.replace(chunkSuffix, "");
+}
+
+export function mergeChunkedSegments<T extends { id: string; text: string }>(segments: T[]): T[] {
+  const out: T[] = [];
+  const positions = new Map<string, number>();
+  for (const segment of segments) {
+    const id = baseSegmentId(segment.id);
+    const at = positions.get(id);
+    if (at === undefined) {
+      positions.set(id, out.length);
+      out.push({ ...segment, id });
+      continue;
+    }
+    const previous = out[at].text;
+    const separator = !previous || /\s$/u.test(previous) || /^\s/u.test(segment.text) ? "" : " ";
+    out[at] = { ...out[at], text: previous + separator + segment.text };
+  }
+  return out;
 }
 
 export function makeBatches(
@@ -37,16 +64,22 @@ export function makeBatches(
     }
     if (segment.text.length > maxChars) {
       const documentId = segment.id.split(":")[0];
-      const words = segment.text.split(/(?<=[.!?])\s+/);
+      // Trailing whitespace yields an empty tail piece that would append a stray space.
+      const sentences = segment.text.split(/(?<=[.!?])\s+/).filter(Boolean);
+      const chunks: string[] = [];
       let chunk = "";
-      for (const word of words) {
-        if (chunk && chunk.length + word.length + 1 > maxChars) {
-          push(documentId, [{ ...segment, text: chunk }]);
+      for (const sentence of sentences) {
+        if (chunk && chunk.length + sentence.length + 1 > maxChars) {
+          chunks.push(chunk);
           chunk = "";
         }
-        chunk += `${chunk ? " " : ""}${word}`;
+        chunk += `${chunk ? " " : ""}${sentence}`;
       }
-      if (chunk) push(documentId, [{ ...segment, text: chunk }]);
+      if (chunk) chunks.push(chunk);
+      for (const [index, text] of chunks.entries()) {
+        const id = chunks.length > 1 ? `${segment.id}#${index + 1}` : segment.id;
+        push(documentId, [{ ...segment, id, text }]);
+      }
       continue;
     }
     current.push(segment);

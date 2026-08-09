@@ -8,6 +8,8 @@ export type LanguageTag = (typeof LANGUAGES)[number]["tag"];
 export function isLanguageTag(value: string): value is LanguageTag {
   return LANGUAGES.some((x) => x.tag === value);
 }
-export function assertLanguagePair(source: LanguageTag, target: LanguageTag): void {
+export function assertLanguagePair(source: string, target: string): void {
+  if (!isLanguageTag(source) || !isLanguageTag(target))
+    throw new Error("Unsupported language pair");
   if (source === target) throw new Error("Source and target languages must differ");
 }

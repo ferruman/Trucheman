@@ -1,12 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { SettingsRepository } from "../../src/server/storage/settings-repository.js";
-describe("settings API boundary", () =>
-  it("returns current model defaults and credential presence rather than values", async () => {
-    const settings = await new SettingsRepository(
-      "/tmp/book-translator-missing/settings.json",
-    ).get();
-    expect(settings.translation.model).toBe("deepseek-v4-flash");
-    expect(settings.editing.model).toBe("deepseek-v4-flash");
-    expect(settings.translation).toHaveProperty("hasApiKey");
-    expect(settings.translation).not.toHaveProperty("apiKey");
-  }));
+import { profilesView, resolveProfiles } from "../../src/server/config/profiles.js";
+
+describe("settings API boundary", () => {
+  it("reports endpoint and model but never the credential itself", () => {
+    const view = profilesView({
+      useExternal: true,
+      translation: {
+        name: "deepseek-translation",
+        endpoint: "https://example.test/chat",
+        model: "some-model",
+        apiKey: "sk-secret-value",
+      },
+      editing: {
+        name: "deepseek-editing",
+        endpoint: "https://example.test/chat",
+        model: "other-model",
+        apiKey: "sk-secret-value",
+      },
+      consistency: {
+        name: "consistency",
+        endpoint: "https://example.test/chat",
+        model: "some-model",
+      },
+    });
+    expect(view.translation).toEqual({
+      endpoint: "https://example.test/chat",
+      model: "some-model",
+      hasApiKey: true,
+    });
+    expect(view.consistency.hasApiKey).toBe(false);
+    expect(JSON.stringify(view)).not.toContain("sk-secret-value");
+  });
+
+  it("falls back to the deterministic provider when credentials are absent", () => {
+    const profiles = resolveProfiles({ BOOK_TRANSLATOR_PROVIDER: "deterministic" });
+    expect(profiles.useExternal).toBe(false);
+    expect(profilesView(profiles).provider).toBe("deterministic");
+  });
+});

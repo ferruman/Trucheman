@@ -3,7 +3,7 @@ import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { extractEpub } from "../epub/extract.js";
 import { parseContainer, parsePackage } from "../epub/package-parser.js";
-import { makeBatches, type Batch } from "../epub/batcher.js";
+import { makeBatches, mergeChunkedSegments, type Batch } from "../epub/batcher.js";
 import { extractTextSegments, reinsertText, type TextSegment } from "../epub/text-segments.js";
 import { parseXml, serializeXml } from "../epub/xml-dom.js";
 import { buildEpub } from "../epub/build.js";
@@ -12,11 +12,10 @@ import { resolveEpubPath, validateEpubArchive } from "../epub/validate.js";
 import { updateContentLanguage, updatePackageLanguage } from "../epub/localization.js";
 import { FakeProvider } from "../providers/fake-provider.js";
 import { DeepSeekProvider } from "../providers/deepseek.js";
-import { loadSecrets } from "../config/secrets.js";
+import { resolveProfiles } from "../config/profiles.js";
 import { LANGUAGES } from "../../shared/languages.js";
 import { runTwoPass } from "./job-runner.js";
 import type { PersistedJob } from "../domain/job.js";
-import type { ProviderProfile } from "../providers/provider.js";
 import { syncParentDirectory } from "../storage/atomic-file.js";
 import {
   applyConsistencyDecisions,
@@ -43,14 +42,6 @@ export function providerLanguage(tag: string) {
   const language = LANGUAGES.find((candidate) => candidate.tag === tag);
   if (!language) throw new Error(`Unsupported language: ${tag}`);
   return { tag: language.tag, name: language.name };
-}
-
-function thinkingMode(value: string | undefined, endpoint: string): ProviderProfile["thinking"] {
-  const configured = value ?? (endpoint.includes("api.deepseek.com") ? "disabled" : undefined);
-  if (configured !== undefined && configured !== "enabled" && configured !== "disabled") {
-    throw new Error("BOOK_TRANSLATOR_CONSISTENCY_THINKING must be enabled or disabled");
-  }
-  return configured;
 }
 
 export async function prepareBook(root: string): Promise<PreparedBook> {
@@ -97,55 +88,13 @@ export async function runPreparedBook(
   // the output of an earlier run.
   const prepared = await prepareBook(root);
   const batches = prepared.documents.flatMap((document) => document.batches);
-  const secrets = loadSecrets();
-  const useExternal =
-    process.env.BOOK_TRANSLATOR_PROVIDER !== "deterministic" &&
-    Boolean(secrets.translationApiKey && secrets.editingApiKey);
+  const {
+    useExternal,
+    translation: translationProfile,
+    editing: editingProfile,
+    consistency: consistencyProfile,
+  } = resolveProfiles();
   const provider = useExternal ? new DeepSeekProvider() : new FakeProvider();
-  const translationEndpoint =
-    secrets.translationEndpoint ??
-    process.env.BOOK_TRANSLATOR_TRANSLATION_ENDPOINT ??
-    "https://api.deepseek.com/chat/completions";
-  const editingEndpoint =
-    secrets.editingEndpoint ??
-    process.env.BOOK_TRANSLATOR_EDITING_ENDPOINT ??
-    "https://api.deepseek.com/chat/completions";
-  const consistencyEndpoint =
-    secrets.consistencyEndpoint ??
-    process.env.BOOK_TRANSLATOR_CONSISTENCY_ENDPOINT ??
-    translationEndpoint;
-  const translationProfile = {
-    name: useExternal ? "deepseek-translation" : "deterministic-local",
-    endpoint: translationEndpoint,
-    model:
-      secrets.translationModel ??
-      process.env.BOOK_TRANSLATOR_TRANSLATION_MODEL ??
-      "deepseek-v4-flash",
-    apiKey: secrets.translationApiKey,
-    thinking: translationEndpoint.includes("api.deepseek.com") ? ("disabled" as const) : undefined,
-  };
-  const editingProfile = {
-    name: useExternal ? "deepseek-editing" : "deterministic-local",
-    endpoint: editingEndpoint,
-    model: secrets.editingModel ?? process.env.BOOK_TRANSLATOR_EDITING_MODEL ?? "deepseek-v4-flash",
-    apiKey: secrets.editingApiKey,
-    thinking: editingEndpoint.includes("api.deepseek.com") ? ("disabled" as const) : undefined,
-    promptVersion:
-      secrets.editingPromptVersion ?? process.env.BOOK_TRANSLATOR_EDITING_PROMPT_VERSION,
-  };
-  const consistencyProfile = {
-    name: useExternal ? "consistency" : "deterministic-local",
-    endpoint: consistencyEndpoint,
-    model:
-      secrets.consistencyModel ??
-      process.env.BOOK_TRANSLATOR_CONSISTENCY_MODEL ??
-      translationProfile.model,
-    apiKey: secrets.consistencyApiKey ?? secrets.translationApiKey,
-    thinking: thinkingMode(
-      secrets.consistencyThinking ?? process.env.BOOK_TRANSLATOR_CONSISTENCY_THINKING,
-      consistencyEndpoint,
-    ),
-  };
   const instructions = job.instructions.trim();
   const sourceLanguage = providerLanguage(job.sourceLanguage),
     targetLanguage = providerLanguage(job.targetLanguage);
@@ -197,7 +146,9 @@ export async function runPreparedBook(
   const consistencyDocuments: ConsistencyDocument[] = prepared.documents.map((document) => ({
     id: document.id,
     sourceSegments: document.segments,
-    editedSegments: document.batches.flatMap((batch) => result.edits.get(batch.id) ?? []),
+    editedSegments: mergeChunkedSegments(
+      document.batches.flatMap((batch) => result.edits.get(batch.id) ?? []),
+    ),
   }));
   const mechanicalApplied =
     targetLanguage.tag.toLocaleLowerCase().split("-")[0] === "ru"

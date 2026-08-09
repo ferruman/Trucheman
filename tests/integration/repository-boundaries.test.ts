@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { JobRepository } from "../../src/server/storage/job-repository.js";
 import { EventRepository } from "../../src/server/storage/event-repository.js";
-import { SettingsRepository } from "../../src/server/storage/settings-repository.js";
 
 function job(id: string) {
   const now = new Date().toISOString();
@@ -58,12 +57,17 @@ describe("repository boundaries", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
-  it("derives credential presence without persisting credentials", async () => {
-    const root = await mkdtemp(join(tmpdir(), "settings-boundary-")),
-      repo = new SettingsRepository(join(root, "settings.json"), { translation: true });
-    const settings = await repo.get();
-    expect(settings.translation.hasApiKey).toBe(true);
-    await repo.save(settings);
-    expect(await repo.get()).not.toHaveProperty("translation.apiKey");
+  it("keeps a rising event id without rereading the journal", async () => {
+    const root = await mkdtemp(join(tmpdir(), "event-id-")),
+      path = join(root, "events.ndjson"),
+      repo = new EventRepository(path);
+    for (let i = 0; i < 3; i++)
+      await repo.append({ jobId: "job", type: "progress", timestamp: "t", message: `${i}` });
+    expect((await repo.list()).map((event) => event.id)).toEqual([1, 2, 3]);
+    // A fresh instance must continue the existing sequence rather than restart at 1.
+    const reopened = new EventRepository(path);
+    expect(
+      (await reopened.append({ jobId: "job", type: "done", timestamp: "t", message: "x" })).id,
+    ).toBe(4);
   });
 });

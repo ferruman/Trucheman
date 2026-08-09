@@ -3,13 +3,11 @@ import type { EventRepository, StoredEvent } from "../storage/event-repository.j
 export function jobEventsRouter(events: EventRepository) {
   const r = Router();
   r.get("/:id/events", async (req, res) => {
-    res
-      .status(200)
-      .set({
-        "content-type": "text/event-stream",
-        "cache-control": "no-cache, no-transform",
-        connection: "keep-alive",
-      });
+    res.status(200).set({
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+    });
     res.flushHeaders();
     const send = (event: StoredEvent) =>
       res.write(`id: ${event.id}\ndata: ${JSON.stringify(event)}\n\n`);

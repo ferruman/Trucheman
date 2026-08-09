@@ -1,50 +1,26 @@
 import { Router } from "express";
-import { z } from "zod";
-import { settingsSchema, type SettingsRepository } from "../storage/settings-repository.js";
+import { profilesView, resolveProfiles } from "../config/profiles.js";
 import { DomainError } from "../domain/errors.js";
 import { problemResponse } from "./problem.js";
-const updateSchema = settingsSchema
-  .partial()
-  .extend({
-    translation: settingsSchema.shape.translation.partial().optional(),
-    editing: settingsSchema.shape.editing.partial().optional(),
-  })
-  .strict();
-export function settingsRouter(repo: SettingsRepository) {
+
+/**
+ * Read-only by design: provider configuration comes from the server environment, so there
+ * is nothing here for the browser to write. An earlier writable settings.json was never
+ * read by the pipeline, which made every value shown in the UI a fiction.
+ */
+export function settingsRouter() {
   const r = Router();
-  r.get("/", async (_q, res) => res.json(await repo.get()));
-  r.put("/", async (req, res) => {
-    try {
-      const old = await repo.get(),
-        parsed = updateSchema.parse(req.body);
-      const next = settingsSchema.parse({
-        ...old,
-        ...parsed,
-        translation: {
-          ...old.translation,
-          ...parsed.translation,
-          hasApiKey: old.translation.hasApiKey,
-        },
-        editing: { ...old.editing, ...parsed.editing, hasApiKey: old.editing.hasApiKey },
-      });
-      await repo.save(next);
-      res.json(next);
-    } catch (error) {
-      problemResponse(
-        res,
-        error instanceof z.ZodError
-          ? new DomainError("invalid_settings", error.issues[0]?.message ?? "Invalid settings", 400)
-          : error,
-        req,
-      );
-    }
-  });
-  r.post("/test", async (_q, res) => {
-    const settings = await repo.get();
-    if (!settings.translation.hasApiKey && !settings.editing.hasApiKey)
+  r.get("/", (_q, res) => res.json(profilesView()));
+  r.post("/test", (_q, res) => {
+    const profiles = resolveProfiles();
+    if (!profiles.useExternal)
       return problemResponse(
         res,
-        new DomainError("credential_missing", "No provider credential is configured", 400),
+        new DomainError(
+          "credential_missing",
+          "No provider credential is configured; runs will use the deterministic local provider",
+          400,
+        ),
       );
     return res.json({
       ok: true,

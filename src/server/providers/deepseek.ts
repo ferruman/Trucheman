@@ -115,9 +115,10 @@ export class DeepSeekProvider implements LanguageModelProvider {
     }
 
     const transportRequest = withTransportIds(request);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), request.profile.timeoutMs ?? 60000);
-    if (signal) signal.addEventListener("abort", () => controller.abort(), { once: true });
+    // The job-level signal outlives every batch, so a per-request listener on it would
+    // accumulate for the whole run. AbortSignal.any owns that wiring and releases it.
+    const timeout = AbortSignal.timeout(request.profile.timeoutMs ?? 60000);
+    const aborted = signal ? AbortSignal.any([signal, timeout]) : timeout;
 
     try {
       const res = await fetch(request.profile.endpoint, {
@@ -134,7 +135,7 @@ export class DeepSeekProvider implements LanguageModelProvider {
           thinking: request.profile.thinking ? { type: request.profile.thinking } : undefined,
           stream: false,
         }),
-        signal: controller.signal,
+        signal: aborted,
       });
       const requestId = res.headers.get("x-request-id") ?? undefined;
       if (!res.ok) {
@@ -204,12 +205,15 @@ export class DeepSeekProvider implements LanguageModelProvider {
       }
     } catch (error) {
       if (error instanceof ProviderError) throw error;
-      if ((error as Error).name === "AbortError") {
+      // A paused job must propagate its own reason: wrapping it as "temporary" would
+      // make the retry policy keep calling the provider after the user asked to stop.
+      if (signal?.aborted) {
+        throw signal.reason instanceof Error ? signal.reason : new Error("Job aborted");
+      }
+      if (timeout.aborted) {
         throw new ProviderError("temporary", "Provider request timed out");
       }
       throw new ProviderError("temporary", "Provider request failed");
-    } finally {
-      clearTimeout(timer);
     }
   }
 }

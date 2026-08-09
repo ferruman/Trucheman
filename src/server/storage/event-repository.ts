@@ -10,12 +10,15 @@ export type StoredEvent = {
 export class EventRepository {
   private writes: Promise<unknown> = Promise.resolve();
   private listeners = new Set<(event: StoredEvent) => void>();
+  /** Reading the whole journal per append made every progress event cost O(log size). */
+  private lastId?: number;
   constructor(private path: string) {}
   append(event: Omit<StoredEvent, "id">) {
     const write = this.writes.then(async () => {
-      const current = await this.list();
-      const next = { ...event, id: (current.at(-1)?.id ?? 0) + 1 };
+      const previous = this.lastId ?? (await readJournal<StoredEvent>(this.path)).at(-1)?.id ?? 0;
+      const next = { ...event, id: previous + 1 };
       await appendJournal(this.path, next);
+      this.lastId = next.id;
       for (const listener of this.listeners) {
         try {
           listener(next);

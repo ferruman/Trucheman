@@ -48,7 +48,7 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
   router.post("/", async (req, res) => {
     try {
       const { title, sourceLanguage, targetLanguage } = parseBody(createJobSchema, req.body);
-      assertLanguagePair(sourceLanguage as any, targetLanguage as any);
+      assertLanguagePair(sourceLanguage, targetLanguage);
       const id = newJobId(),
         now = new Date().toISOString();
       const job: PersistedJob = {
@@ -100,7 +100,7 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
         glossary: body.glossary ?? base.glossary,
         updatedAt: new Date().toISOString(),
       };
-      assertLanguagePair(next.sourceLanguage as any, next.targetLanguage as any);
+      assertLanguagePair(next.sourceLanguage, next.targetLanguage);
       await repo.save(next);
       res.json(toJobView(next));
     } catch (error) {
@@ -116,7 +116,7 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
       if (!Buffer.isBuffer(req.body) || req.body.length === 0)
         throw new DomainError("upload_missing", "An EPUB upload is required", 400);
       const base = job.status === "created" ? job : await orchestrator.invalidate(job.id);
-      await BunlessWrite(root, req.body);
+      await atomicWrite(join(root, "source.epub"), req.body);
       await repo.save({
         ...base,
         status: "created",
@@ -138,13 +138,6 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
       problemResponse(res, error, req);
     }
   });
-  router.post("/:id/names/analyze", async (req, res) => {
-    try {
-      res.status(202).json(toJobView(await orchestrator.analyze(req.params.id)));
-    } catch (error) {
-      problemResponse(res, error, req);
-    }
-  });
   router.post("/:id/start", async (req, res) => {
     try {
       res.status(202).json(toJobView(await orchestrator.start(req.params.id)));
@@ -159,6 +152,7 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
         throw new DomainError("output_not_ready", "The translated EPUB is not ready", 409);
       const path = join(jobRoot(repo.dataDir, req.params.id), "output.epub");
       await access(path);
+      res.attachment(`${job.title.replace(/[^\p{L}\p{N} ._-]/gu, "_").slice(0, 120)}.epub`);
       res.type("application/epub+zip");
       createReadStream(path)
         .on("error", (error) => problemResponse(res, error, req))
@@ -178,8 +172,4 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
     }
   });
   return router;
-}
-
-async function BunlessWrite(root: string, body: Buffer) {
-  await atomicWrite(join(root, "source.epub"), body);
 }

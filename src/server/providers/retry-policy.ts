@@ -16,6 +16,9 @@ export function retryDecision(
   };
 }
 export async function abortableDelay(ms: number, signal?: AbortSignal) {
+  // addEventListener never fires on an already-aborted signal, so without this check a
+  // pause requested mid-request still waited out the full backoff before taking effect.
+  if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new Error("Aborted");
   await new Promise<void>((resolve, reject) => {
     const t = setTimeout(resolve, ms);
     signal?.addEventListener(
