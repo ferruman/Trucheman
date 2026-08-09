@@ -24,7 +24,7 @@ describe("DeepSeek provider", () => {
           JSON.stringify({
             choices: [
               {
-                message: { content: '{"segments":[{"id":"s1","text":"Привет"}]}' },
+                message: { content: '{"segments":[{"id":"s0001","text":"Привет"}]}' },
                 finish_reason: "stop",
               },
             ],
@@ -34,18 +34,19 @@ describe("DeepSeek provider", () => {
       }),
     );
 
-    await new DeepSeekProvider().complete({
+    const response = await new DeepSeekProvider().complete({
       profile: { name: "x", endpoint: "https://provider.test", model: "x", apiKey: "secret" },
       mode: "translation",
       instructions: "Translate from English to Russian",
-      segments: [{ id: "s1", text: "Hello" }],
+      segments: [{ id: "document-3:a", text: "Hello" }],
     });
 
     const messages = requestBody?.messages as Array<{ role: string; content: string }>;
     expect(messages.map(({ role }) => role)).toEqual(["system", "user"]);
     expect(messages[0]?.content).not.toContain("Hello");
     expect(JSON.parse(messages[1]?.content ?? "").segments).toEqual([
-      { id: "s1", text: "Hello" },
+      { id: "s0001", text: "Hello" },
     ]);
+    expect(response.segments).toEqual([{ id: "document-3:a", text: "Привет" }]);
   });
 });
