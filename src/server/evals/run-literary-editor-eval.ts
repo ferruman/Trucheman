@@ -26,14 +26,23 @@ async function main() {
   const providerName = argument("--provider") ?? "deepseek";
   const modelOverride = argument("--model");
   const thinking = argument("--thinking");
+  const temperatureValue = argument("--temperature");
   if (!new Set(["deepseek", "deterministic"]).has(providerName)) {
     throw new Error("--provider must be deepseek or deterministic");
   }
   if (thinking !== undefined && !new Set(["enabled", "disabled"]).has(thinking)) {
     throw new Error("--thinking must be enabled or disabled");
   }
-  if (providerName === "deterministic" && (modelOverride || thinking)) {
-    throw new Error("--model and --thinking require --provider deepseek");
+  if (providerName === "deterministic" && (modelOverride || thinking || temperatureValue)) {
+    throw new Error("--model, --thinking, and --temperature require --provider deepseek");
+  }
+  const temperature =
+    temperatureValue === undefined ? undefined : Number.parseFloat(temperatureValue);
+  if (
+    temperature !== undefined &&
+    (!Number.isFinite(temperature) || temperature < 0 || temperature > 2)
+  ) {
+    throw new Error("--temperature must be a number from 0 to 2");
   }
   const limit = limitValue ? Number.parseInt(limitValue, 10) : undefined;
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
@@ -63,7 +72,7 @@ async function main() {
           endpoint: secrets.editingEndpoint ?? "https://api.deepseek.com/chat/completions",
           model,
           apiKey: secrets.editingApiKey,
-          temperature: thinking === "enabled" ? undefined : 0,
+          temperature,
           thinking: thinking as ProviderProfile["thinking"],
         }
       : { name: "deterministic-literary-eval", endpoint: "local", model: "fake" };
