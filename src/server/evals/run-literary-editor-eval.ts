@@ -75,7 +75,8 @@ async function main() {
   const model =
     providerName === "deterministic"
       ? "fake"
-      : (modelOverride ?? secrets.editingModel ?? "deepseek-chat");
+      : (modelOverride ?? secrets.editingModel ?? "deepseek-v4-flash");
+  const endpoint = secrets.editingEndpoint ?? "https://api.deepseek.com/chat/completions";
   const runLabel = [promptVersion, model, thinking].filter(Boolean).join("-");
   const outputPath = resolve(
     argument("--output") ?? `eval-results/literary-editor/${runLabel}-${timestamp()}.json`,
@@ -85,11 +86,13 @@ async function main() {
     providerName === "deepseek"
       ? {
           name: "deepseek-literary-eval",
-          endpoint: secrets.editingEndpoint ?? "https://api.deepseek.com/chat/completions",
+          endpoint,
           model,
           apiKey: secrets.editingApiKey,
           temperature,
-          thinking: thinking as ProviderProfile["thinking"],
+          thinking: (thinking ??
+            (endpoint.includes("api.deepseek.com") ? "disabled" : undefined)) as
+            ProviderProfile["thinking"] | undefined,
         }
       : { name: "deterministic-literary-eval", endpoint: "local", model: "fake" };
   const provider: LanguageModelProvider =

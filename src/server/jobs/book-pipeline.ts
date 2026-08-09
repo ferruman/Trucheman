@@ -73,24 +73,30 @@ export async function runPreparedBook(
     process.env.BOOK_TRANSLATOR_PROVIDER !== "deterministic" &&
     Boolean(secrets.translationApiKey && secrets.editingApiKey);
   const provider = useExternal ? new DeepSeekProvider() : new FakeProvider();
+  const translationEndpoint =
+    secrets.translationEndpoint ??
+    process.env.BOOK_TRANSLATOR_TRANSLATION_ENDPOINT ??
+    "https://api.deepseek.com/chat/completions";
+  const editingEndpoint =
+    secrets.editingEndpoint ??
+    process.env.BOOK_TRANSLATOR_EDITING_ENDPOINT ??
+    "https://api.deepseek.com/chat/completions";
   const translationProfile = {
     name: useExternal ? "deepseek-translation" : "deterministic-local",
-    endpoint:
-      secrets.translationEndpoint ??
-      process.env.BOOK_TRANSLATOR_TRANSLATION_ENDPOINT ??
-      "https://api.deepseek.com/chat/completions",
+    endpoint: translationEndpoint,
     model:
-      secrets.translationModel ?? process.env.BOOK_TRANSLATOR_TRANSLATION_MODEL ?? "deepseek-chat",
+      secrets.translationModel ??
+      process.env.BOOK_TRANSLATOR_TRANSLATION_MODEL ??
+      "deepseek-v4-flash",
     apiKey: secrets.translationApiKey,
+    thinking: translationEndpoint.includes("api.deepseek.com") ? ("disabled" as const) : undefined,
   };
   const editingProfile = {
     name: useExternal ? "deepseek-editing" : "deterministic-local",
-    endpoint:
-      secrets.editingEndpoint ??
-      process.env.BOOK_TRANSLATOR_EDITING_ENDPOINT ??
-      "https://api.deepseek.com/chat/completions",
-    model: secrets.editingModel ?? process.env.BOOK_TRANSLATOR_EDITING_MODEL ?? "deepseek-chat",
+    endpoint: editingEndpoint,
+    model: secrets.editingModel ?? process.env.BOOK_TRANSLATOR_EDITING_MODEL ?? "deepseek-v4-flash",
     apiKey: secrets.editingApiKey,
+    thinking: editingEndpoint.includes("api.deepseek.com") ? ("disabled" as const) : undefined,
     promptVersion:
       secrets.editingPromptVersion ?? process.env.BOOK_TRANSLATOR_EDITING_PROMPT_VERSION,
   };

@@ -28,8 +28,8 @@ Without credentials, the application uses the deterministic local provider so th
 ```dotenv
 BOOK_TRANSLATOR_TRANSLATION_API_KEY=your-key
 BOOK_TRANSLATOR_EDITING_API_KEY=your-key
-BOOK_TRANSLATOR_TRANSLATION_MODEL=deepseek-chat
-BOOK_TRANSLATOR_EDITING_MODEL=deepseek-chat
+BOOK_TRANSLATOR_TRANSLATION_MODEL=deepseek-v4-flash
+BOOK_TRANSLATOR_EDITING_MODEL=deepseek-v4-flash
 ```
 
 Translation and editing models are configured independently. The editing pass can also select an
