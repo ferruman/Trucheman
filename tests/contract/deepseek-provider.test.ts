@@ -49,4 +49,45 @@ describe("DeepSeek provider", () => {
     ]);
     expect(response.segments).toEqual([{ id: "document-3:a", text: "Привет" }]);
   });
+
+  it("accepts an edited draft field while preserving the original segment IDs", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      segments: [
+                        { id: "s0001", original: "Unknown", draft: "Неизвестно" },
+                        { id: "s0002", original: "Part", draft: "Часть" },
+                      ],
+                    }),
+                  },
+                  finish_reason: "stop",
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+    const response = await new DeepSeekProvider().complete({
+      profile: { name: "x", endpoint: "https://provider.test", model: "x", apiKey: "secret" },
+      mode: "editing",
+      segments: [
+        { id: "document-3:0", original: "Unknown", draft: "Неизвестно" },
+        { id: "document-3:1", original: "Part", draft: "Часть" },
+      ],
+    });
+
+    expect(response.segments).toEqual([
+      { id: "document-3:0", text: "Неизвестно" },
+      { id: "document-3:1", text: "Часть" },
+    ]);
+  });
 });

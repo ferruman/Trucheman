@@ -17,6 +17,23 @@ function withTransportIds(request: ProviderRequest): ProviderRequest {
   };
 }
 
+function normalizeResponseSegments(
+  value: unknown,
+  mode: ProviderRequest["mode"],
+): ProviderResponse["segments"] {
+  if (!Array.isArray(value) || mode !== "editing") {
+    return value as ProviderResponse["segments"];
+  }
+  return value.map((segment) => {
+    if (typeof segment !== "object" || segment === null || !("id" in segment)) return segment;
+    if ("text" in segment && typeof segment.text === "string") return segment;
+    if ("draft" in segment && typeof segment.draft === "string") {
+      return { id: segment.id, text: segment.draft };
+    }
+    return segment;
+  }) as ProviderResponse["segments"];
+}
+
 export class DeepSeekProvider implements LanguageModelProvider {
   async complete(request: ProviderRequest, signal?: AbortSignal): Promise<ProviderResponse> {
     if (!request.profile.apiKey) {
@@ -83,7 +100,7 @@ export class DeepSeekProvider implements LanguageModelProvider {
       try {
         const validated = validateProviderResponse(
           {
-            segments: parsed.segments,
+            segments: normalizeResponseSegments(parsed.segments, request.mode),
             finishReason: body.choices?.[0]?.finish_reason,
             requestId,
             usage: {

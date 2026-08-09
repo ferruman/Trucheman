@@ -5,7 +5,11 @@ export function validateProviderResponse(
   response: ProviderResponse,
   expected: ProviderInputSegment[],
 ): ProviderResponse {
-  const parsed = providerResultSchema.parse({ segments: response.segments });
+  const result = providerResultSchema.safeParse({ segments: response.segments });
+  if (!result.success) {
+    throw new Error("Provider response segments must contain string id and text fields");
+  }
+  const parsed = result.data;
   const ids = expected.map((item) => item.id);
   const got = parsed.segments.map((item) => item.id);
   if (
