@@ -98,4 +98,19 @@ describe("literary editor evaluation", () => {
       ).passed,
     ).toBe(true);
   });
+
+  it("accepts an idiomatic put-together reformulation", async () => {
+    const corpus = literaryEditorCorpusSchema.parse(
+      JSON.parse(await readFile("evals/literary-editor/cases.json", "utf8")),
+    );
+    const corpusCase = corpus.cases.find((item) => item.id === "lovecraft-put-together");
+
+    expect(corpusCase).toBeDefined();
+    expect(
+      evaluateLiteraryOutput(
+        corpusCase!,
+        "Я надеюсь, что никому другому не удастся собрать это воедино.",
+      ).passed,
+    ).toBe(true);
+  });
 });
