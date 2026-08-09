@@ -44,9 +44,15 @@ describe("DeepSeek provider", () => {
     const messages = requestBody?.messages as Array<{ role: string; content: string }>;
     expect(messages.map(({ role }) => role)).toEqual(["system", "user"]);
     expect(messages[0]?.content).not.toContain("Hello");
-    expect(JSON.parse(messages[1]?.content ?? "").segments).toEqual([
-      { id: "s0001", text: "Hello" },
-    ]);
+    const input = JSON.parse(messages[1]?.content ?? "");
+    expect(input.responseContract).toEqual({
+      format: "json",
+      segmentCount: 1,
+      ids: ["s0001"],
+      segmentKeys: ["id", "text"],
+      textType: "string",
+    });
+    expect(input.segments).toEqual([{ id: "s0001", text: "Hello" }]);
     expect(response.segments).toEqual([{ id: "document-3:a", text: "Привет" }]);
   });
 

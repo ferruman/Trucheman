@@ -43,6 +43,13 @@ describe("provider prompt contract", () => {
     expect(payload).toEqual({
       promptVersion: PROMPT_VERSION,
       task: "translation",
+      responseContract: {
+        format: "json",
+        segmentCount: 1,
+        ids: ["s1"],
+        segmentKeys: ["id", "text"],
+        textType: "string",
+      },
       userPreferences: "Translate from English to Russian",
       glossary: [{ source: "Moon", target: "Луна", enabled: true }],
       segments: [{ id: "s1", text: "Hello" }],
@@ -57,18 +64,21 @@ describe("provider prompt contract", () => {
       }),
     );
 
-    expect(payload.segments).toEqual([
-      { id: "s1", original: "Hello", draft: "Привет" },
-    ]);
-    expect(buildPrompt({ mode: "editing" })).toContain("Keep correct draft wording");
+    expect(payload.segments).toEqual([{ id: "s1", original: "Hello", draft: "Привет" }]);
+    const prompt = buildPrompt({ mode: "editing" });
+    expect(prompt).toContain("Keep correct draft wording");
+    expect(prompt).toContain('Every element must contain exactly two keys: "id" and "text"');
+    expect(prompt).toContain('"text" must always be a JSON string');
+    expect(prompt).toContain(
+      '{"segments":[{"id":"s0001","text":"First result."},{"id":"s0002","text":"Second result."}]}',
+    );
   });
 
   it("enforces exact response IDs", () => {
     expect(() =>
-      validateProviderResponse(
-        { segments: [{ id: "s2", text: "x" }] },
-        [{ id: "s1", text: "Hello" }],
-      ),
+      validateProviderResponse({ segments: [{ id: "s2", text: "x" }] }, [
+        { id: "s1", text: "Hello" },
+      ]),
     ).toThrow("IDs do not exactly match");
   });
 });
