@@ -94,6 +94,24 @@ describe("provider prompt contract", () => {
     );
   });
 
+  it("builds the literary v3.2.1 candidate without changing the production default", () => {
+    const prompt = buildPrompt({ mode: "editing", promptVersion: "literary-v3.2.1" });
+    const payload = JSON.parse(
+      buildPromptInput({
+        mode: "editing",
+        promptVersion: "literary-v3.2.1",
+        ...languages,
+        segments: [{ id: "s1", original: "Hello", draft: "Привет" }],
+      }),
+    );
+
+    expect(PROMPT_VERSION).toBe("literary-v3.1");
+    expect(payload.promptVersion).toBe("literary-v3.2.1");
+    expect(prompt).toContain("perform this silent audit");
+    expect(prompt).toContain("recasting it as a clause with a finite verb");
+    expect(prompt).toContain("Do not output the audit, labels, alternatives, explanations");
+  });
+
   it("enforces exact response IDs", () => {
     expect(() =>
       validateProviderResponse({ segments: [{ id: "s2", text: "x" }] }, [

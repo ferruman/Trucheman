@@ -21,6 +21,7 @@ export type ProviderRequest = {
   segments: ProviderInputSegment[];
   instructions?: string;
   glossary?: unknown[];
+  promptVersion?: string;
 };
 
 export type ProviderResponse = {

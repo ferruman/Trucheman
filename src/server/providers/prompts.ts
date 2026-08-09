@@ -1,6 +1,8 @@
 import type { ProviderInputSegment, ProviderRequest } from "./provider.js";
 
 export const PROMPT_VERSION = "literary-v3.1";
+export const PROMPT_VERSIONS = [PROMPT_VERSION, "literary-v3.2.1"] as const;
+export type PromptVersion = (typeof PROMPT_VERSIONS)[number];
 
 export type PromptMessage = {
   role: "system" | "user";
@@ -30,6 +32,20 @@ Valid response example:
 {"segments":[{"id":"s0001","text":"First result."},{"id":"s0002","text":"Second result."}]}
 
 Before responding, silently verify: valid JSON; exact segment count; exact id order; only id/text keys; every text is a string. Do not output this verification.`;
+
+const NATIVE_WRITER_CHECK = `For every sentence, silently ask: "Would a skilled native-language literary writer plausibly phrase this idea this way without seeing the source text?" If not, rewrite it while preserving the author's meaning, tone, period, and stylistic character.`;
+
+const V31_EDITING_OUTPUT = `Before producing each edited segment, silently compare the original and draft for meaning, then judge the draft as native target-language literary prose. Output only the final edited wording in the string field text.`;
+
+const V321_SILENT_AUDIT = `Before editing each segment, perform this silent audit:
+1. Identify the original's semantic units, especially idioms, metaphors, abstract relationships, polysemous words, and phrases whose rhetorical function matters more than their lexical form.
+2. Mark every suspicious span in the draft: wording that mirrors the source's vocabulary, metaphor, part of speech, syntax, or nominal structure more closely than natural target-language usage would.
+3. Re-express each suspicious span from its contextual meaning and rhetorical function. Do not merely replace individual words with synonyms while retaining an unnatural underlying construction.
+   When an abstract action noun mirrors the source construction, explicitly test recasting it as a clause with a finite verb, and prefer the clause whenever it is more idiomatic in the target language.
+4. Read the revised segment without mentally referring to the source. Check lexical compatibility, idiom, grammatical government, reference clarity, rhythm, and register as independent target-language prose.
+5. Compare the revision with the original once more and restore any meaning, nuance, ambiguity, or stylistic effect lost during rewriting.`;
+
+const V321_EDITING_OUTPUT = `Do not output the audit, labels, alternatives, explanations, or reasoning. Output only the final edited wording in the string field text.`;
 
 const MODE_RULES: Record<ProviderRequest["mode"], string> = {
   translation: `Translate each segment from sourceLanguage into targetLanguage.
@@ -65,13 +81,31 @@ Do not simplify deliberate complexity, archaism, ambiguity, repetition, rhythm, 
 
 Keep draft wording only when it is both faithful to the original and natural, idiomatic, and stylistically appropriate in the target language.
 
-For every sentence, silently ask: "Would a skilled native-language literary writer plausibly phrase this idea this way without seeing the source text?" If not, rewrite it while preserving the author's meaning, tone, period, and stylistic character.
+${NATIVE_WRITER_CHECK}
 
-Before producing each edited segment, silently compare the original and draft for meaning, then judge the draft as native target-language literary prose. Output only the final edited wording in the string field text.`,
+${V31_EDITING_OUTPUT}`,
 };
 
-export function buildPrompt(request: Pick<ProviderRequest, "mode">): string {
-  return `${COMMON_RULES}\n\nTask: ${MODE_RULES[request.mode]}\n\n${OUTPUT_CONTRACT}`;
+export function resolvePromptVersion(value: string | undefined): PromptVersion {
+  const version = value ?? PROMPT_VERSION;
+  if (!(PROMPT_VERSIONS as readonly string[]).includes(version)) {
+    throw new Error(`Unsupported prompt version: ${version}`);
+  }
+  return version as PromptVersion;
+}
+
+function modeRules(mode: ProviderRequest["mode"], promptVersion: PromptVersion): string {
+  const rules = MODE_RULES[mode];
+  if (mode !== "editing" || promptVersion === PROMPT_VERSION) return rules;
+  return rules.replace(
+    `${NATIVE_WRITER_CHECK}\n\n${V31_EDITING_OUTPUT}`,
+    `${V321_SILENT_AUDIT}\n\n${NATIVE_WRITER_CHECK}\n\n${V321_EDITING_OUTPUT}`,
+  );
+}
+
+export function buildPrompt(request: Pick<ProviderRequest, "mode" | "promptVersion">): string {
+  const promptVersion = resolvePromptVersion(request.promptVersion);
+  return `${COMMON_RULES}\n\nTask: ${modeRules(request.mode, promptVersion)}\n\n${OUTPUT_CONTRACT}`;
 }
 
 function enabledGlossary(glossary: unknown[] | undefined): unknown[] {
@@ -98,12 +132,19 @@ function serializeSegment(mode: ProviderRequest["mode"], segment: ProviderInputS
 export function buildPromptInput(
   request: Pick<
     ProviderRequest,
-    "mode" | "sourceLanguage" | "targetLanguage" | "segments" | "instructions" | "glossary"
+    | "mode"
+    | "sourceLanguage"
+    | "targetLanguage"
+    | "segments"
+    | "instructions"
+    | "glossary"
+    | "promptVersion"
   >,
 ): string {
+  const promptVersion = resolvePromptVersion(request.promptVersion);
   const ids = request.segments.map((segment) => segment.id);
   return JSON.stringify({
-    promptVersion: PROMPT_VERSION,
+    promptVersion,
     task: request.mode,
     sourceLanguage: request.sourceLanguage,
     targetLanguage: request.targetLanguage,
@@ -123,7 +164,13 @@ export function buildPromptInput(
 export function buildPromptMessages(
   request: Pick<
     ProviderRequest,
-    "mode" | "sourceLanguage" | "targetLanguage" | "segments" | "instructions" | "glossary"
+    | "mode"
+    | "sourceLanguage"
+    | "targetLanguage"
+    | "segments"
+    | "instructions"
+    | "glossary"
+    | "promptVersion"
   >,
 ): PromptMessage[] {
   return [

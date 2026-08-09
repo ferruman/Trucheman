@@ -4,7 +4,7 @@ import { loadSecrets } from "../config/secrets.js";
 import { DeepSeekProvider } from "../providers/deepseek.js";
 import { FakeProvider } from "../providers/fake-provider.js";
 import type { LanguageModelProvider, ProviderProfile } from "../providers/provider.js";
-import { PROMPT_VERSION } from "../providers/prompts.js";
+import { PROMPT_VERSIONS, resolvePromptVersion } from "../providers/prompts.js";
 import {
   evaluateLiteraryOutput,
   HUMAN_REVIEW_DIMENSIONS,
@@ -28,6 +28,7 @@ async function main() {
   const modelOverride = argument("--model");
   const thinking = argument("--thinking");
   const temperatureValue = argument("--temperature");
+  const promptVersionValue = argument("--prompt-version");
   if (!new Set(["deepseek", "deterministic"]).has(providerName)) {
     throw new Error("--provider must be deepseek or deterministic");
   }
@@ -45,6 +46,13 @@ async function main() {
   ) {
     throw new Error("--temperature must be a number from 0 to 2");
   }
+  if (
+    promptVersionValue !== undefined &&
+    !(PROMPT_VERSIONS as readonly string[]).includes(promptVersionValue)
+  ) {
+    throw new Error(`--prompt-version must be one of: ${PROMPT_VERSIONS.join(", ")}`);
+  }
+  const promptVersion = resolvePromptVersion(promptVersionValue);
   const limit = limitValue ? Number.parseInt(limitValue, 10) : undefined;
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
     throw new Error("--limit must be a positive integer");
@@ -68,7 +76,7 @@ async function main() {
     providerName === "deterministic"
       ? "fake"
       : (modelOverride ?? secrets.editingModel ?? "deepseek-chat");
-  const runLabel = [PROMPT_VERSION, model, thinking].filter(Boolean).join("-");
+  const runLabel = [promptVersion, model, thinking].filter(Boolean).join("-");
   const outputPath = resolve(
     argument("--output") ?? `eval-results/literary-editor/${runLabel}-${timestamp()}.json`,
   );
@@ -97,6 +105,7 @@ async function main() {
         targetLanguage: testCase.targetLanguage,
         instructions: testCase.instructions ?? "",
         glossary: [],
+        promptVersion,
         segments: [{ id: testCase.id, original: testCase.original, draft: testCase.draft }],
       });
       const output = response.segments[0]?.text ?? "";
@@ -139,7 +148,7 @@ async function main() {
   const report = {
     schemaVersion: 1,
     createdAt: new Date().toISOString(),
-    promptVersion: PROMPT_VERSION,
+    promptVersion,
     corpus: { path: corpusPath, version: corpus.version, description: corpus.description },
     selection: { offset, limit: limit ?? null },
     provider: {
