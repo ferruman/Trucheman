@@ -41,7 +41,13 @@ describe("DeepSeek provider", () => {
     );
 
     const response = await new DeepSeekProvider().complete({
-      profile: { name: "x", endpoint: "https://provider.test", model: "x", apiKey: "secret" },
+      profile: {
+        name: "x",
+        endpoint: "https://provider.test",
+        model: "x",
+        apiKey: "secret",
+        temperature: 0,
+      },
       mode: "translation",
       ...languages,
       instructions: "Preserve formal dialogue",
@@ -49,6 +55,7 @@ describe("DeepSeek provider", () => {
     });
 
     const messages = requestBody?.messages as Array<{ role: string; content: string }>;
+    expect(requestBody?.temperature).toBe(0);
     expect(messages.map(({ role }) => role)).toEqual(["system", "user"]);
     expect(messages[0]?.content).not.toContain("Hello");
     const input = JSON.parse(messages[1]?.content ?? "");

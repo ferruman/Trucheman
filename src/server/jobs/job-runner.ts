@@ -46,7 +46,12 @@ function checkpointKey(
       JSON.stringify({
         promptVersion: PROMPT_VERSION,
         mode,
-        profile: { name: profile.name, endpoint: profile.endpoint, model: profile.model },
+        profile: {
+          name: profile.name,
+          endpoint: profile.endpoint,
+          model: profile.model,
+          temperature: profile.temperature,
+        },
         sourceLanguage,
         targetLanguage,
         segments,

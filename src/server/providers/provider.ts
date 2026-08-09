@@ -4,6 +4,7 @@ export type ProviderProfile = {
   model: string;
   apiKey?: string;
   timeoutMs?: number;
+  temperature?: number;
 };
 
 export type ProviderSegment = { id: string; text: string };

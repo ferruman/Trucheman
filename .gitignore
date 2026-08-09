@@ -2,6 +2,7 @@ node_modules/
 dist/
 coverage/
 test-results/
+eval-results/
 *.log
 .env*
 !.env.example

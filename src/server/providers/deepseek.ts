@@ -130,6 +130,7 @@ export class DeepSeekProvider implements LanguageModelProvider {
           model: request.profile.model,
           messages: buildPromptMessages(transportRequest),
           response_format: { type: "json_object" },
+          temperature: request.profile.temperature,
           stream: false,
         }),
         signal: controller.signal,
