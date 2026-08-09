@@ -698,12 +698,12 @@ dd {
   overflow: hidden;
 }
 .job-list-head,
-.job-list a {
+.job-list li {
   display: grid;
   grid-template-columns: minmax(14rem, 1.5fr) minmax(9rem, 0.7fr) minmax(8rem, 0.6fr) minmax(
       11rem,
       0.8fr
-    );
+    ) minmax(6.5rem, auto);
   gap: 1rem;
   align-items: center;
 }
@@ -723,12 +723,30 @@ dd {
 .job-list li + li {
   border-top: 1px solid var(--border);
 }
+.job-list li {
+  align-items: stretch;
+}
 .job-list a {
+  display: grid;
+  grid-column: 1 / 5;
+  grid-template-columns: minmax(14rem, 1.5fr) minmax(9rem, 0.7fr) minmax(8rem, 0.6fr) minmax(
+      11rem,
+      0.8fr
+    );
+  gap: 1rem;
+  align-items: center;
   min-height: 4.5rem;
   padding: 0.75rem 1rem;
   color: var(--text);
   background: var(--surface);
   text-decoration: none;
+}
+.job-delete {
+  grid-column: 5;
+  align-self: center;
+  min-height: 2.25rem;
+  margin-right: 1rem;
+  padding: 0.45rem 0.65rem;
 }
 .job-list a:hover {
   background: var(--surface-raised);
@@ -980,8 +998,8 @@ dialog .actions {
     overflow-x: auto;
   }
   .job-list-head,
-  .job-list a {
-    min-width: 45rem;
+  .job-list li {
+    min-width: 58rem;
   }
 }
 
