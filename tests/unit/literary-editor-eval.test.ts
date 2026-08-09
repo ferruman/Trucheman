@@ -113,4 +113,19 @@ describe("literary editor evaluation", () => {
       ).passed,
     ).toBe(true);
   });
+
+  it("accepts an idiomatic finite-clause piecing-together reformulation", async () => {
+    const corpus = literaryEditorCorpusSchema.parse(
+      JSON.parse(await readFile("evals/literary-editor/cases.json", "utf8")),
+    );
+    const corpusCase = corpus.cases.find((item) => item.id === "lovecraft-piecing-knowledge");
+
+    expect(corpusCase).toBeDefined();
+    expect(
+      evaluateLiteraryOutput(
+        corpusCase!,
+        "Когда разрозненные знания будут сведены воедино, перед нами откроются ужасающие картины действительности.",
+      ).passed,
+    ).toBe(true);
+  });
 });
