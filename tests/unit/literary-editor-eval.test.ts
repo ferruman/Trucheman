@@ -69,6 +69,7 @@ describe("literary editor evaluation", () => {
         "Этот проблеск возник из случайного сопоставления разрозненных вещей.",
       ],
       ["lovecraft-put-together", "Надеюсь, никому другому не удастся завершить эту сборку."],
+      ["modern-dialogue-add-up", "Концы с концами не сходятся, и ты это знаешь."],
     ]);
 
     for (const [id, output] of outputs) {
@@ -81,5 +82,20 @@ describe("literary editor evaluation", () => {
         id,
       ).toBe(true);
     }
+  });
+
+  it("accepts the natural correlate-contents reformulation found by V4 Pro", async () => {
+    const corpus = literaryEditorCorpusSchema.parse(
+      JSON.parse(await readFile("evals/literary-editor/cases.json", "utf8")),
+    );
+    const corpusCase = corpus.cases.find((item) => item.id === "lovecraft-correlate-contents");
+
+    expect(corpusCase).toBeDefined();
+    expect(
+      evaluateLiteraryOutput(
+        corpusCase!,
+        "Самое милосердное в мире — неспособность человеческого разума связать воедино всё, что в нём заключено.",
+      ).passed,
+    ).toBe(true);
   });
 });
