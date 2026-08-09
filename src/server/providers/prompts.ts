@@ -1,6 +1,6 @@
 import type { ProviderInputSegment, ProviderRequest } from "./provider.js";
 
-export const PROMPT_VERSION = "literary-v3";
+export const PROMPT_VERSION = "literary-v3.1";
 
 export type PromptMessage = {
   role: "system" | "user";
@@ -53,11 +53,19 @@ Actively detect and remove:
 - phrasing that is grammatically valid but would feel translated to a native literary reader;
 - unnecessary repetition or stiffness introduced by translation.
 
+Pay special attention to phrases that are grammatically correct but lexically or idiomatically unnatural in the target language.
+
+Do not accept a phrase merely because its individual words are correct translations of the source words. Judge collocations, idioms, and expressions as complete units.
+
+When a source expression has no natural direct equivalent, translate its meaning and rhetorical function rather than reproducing its lexical structure.
+
 Rewrite freely when necessary. A sentence may be substantially restructured if that produces more idiomatic literary prose while preserving the original meaning and effect.
 
 Do not simplify deliberate complexity, archaism, ambiguity, repetition, rhythm, or unusual style merely to make the prose easier or more modern.
 
 Keep draft wording only when it is both faithful to the original and natural, idiomatic, and stylistically appropriate in the target language.
+
+For every sentence, silently ask: "Would a skilled native-language literary writer plausibly phrase this idea this way without seeing the source text?" If not, rewrite it while preserving the author's meaning, tone, period, and stylistic character.
 
 Before producing each edited segment, silently compare the original and draft for meaning, then judge the draft as native target-language literary prose. Output only the final edited wording in the string field text.`,
 };
