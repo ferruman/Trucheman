@@ -41,4 +41,12 @@ describe("job lifecycle orchestration",()=>{
     expect(()=>parseJobConfig({instructions:{}})).toThrow();
     expect((await repo.get(job.id)).instructions).toBe("");
   });
+
+  it("does not report fatal execution errors as quality warnings",async()=>{
+    const {repo,job}=await fixture();
+    const orchestrator=new JobOrchestrator(repo,{runBook:async()=>{throw new Error("assembly failed");}});
+    await orchestrator.start(job.id);
+    await vi.waitFor(async()=>expect((await repo.get(job.id)).status).toBe("failed"));
+    expect((await repo.get(job.id)).warnings).toBe(0);
+  });
 });

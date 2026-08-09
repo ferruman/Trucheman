@@ -84,22 +84,52 @@ export function JobPage({ id }: { id: string }) {
   if (!job && loadError) return <section><h2>Job unavailable</h2><div role="alert"><p>{loadError}</p><button type="button" onClick={() => void refresh()}>Try again</button></div></section>;
   if (!job) return <section><h2>Loading job</h2><p role="status">Loading job…</p></section>;
 
-  return <section>
-    <h2>{job.title}</h2>
+  return <section className="page job-page">
+    <header className="page-header job-header">
+      <div>
+        <span className="section-label">Job / {job.id}</span>
+        <h1>{job.title}</h1>
+        <p className="language-route">{job.sourceLanguage.toUpperCase()} <span aria-hidden="true">→</span> {job.targetLanguage.toUpperCase()}</p>
+      </div>
+      <JobControls
+        status={job.status}
+        busyAction={busyAction}
+        onStart={() => void act("start", () => jobActions.start(id))}
+        onPause={() => void act("pause", () => jobActions.pause(id))}
+        onResume={() => void act("resume", () => jobActions.resume(id))}
+        onRetry={() => void act("retry", () => jobActions.retry(id))}
+        onInvalidate={() => setInvalidationOpen(true)}
+      />
+    </header>
     <ProgressPanel job={job}/>
-    {!connected && <p className="muted" role="status">Live updates are reconnecting. Periodic refresh remains active.</p>}
-    {loadError && <div role="alert"><p>Latest status could not be refreshed: {loadError}</p><button className="secondary" type="button" onClick={() => void refresh()}>Try again</button></div>}
-    <JobControls
-      status={job.status}
-      busyAction={busyAction}
-      onStart={() => void act("start", () => jobActions.start(id))}
-      onPause={() => void act("pause", () => jobActions.pause(id))}
-      onResume={() => void act("resume", () => jobActions.resume(id))}
-      onRetry={() => void act("retry", () => jobActions.retry(id))}
-      onInvalidate={() => setInvalidationOpen(true)}
-    />
-    {actionError && <p role="alert">{actionError}</p>}
-    {job.status === "completed" && <ResultPage id={id} results={results} error={resultsError} busy={busyAction === "rebuild"} onRetry={() => void loadResults()} onRebuild={() => void act("rebuild", () => jobActions.rebuild(id))}/>}
+    <div className="job-workbench">
+      <div className="job-primary">
+        {!connected && <p className="notice" role="status">Live updates are reconnecting. Periodic refresh remains active.</p>}
+        {loadError && <div role="alert"><p>Latest status could not be refreshed: {loadError}</p><button className="secondary" type="button" onClick={() => void refresh()}>Try again</button></div>}
+        {actionError && <p role="alert">{actionError}</p>}
+        {job.status === "completed" && <ResultPage id={id} results={results} error={resultsError} busy={busyAction === "rebuild"} onRetry={() => void loadResults()} onRebuild={() => void act("rebuild", () => jobActions.rebuild(id))}/>}
+        {job.status !== "completed" && <section className="operation-panel" aria-labelledby="operation-heading">
+          <div className="panel-heading"><span className="section-label">Active operation</span><h2 id="operation-heading">{job.stage.replace("_", " ")}</h2></div>
+          <dl className="detail-list">
+            <div><dt>Status</dt><dd>{job.status.replace("_", " ")}</dd></div>
+            <div><dt>Current document</dt><dd><code>{job.currentDocument ?? "Waiting for work"}</code></dd></div>
+            <div><dt>Last update</dt><dd><time dateTime={job.updatedAt}>{new Date(job.updatedAt).toLocaleString()}</time></dd></div>
+          </dl>
+        </section>}
+      </div>
+      <aside className="job-transcript" aria-labelledby="snapshot-heading">
+        <div className="panel-heading"><span className="section-label">Session</span><h2 id="snapshot-heading">Current state snapshot</h2></div>
+        <dl className="state-snapshot">
+          <div><dt>Created</dt><dd><time dateTime={job.createdAt}>{new Date(job.createdAt).toLocaleString()}</time></dd></div>
+          <div><dt>Updated</dt><dd><time dateTime={job.updatedAt}>{new Date(job.updatedAt).toLocaleString()}</time></dd></div>
+          <div><dt>Stage</dt><dd>{job.stage}</dd></div>
+          <div><dt>Status</dt><dd>{job.status.replace("_", " ")}</dd></div>
+          <div><dt>Document</dt><dd><code>{job.currentDocument ?? "No active document"}</code></dd></div>
+          <div><dt>Warnings</dt><dd className={job.warnings > 0 ? "warning" : ""}>{job.warnings}</dd></div>
+        </dl>
+        <div className="connection-state"><span className={connected ? "status-light" : "status-light offline"}/>{connected ? "Live updates connected" : "Polling fallback active"}</div>
+      </aside>
+    </div>
     <InvalidationDialog open={invalidationOpen} busy={busyAction === "invalidate"} onCancel={() => setInvalidationOpen(false)} onConfirm={() => void invalidate()}/>
   </section>;
 }

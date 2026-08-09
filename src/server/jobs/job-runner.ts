@@ -10,7 +10,7 @@ type Checkpoint={batchId:string;segments:ProviderSegment[];checkpointKey?:string
 
 function checkpointMap(records:Checkpoint[]){
   const result=new Map<string,Checkpoint>();
-  for(const record of records)if(record&&typeof record.batchId==="string"&&Array.isArray(record.segments))result.set(record.batchId,record);
+  for(const record of records)if(record&&typeof record.checkpointKey==="string"&&Array.isArray(record.segments))result.set(record.checkpointKey,record);
   return result;
 }
 
@@ -28,8 +28,8 @@ export async function runTwoPass(batches:Batch[],provider:LanguageModelProvider,
     throwIfAborted(options.signal);
     const request=batch.segments.map(s=>({id:s.id,text:s.text}));
     const expectedDraftKey=checkpointKey("translation",options.translationProfile,request,options.instructions,options.glossary);
-    const savedDraft=draftRecords.get(batch.id);
-    let draft=savedDraft?.checkpointKey===expectedDraftKey?savedDraft.segments:undefined;
+    const savedDraft=draftRecords.get(expectedDraftKey);
+    let draft=savedDraft?.segments;
     if(!draft){
       const translated=await processBatch(provider,options.translationProfile,"translation",request,options.instructions,options.glossary,3,options.signal);
       draft=translated.result.segments;
@@ -39,8 +39,8 @@ export async function runTwoPass(batches:Batch[],provider:LanguageModelProvider,
     await options.onProgress?.("translation",batch);
     throwIfAborted(options.signal);
     const expectedEditKey=checkpointKey("editing",options.editingProfile,buildEditingSegments(request,draft),options.instructions,options.glossary);
-    const savedEdit=editRecords.get(batch.id);
-    if(savedEdit?.checkpointKey===expectedEditKey)edits.set(batch.id,savedEdit.segments);
+    const savedEdit=editRecords.get(expectedEditKey);
+    if(savedEdit)edits.set(batch.id,savedEdit.segments);
     else{
       const edited=await editBatch(provider,options.editingProfile,request,draft,options.instructions,options.glossary,options.signal);
       edits.set(batch.id,edited.result.segments);

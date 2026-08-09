@@ -191,7 +191,7 @@ export class JobOrchestrator{
         await this.repo.save({...current,status:"paused",updatedAt:new Date().toISOString()});
         await this.emit(id,"paused","Translation paused");
       }else{
-        await this.repo.save({...current,status:"failed",updatedAt:new Date().toISOString(),warnings:current.warnings+1});
+        await this.repo.save({...current,status:"failed",updatedAt:new Date().toISOString()});
         await this.emit(id,"failed","Translation failed",{error:error instanceof Error?error.message:"unknown error"});
       }
       throw error;

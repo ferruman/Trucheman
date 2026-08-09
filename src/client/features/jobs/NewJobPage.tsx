@@ -62,8 +62,10 @@ export function NewJobPage() {
     }
   }
 
-  return <section>
-    <h2>New book</h2>
+  return <section className="page new-job-page">
+    <header className="page-header">
+      <div><span className="section-label">Create job</span><h1>New book</h1></div>
+    </header>
     <form onSubmit={submit} aria-busy={busy}>
       <label>EPUB file<input disabled={busy} required type="file" accept=".epub,application/epub+zip" onChange={event => setFile(event.target.files?.[0])}/></label>
       <label>Title<input disabled={busy || Boolean(createdJobId)} value={title} onChange={event => setTitle(event.target.value)}/></label>

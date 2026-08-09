@@ -46,7 +46,10 @@ export async function prepareBook(root:string):Promise<PreparedBook>{
 }
 
 export async function runPreparedBook(root:string,job:PersistedJob,update:(patch:Partial<PersistedJob>)=>Promise<void>,signal?:AbortSignal){
-  const prepared=JSON.parse(await readFile(join(root,"prepared.json"),"utf8")) as PreparedBook;
+  // Assembly mutates staging documents. Re-extract the source on every run so a
+  // retry can safely reuse completed model checkpoints without reinserting into
+  // the output of an earlier run.
+  const prepared=await prepareBook(root);
   const batches=prepared.documents.flatMap(document=>document.batches);
   const secrets=loadSecrets();
   const useExternal=process.env.BOOK_TRANSLATOR_PROVIDER!=="deterministic"&&Boolean(secrets.translationApiKey&&secrets.editingApiKey);
