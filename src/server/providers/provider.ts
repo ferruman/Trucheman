@@ -6,6 +6,7 @@ export type ProviderProfile = {
   timeoutMs?: number;
   temperature?: number;
   thinking?: "enabled" | "disabled";
+  promptVersion?: string;
 };
 
 export type ProviderSegment = { id: string; text: string };

@@ -58,6 +58,32 @@ describe("two-pass pipeline", () => {
     expect(provider.requests).toHaveLength(4);
   });
 
+  it("invalidates only the editing checkpoint when its prompt version changes", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-prompt-checkpoint-`);
+    const provider = new FakeProvider();
+    const profile = { name: "fake", endpoint: "local", model: "v1" };
+    const batches = [{ id: "chapter-1-batch-1", documentId: "chapter-1", segments: [segment] }];
+    const options = {
+      root,
+      translationProfile: profile,
+      editingProfile: profile,
+      ...languages,
+    };
+
+    await runTwoPass(batches, provider, options);
+    await runTwoPass(batches, provider, {
+      ...options,
+      editingProfile: { ...profile, promptVersion: "literary-v3.2.1" },
+    });
+
+    expect(provider.requests.map((request) => request.mode)).toEqual([
+      "translation",
+      "editing",
+      "editing",
+    ]);
+    expect(provider.requests.at(-1)?.promptVersion).toBe("literary-v3.2.1");
+  });
+
   it("reuses content checkpoints after batch identifiers change", async () => {
     const root = await mkdtemp(`${tmpdir()}/book-checkpoint-migration-`);
     const provider = new FakeProvider();

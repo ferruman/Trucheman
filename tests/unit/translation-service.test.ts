@@ -3,6 +3,37 @@ import { processBatch } from "../../src/server/jobs/translation-service.js";
 import type { LanguageModelProvider } from "../../src/server/providers/provider.js";
 
 describe("translation service", () => {
+  it("forwards the prompt version selected by the provider profile", async () => {
+    let promptVersion: string | undefined;
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        promptVersion = request.promptVersion;
+        return { segments: [{ id: "segment-1", text: "Отредактировано" }] };
+      },
+    };
+
+    await processBatch(
+      provider,
+      {
+        name: "terra-editing",
+        endpoint: "https://api.openai.com/v1/chat/completions",
+        model: "gpt-5.6-terra",
+        promptVersion: "literary-v3.2.1",
+      },
+      "editing",
+      [{ id: "segment-1", original: "Edited", draft: "Черновик" }],
+      {
+        sourceLanguage: { tag: "en", name: "English" },
+        targetLanguage: { tag: "ru", name: "Russian" },
+      },
+      "",
+      [],
+      0,
+    );
+
+    expect(promptVersion).toBe("literary-v3.2.1");
+  });
+
   it("splits a prepared batch with many short segments before calling the provider", async () => {
     const requestSizes: number[] = [];
     const provider: LanguageModelProvider = {

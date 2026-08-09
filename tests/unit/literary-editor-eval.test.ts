@@ -128,4 +128,23 @@ describe("literary editor evaluation", () => {
       ).passed,
     ).toBe(true);
   });
+
+  it("accepts Terra's natural nonfiction and German dialogue reformulations", async () => {
+    const corpus = literaryEditorCorpusSchema.parse(
+      JSON.parse(await readFile("evals/literary-editor/cases.json", "utf8")),
+    );
+    const outputs = new Map([
+      [
+        "nonfiction-fell-short",
+        "Несмотря на широкую общественную поддержку, эта политика не позволила достичь заявленных целей.",
+      ],
+      ["german-not-an-option", "Для меня это не вариант."],
+    ]);
+
+    for (const [id, output] of outputs) {
+      const corpusCase = corpus.cases.find((item) => item.id === id);
+      expect(corpusCase, `missing corpus case ${id}`).toBeDefined();
+      expect(evaluateLiteraryOutput(corpusCase!, output).passed, id).toBe(true);
+    }
+  });
 });

@@ -91,6 +91,8 @@ export async function runPreparedBook(
       "https://api.deepseek.com/chat/completions",
     model: secrets.editingModel ?? process.env.BOOK_TRANSLATOR_EDITING_MODEL ?? "deepseek-chat",
     apiKey: secrets.editingApiKey,
+    promptVersion:
+      secrets.editingPromptVersion ?? process.env.BOOK_TRANSLATOR_EDITING_PROMPT_VERSION,
   };
   const instructions = job.instructions.trim();
   const sourceLanguage = providerLanguage(job.sourceLanguage),

@@ -27,7 +27,15 @@ export async function processBatch(
       attempts++;
       try {
         const result = await provider.complete(
-          { profile, mode, segments: chunk, ...languages, instructions, glossary },
+          {
+            profile,
+            mode,
+            segments: chunk,
+            ...languages,
+            instructions,
+            glossary,
+            promptVersion: profile.promptVersion,
+          },
           signal,
         );
         return validateProviderResponse(result, chunk);

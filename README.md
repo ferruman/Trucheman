@@ -30,6 +30,9 @@ BOOK_TRANSLATOR_TRANSLATION_API_KEY=your-key
 BOOK_TRANSLATOR_EDITING_API_KEY=your-key
 ```
 
+The editing pass can select an evaluated prompt independently of the translation pass. For the
+OpenAI Terra editing profile, use `BOOK_TRANSLATOR_EDITING_PROMPT_VERSION=literary-v3.2.1`.
+
 Restart the server after changing `.env.local` or `.env`. The external-provider mode sends eligible book text to the configured service.
 
 ## Literary editor evaluation

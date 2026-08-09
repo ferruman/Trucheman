@@ -44,7 +44,7 @@ function checkpointKey(
   return createHash("sha256")
     .update(
       JSON.stringify({
-        promptVersion: PROMPT_VERSION,
+        promptVersion: profile.promptVersion ?? PROMPT_VERSION,
         mode,
         profile: {
           name: profile.name,
