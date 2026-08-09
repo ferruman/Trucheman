@@ -21,17 +21,65 @@ function normalizeResponseSegments(
   value: unknown,
   mode: ProviderRequest["mode"],
 ): ProviderResponse["segments"] {
-  if (!Array.isArray(value) || mode !== "editing") {
+  if (!Array.isArray(value)) {
     return value as ProviderResponse["segments"];
   }
+  const preferredFields =
+    mode === "editing"
+      ? [
+          "edited",
+          "editedText",
+          "edited_text",
+          "revised",
+          "revisedText",
+          "revised_text",
+          "revision",
+          "draft",
+          "translation",
+          "translated",
+          "translatedText",
+          "translated_text",
+          "target",
+          "targetText",
+          "target_text",
+          "result",
+          "output",
+        ]
+      : [
+          "translation",
+          "translated",
+          "translatedText",
+          "translated_text",
+          "target",
+          "targetText",
+          "target_text",
+          "result",
+          "output",
+        ];
+  const inputFields = new Set(["id", "original", "source", "sourceText", "source_text"]);
+
   return value.map((segment) => {
     if (typeof segment !== "object" || segment === null || !("id" in segment)) return segment;
     if ("text" in segment && typeof segment.text === "string") return segment;
-    if ("draft" in segment && typeof segment.draft === "string") {
-      return { id: segment.id, text: segment.draft };
+    const record = segment as Record<string, unknown>;
+    const preferred = preferredFields.find((field) => typeof record[field] === "string");
+    if (preferred) return { id: segment.id, text: record[preferred] };
+
+    const candidates = Object.entries(record).filter(
+      ([field, fieldValue]) => !inputFields.has(field) && typeof fieldValue === "string",
+    );
+    if (candidates.length === 1) {
+      return { id: segment.id, text: candidates[0][1] };
     }
     return segment;
   }) as ProviderResponse["segments"];
+}
+
+function responseFieldSummary(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const first = value.find((segment) => typeof segment === "object" && segment !== null);
+  if (!first) return undefined;
+  return Object.keys(first).sort().join(", ");
 }
 
 export class DeepSeekProvider implements LanguageModelProvider {
@@ -118,9 +166,12 @@ export class DeepSeekProvider implements LanguageModelProvider {
           })),
         };
       } catch (error) {
+        const fields = responseFieldSummary(parsed.segments);
         throw new ProviderError(
           "invalid_response",
-          error instanceof Error ? error.message : "Invalid provider response",
+          `${error instanceof Error ? error.message : "Invalid provider response"}${
+            fields ? ` (received fields: ${fields})` : ""
+          }`,
         );
       }
     } catch (error) {

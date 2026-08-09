@@ -21,7 +21,7 @@ const MODE_RULES: Record<ProviderRequest["mode"], string> = {
   translation:
     "Translate each segment into the target language specified in userPreferences. Produce fluent literary prose while remaining faithful to the source.",
   editing:
-    "Edit each draft against its original. Correct mistranslations, omissions, additions, terminology, grammar, and style. Keep correct draft wording when it already works; do not rewrite merely for variety.",
+    "Edit each draft against its original. Correct mistranslations, omissions, additions, terminology, grammar, and style. Keep correct draft wording when it already works; do not rewrite merely for variety. Output objects must contain only id and text; place the edited draft in text, never in draft, edited, translation, or another field.",
 };
 
 export function buildPrompt(request: Pick<ProviderRequest, "mode">): string {

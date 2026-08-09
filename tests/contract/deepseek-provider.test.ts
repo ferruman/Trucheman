@@ -50,7 +50,7 @@ describe("DeepSeek provider", () => {
     expect(response.segments).toEqual([{ id: "document-3:a", text: "Привет" }]);
   });
 
-  it("accepts an edited draft field while preserving the original segment IDs", async () => {
+  it("normalizes alternate editing fields while preserving the original segment IDs", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -62,8 +62,8 @@ describe("DeepSeek provider", () => {
                   message: {
                     content: JSON.stringify({
                       segments: [
-                        { id: "s0001", original: "Unknown", draft: "Неизвестно" },
-                        { id: "s0002", original: "Part", draft: "Часть" },
+                        { id: "s0001", original: "Unknown", edited_text: "Неизвестно" },
+                        { id: "s0002", original: "Part", polished: "Часть" },
                       ],
                     }),
                   },
