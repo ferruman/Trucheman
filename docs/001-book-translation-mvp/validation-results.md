@@ -4,14 +4,14 @@ Date: 2026-08-08
 
 ## Automated gates
 
-| Check | Result |
-| --- | --- |
-| `npm install` | Passed; lockfile generated; no vulnerabilities reported |
-| `npm run typecheck` | Passed |
-| `npm run lint` | Passed |
-| `npm test` | Passed; 26 test files, 37 tests |
-| `npm run build` | Passed; server and Vite client built |
-| `npm run e2e` | Passed; 4 browser tests, including EPUB upload-to-download flow |
+| Check               | Result                                                          |
+| ------------------- | --------------------------------------------------------------- |
+| `npm install`       | Passed; lockfile generated; no vulnerabilities reported         |
+| `npm run typecheck` | Passed                                                          |
+| `npm run lint`      | Passed                                                          |
+| `npm test`          | Passed; 26 test files, 37 tests                                 |
+| `npm run build`     | Passed; server and Vite client built                            |
+| `npm run e2e`       | Passed; 4 browser tests, including EPUB upload-to-download flow |
 
 ## Covered evidence
 

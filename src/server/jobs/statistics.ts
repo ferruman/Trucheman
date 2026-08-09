@@ -1,2 +1,25 @@
-export type RunMetadata={promptTokens?:number;completionTokens?:number;attempts:number;startedAt:string;finishedAt:string};
-export function aggregateStatistics(runs:RunMetadata[],pricing?:{input:number;output:number}){const promptTokens=runs.reduce((n,r)=>n+(r.promptTokens??0),0),completionTokens=runs.reduce((n,r)=>n+(r.completionTokens??0),0),retries=runs.reduce((n,r)=>n+Math.max(0,r.attempts-1),0),elapsedMs=runs.reduce((n,r)=>n+(Date.parse(r.finishedAt)-Date.parse(r.startedAt)),0);return {promptTokens,completionTokens,retries,elapsedMs,costEstimate:pricing?(promptTokens/1e6*pricing.input+completionTokens/1e6*pricing.output):undefined};}
+export type RunMetadata = {
+  promptTokens?: number;
+  completionTokens?: number;
+  attempts: number;
+  startedAt: string;
+  finishedAt: string;
+};
+export function aggregateStatistics(
+  runs: RunMetadata[],
+  pricing?: { input: number; output: number },
+) {
+  const promptTokens = runs.reduce((n, r) => n + (r.promptTokens ?? 0), 0),
+    completionTokens = runs.reduce((n, r) => n + (r.completionTokens ?? 0), 0),
+    retries = runs.reduce((n, r) => n + Math.max(0, r.attempts - 1), 0),
+    elapsedMs = runs.reduce((n, r) => n + (Date.parse(r.finishedAt) - Date.parse(r.startedAt)), 0);
+  return {
+    promptTokens,
+    completionTokens,
+    retries,
+    elapsedMs,
+    costEstimate: pricing
+      ? (promptTokens / 1e6) * pricing.input + (completionTokens / 1e6) * pricing.output
+      : undefined,
+  };
+}

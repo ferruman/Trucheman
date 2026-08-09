@@ -4,37 +4,263 @@
   "title": "Design System: Book Translator",
   "extensions": {
     "colorMeta": {
-      "canvas": { "role": "neutral", "displayName": "Midnight Canvas", "canonical": "#0b0e14", "tonalRamp": ["#080a0f", "#0b0e14", "#111722", "#263041", "#46536a", "#738096", "#aeb8c7", "#e7edf5"] },
-      "surface": { "role": "neutral", "displayName": "Workbench Surface", "canonical": "#111722", "tonalRamp": ["#090d13", "#111722", "#1a2432", "#2c394b", "#4b596d", "#748196", "#adb7c5", "#e8edf3"] },
-      "accent": { "role": "primary", "displayName": "Command Cyan", "canonical": "#59c2ff", "tonalRamp": ["#042a40", "#064565", "#08658f", "#0f86b9", "#24a6df", "#59c2ff", "#9bdcff", "#def4ff"] },
-      "accent-soft": { "role": "primary", "displayName": "Command Cyan Surface", "canonical": "#10283a", "tonalRamp": ["#07141d", "#10283a", "#173b55", "#205374", "#2d7098", "#4c9bc5", "#86c8e8", "#dff5ff"] },
-      "accent-border": { "role": "primary", "displayName": "Command Cyan Border", "canonical": "#245c7d", "tonalRamp": ["#091a25", "#123247", "#1a4863", "#245c7d", "#35799d", "#579cc0", "#91c6df", "#e2f3fa"] },
-      "success": { "role": "secondary", "displayName": "Ready Green", "canonical": "#66d9a3", "tonalRamp": ["#092e21", "#0e4b35", "#166b4c", "#278d68", "#43b184", "#66d9a3", "#a5ebc8", "#e1f9ed"] },
-      "success-soft": { "role": "secondary", "displayName": "Ready Green Surface", "canonical": "#102a21", "tonalRamp": ["#081510", "#102a21", "#193f32", "#245a47", "#36765e", "#599b7f", "#92c9ae", "#e2f4eb"] },
-      "success-border": { "role": "secondary", "displayName": "Ready Green Border", "canonical": "#245c46", "tonalRamp": ["#0a1b14", "#123126", "#1a4736", "#245c46", "#36775d", "#589a7d", "#91c5aa", "#e1f3ea"] },
-      "warning": { "role": "secondary", "displayName": "Queue Amber", "canonical": "#e9b872", "tonalRamp": ["#382408", "#5a3b0e", "#7e551c", "#a57234", "#c99250", "#e9b872", "#f4d9ae", "#fcf2e3"] },
-      "warning-soft": { "role": "secondary", "displayName": "Queue Amber Surface", "canonical": "#2c2415", "tonalRamp": ["#16120a", "#2c2415", "#443721", "#604d2e", "#80663d", "#a98758", "#d3b68a", "#f8ecd5"] },
-      "warning-border": { "role": "secondary", "displayName": "Queue Amber Border", "canonical": "#6b542e", "tonalRamp": ["#1d160b", "#372a15", "#503e22", "#6b542e", "#896e42", "#aa8e60", "#d2bc91", "#f6ecd9"] },
-      "danger": { "role": "secondary", "displayName": "Failure Coral", "canonical": "#ff6b7a", "tonalRamp": ["#3c0d15", "#621522", "#891f31", "#b62e43", "#df455a", "#ff6b7a", "#ffa8b1", "#ffe4e7"] },
-      "danger-soft": { "role": "secondary", "displayName": "Failure Coral Surface", "canonical": "#2d141b", "tonalRamp": ["#160a0d", "#2d141b", "#461f2a", "#622c3a", "#823d4e", "#a75c6d", "#d095a1", "#f6e2e6"] },
-      "danger-border": { "role": "secondary", "displayName": "Failure Coral Border", "canonical": "#6b2a35", "tonalRamp": ["#1c0b0e", "#37151b", "#511f28", "#6b2a35", "#8c3d4b", "#ae5e6b", "#d2949e", "#f7e2e5"] },
-      "danger-text": { "role": "secondary", "displayName": "Failure Coral Text", "canonical": "#ffb4bd", "tonalRamp": ["#3a1016", "#651c27", "#902b39", "#bd4050", "#e56a78", "#ff9ca8", "#ffced3", "#fff0f2"] }
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Midnight Canvas",
+        "canonical": "#0b0e14",
+        "tonalRamp": [
+          "#080a0f",
+          "#0b0e14",
+          "#111722",
+          "#263041",
+          "#46536a",
+          "#738096",
+          "#aeb8c7",
+          "#e7edf5"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Workbench Surface",
+        "canonical": "#111722",
+        "tonalRamp": [
+          "#090d13",
+          "#111722",
+          "#1a2432",
+          "#2c394b",
+          "#4b596d",
+          "#748196",
+          "#adb7c5",
+          "#e8edf3"
+        ]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Command Cyan",
+        "canonical": "#59c2ff",
+        "tonalRamp": [
+          "#042a40",
+          "#064565",
+          "#08658f",
+          "#0f86b9",
+          "#24a6df",
+          "#59c2ff",
+          "#9bdcff",
+          "#def4ff"
+        ]
+      },
+      "accent-soft": {
+        "role": "primary",
+        "displayName": "Command Cyan Surface",
+        "canonical": "#10283a",
+        "tonalRamp": [
+          "#07141d",
+          "#10283a",
+          "#173b55",
+          "#205374",
+          "#2d7098",
+          "#4c9bc5",
+          "#86c8e8",
+          "#dff5ff"
+        ]
+      },
+      "accent-border": {
+        "role": "primary",
+        "displayName": "Command Cyan Border",
+        "canonical": "#245c7d",
+        "tonalRamp": [
+          "#091a25",
+          "#123247",
+          "#1a4863",
+          "#245c7d",
+          "#35799d",
+          "#579cc0",
+          "#91c6df",
+          "#e2f3fa"
+        ]
+      },
+      "success": {
+        "role": "secondary",
+        "displayName": "Ready Green",
+        "canonical": "#66d9a3",
+        "tonalRamp": [
+          "#092e21",
+          "#0e4b35",
+          "#166b4c",
+          "#278d68",
+          "#43b184",
+          "#66d9a3",
+          "#a5ebc8",
+          "#e1f9ed"
+        ]
+      },
+      "success-soft": {
+        "role": "secondary",
+        "displayName": "Ready Green Surface",
+        "canonical": "#102a21",
+        "tonalRamp": [
+          "#081510",
+          "#102a21",
+          "#193f32",
+          "#245a47",
+          "#36765e",
+          "#599b7f",
+          "#92c9ae",
+          "#e2f4eb"
+        ]
+      },
+      "success-border": {
+        "role": "secondary",
+        "displayName": "Ready Green Border",
+        "canonical": "#245c46",
+        "tonalRamp": [
+          "#0a1b14",
+          "#123126",
+          "#1a4736",
+          "#245c46",
+          "#36775d",
+          "#589a7d",
+          "#91c5aa",
+          "#e1f3ea"
+        ]
+      },
+      "warning": {
+        "role": "secondary",
+        "displayName": "Queue Amber",
+        "canonical": "#e9b872",
+        "tonalRamp": [
+          "#382408",
+          "#5a3b0e",
+          "#7e551c",
+          "#a57234",
+          "#c99250",
+          "#e9b872",
+          "#f4d9ae",
+          "#fcf2e3"
+        ]
+      },
+      "warning-soft": {
+        "role": "secondary",
+        "displayName": "Queue Amber Surface",
+        "canonical": "#2c2415",
+        "tonalRamp": [
+          "#16120a",
+          "#2c2415",
+          "#443721",
+          "#604d2e",
+          "#80663d",
+          "#a98758",
+          "#d3b68a",
+          "#f8ecd5"
+        ]
+      },
+      "warning-border": {
+        "role": "secondary",
+        "displayName": "Queue Amber Border",
+        "canonical": "#6b542e",
+        "tonalRamp": [
+          "#1d160b",
+          "#372a15",
+          "#503e22",
+          "#6b542e",
+          "#896e42",
+          "#aa8e60",
+          "#d2bc91",
+          "#f6ecd9"
+        ]
+      },
+      "danger": {
+        "role": "secondary",
+        "displayName": "Failure Coral",
+        "canonical": "#ff6b7a",
+        "tonalRamp": [
+          "#3c0d15",
+          "#621522",
+          "#891f31",
+          "#b62e43",
+          "#df455a",
+          "#ff6b7a",
+          "#ffa8b1",
+          "#ffe4e7"
+        ]
+      },
+      "danger-soft": {
+        "role": "secondary",
+        "displayName": "Failure Coral Surface",
+        "canonical": "#2d141b",
+        "tonalRamp": [
+          "#160a0d",
+          "#2d141b",
+          "#461f2a",
+          "#622c3a",
+          "#823d4e",
+          "#a75c6d",
+          "#d095a1",
+          "#f6e2e6"
+        ]
+      },
+      "danger-border": {
+        "role": "secondary",
+        "displayName": "Failure Coral Border",
+        "canonical": "#6b2a35",
+        "tonalRamp": [
+          "#1c0b0e",
+          "#37151b",
+          "#511f28",
+          "#6b2a35",
+          "#8c3d4b",
+          "#ae5e6b",
+          "#d2949e",
+          "#f7e2e5"
+        ]
+      },
+      "danger-text": {
+        "role": "secondary",
+        "displayName": "Failure Coral Text",
+        "canonical": "#ffb4bd",
+        "tonalRamp": [
+          "#3a1016",
+          "#651c27",
+          "#902b39",
+          "#bd4050",
+          "#e56a78",
+          "#ff9ca8",
+          "#ffced3",
+          "#fff0f2"
+        ]
+      }
     },
     "typographyMeta": {
       "headline": { "displayName": "Headline", "purpose": "Page and job identity." },
       "body": { "displayName": "Body", "purpose": "Readable instructions and form content." },
-      "label": { "displayName": "Command Label", "purpose": "Controls, metadata, and state labels." },
-      "data": { "displayName": "Data Readout", "purpose": "Logs, metrics, identifiers, and file names." }
-      ,"subtitle": { "displayName": "Subtitle", "purpose": "Current stage and strong panel outcomes." }
-      ,"title": { "displayName": "Title", "purpose": "Section and panel headings." }
-      ,"component-title": { "displayName": "Component Title", "purpose": "Compact component headings." }
-      ,"table": { "displayName": "Table", "purpose": "Dense tabular content." }
-      ,"caption": { "displayName": "Caption", "purpose": "Small operational labels and metadata." }
-      ,"micro": { "displayName": "Micro", "purpose": "Short pipeline substates only." }
+      "label": {
+        "displayName": "Command Label",
+        "purpose": "Controls, metadata, and state labels."
+      },
+      "data": {
+        "displayName": "Data Readout",
+        "purpose": "Logs, metrics, identifiers, and file names."
+      },
+      "subtitle": {
+        "displayName": "Subtitle",
+        "purpose": "Current stage and strong panel outcomes."
+      },
+      "title": { "displayName": "Title", "purpose": "Section and panel headings." },
+      "component-title": {
+        "displayName": "Component Title",
+        "purpose": "Compact component headings."
+      },
+      "table": { "displayName": "Table", "purpose": "Dense tabular content." },
+      "caption": { "displayName": "Caption", "purpose": "Small operational labels and metadata." },
+      "micro": { "displayName": "Micro", "purpose": "Short pipeline substates only." }
     },
     "shadows": [],
     "motion": [
-      { "name": "state-change", "value": "140ms ease-out", "purpose": "Quiet hover, focus, and disclosure transitions only." }
+      {
+        "name": "state-change",
+        "value": "140ms ease-out",
+        "purpose": "Quiet hover, focus, and disclosure transitions only."
+      }
     ],
     "breakpoints": [
       { "name": "compact", "value": "576px" },
@@ -84,13 +310,38 @@
   "narrative": {
     "northStar": "The Command Workbench",
     "overview": "Book Translator should feel like a precise local tool operated by one person, not a public SaaS dashboard and not a theatrical terminal simulation. Its visual language borrows the legibility, compactness, explicit state, and keyboard confidence of excellent command-line tools while preserving familiar web controls. The interface is dark, quiet, and information-forward. Hierarchy comes from topology, labels, borders, and typographic contrast rather than cards, illustration, or ornamental effects.",
-    "keyCharacteristics": ["One visible pipeline with current state and technical detail always nearby.", "Sans-serif prose paired with monospace labels, metrics, identifiers, and logs.", "Flat tonal layers, crisp borders, compact spacing, and restrained cyan emphasis.", "Controls use direct verbs and expose keyboard shortcuts where they are real."],
-    "rules": [
-      { "name": "The One Signal Rule", "body": "Cyan identifies interaction and current position; never scatter it as decoration.", "section": "colors" },
-      { "name": "The Meaningful Mono Rule", "body": "Use monospace because content behaves like data, never merely to make the interface look technical.", "section": "typography" },
-      { "name": "The Flat Instrument Rule", "body": "A region earns separation through function and tone, not decorative elevation.", "section": "elevation" }
+    "keyCharacteristics": [
+      "One visible pipeline with current state and technical detail always nearby.",
+      "Sans-serif prose paired with monospace labels, metrics, identifiers, and logs.",
+      "Flat tonal layers, crisp borders, compact spacing, and restrained cyan emphasis.",
+      "Controls use direct verbs and expose keyboard shortcuts where they are real."
     ],
-    "dos": ["Do show current state, progress, errors, and recovery actions without requiring exploratory clicks.", "Do use direct verbs, concise labels, and stable placement for repeated controls.", "Do make dense information scannable through alignment and consistent data columns."],
-    "donts": ["Don't imitate green-phosphor terminals, scanlines, CRT glow, or fake command prompts.", "Don't turn every section into a floating card or every status into a colorful badge.", "Don't add marketing copy, decorative book imagery, or motion that delays an operation."]
+    "rules": [
+      {
+        "name": "The One Signal Rule",
+        "body": "Cyan identifies interaction and current position; never scatter it as decoration.",
+        "section": "colors"
+      },
+      {
+        "name": "The Meaningful Mono Rule",
+        "body": "Use monospace because content behaves like data, never merely to make the interface look technical.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Instrument Rule",
+        "body": "A region earns separation through function and tone, not decorative elevation.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do show current state, progress, errors, and recovery actions without requiring exploratory clicks.",
+      "Do use direct verbs, concise labels, and stable placement for repeated controls.",
+      "Do make dense information scannable through alignment and consistent data columns."
+    ],
+    "donts": [
+      "Don't imitate green-phosphor terminals, scanlines, CRT glow, or fake command prompts.",
+      "Don't turn every section into a floating card or every status into a colorful badge.",
+      "Don't add marketing copy, decorative book imagery, or motion that delays an operation."
+    ]
   }
 }

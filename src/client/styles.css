@@ -700,10 +700,9 @@ dd {
 .job-list-head,
 .job-list li {
   display: grid;
-  grid-template-columns: minmax(14rem, 1.5fr) minmax(9rem, 0.7fr) minmax(8rem, 0.6fr) minmax(
-      11rem,
-      0.8fr
-    ) minmax(6.5rem, auto);
+  grid-template-columns:
+    minmax(14rem, 1.5fr) minmax(9rem, 0.7fr) minmax(8rem, 0.6fr) minmax(11rem, 0.8fr)
+    minmax(6.5rem, auto);
   gap: 1rem;
   align-items: center;
 }

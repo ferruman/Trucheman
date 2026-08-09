@@ -8,7 +8,7 @@
 
 **Input**: Product requirements in `docs/book-translator-prd.md` for a local-first EPUB translation application.
 
-## User Scenarios & Testing *(mandatory)*
+## User Scenarios & Testing _(mandatory)_
 
 ### User Story 1 - Produce a readable translated EPUB (Priority: P1)
 
@@ -107,7 +107,7 @@ As a user, I want the application to validate the output, show warnings and proc
 - A rebuild fails after a previously valid translated EPUB already exists.
 - A job is deleted while intermediate and output files exist; deletion requires confirmation and is scoped to exactly that job.
 
-## Requirements *(mandatory)*
+## Requirements _(mandatory)_
 
 ### Functional Requirements
 
@@ -184,7 +184,7 @@ As a user, I want the application to validate the output, show warnings and proc
 - **Validation Report**: Build outcome, blocking failures, non-blocking warnings, affected documents, and optional external-validator results.
 - **Output Artifact**: The most recent successfully built translated EPUB and its summary statistics; replacement is atomic.
 
-## Success Criteria *(mandatory)*
+## Success Criteria _(mandatory)_
 
 ### Measurable Outcomes
 

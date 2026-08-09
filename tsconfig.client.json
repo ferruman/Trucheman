@@ -1,5 +1,15 @@
 {
-  "compilerOptions": {"composite":true,"target":"ES2022","module":"ESNext","moduleResolution":"Bundler","outDir":"dist/client","rootDir":".","strict":true,"jsx":"react-jsx","types":["vite/client"]},
-  "include":["src/client/**/*.ts","src/client/**/*.tsx","src/shared/**/*.ts"],
-  "references":[]
+  "compilerOptions": {
+    "composite": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "outDir": "dist/client",
+    "rootDir": ".",
+    "strict": true,
+    "jsx": "react-jsx",
+    "types": ["vite/client"]
+  },
+  "include": ["src/client/**/*.ts", "src/client/**/*.tsx", "src/shared/**/*.ts"],
+  "references": []
 }

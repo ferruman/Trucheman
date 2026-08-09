@@ -21,8 +21,14 @@ export class FakeProvider implements LanguageModelProvider {
       })),
       finishReason: "stop",
       usage: {
-        promptTokens: request.segments.reduce((total, segment) => total + inputText(segment).length, 0),
-        completionTokens: request.segments.reduce((total, segment) => total + inputText(segment).length, 0),
+        promptTokens: request.segments.reduce(
+          (total, segment) => total + inputText(segment).length,
+          0,
+        ),
+        completionTokens: request.segments.reduce(
+          (total, segment) => total + inputText(segment).length,
+          0,
+        ),
       },
     };
   }

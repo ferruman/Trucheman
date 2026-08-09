@@ -438,7 +438,8 @@ components:
 
     Progress:
       type: object
-      required: [totalBatches, translatedBatches, editedBatches, failedBatches, completedSteps, totalSteps]
+      required:
+        [totalBatches, translatedBatches, editedBatches, failedBatches, completedSteps, totalSteps]
       properties:
         totalBatches: { type: integer, minimum: 0 }
         translatedBatches: { type: integer, minimum: 0 }
@@ -449,7 +450,18 @@ components:
 
     DocumentSummary:
       type: object
-      required: [id, href, title, spineIndex, status, totalBatches, translatedBatches, editedBatches, failedBatches]
+      required:
+        [
+          id,
+          href,
+          title,
+          spineIndex,
+          status,
+          totalBatches,
+          translatedBatches,
+          editedBatches,
+          failedBatches,
+        ]
       properties:
         id: { type: string }
         href: { type: string }
@@ -463,16 +475,50 @@ components:
 
     JobSummary:
       type: object
-      required: [id, title, sourceLanguage, targetLanguage, status, currentStage, progress, createdAt, updatedAt]
+      required:
+        [
+          id,
+          title,
+          sourceLanguage,
+          targetLanguage,
+          status,
+          currentStage,
+          progress,
+          createdAt,
+          updatedAt,
+        ]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
         sourceLanguage: { type: string }
         targetLanguage: { type: string }
         status:
-          enum: [draft, preparing, analyzing_names, awaiting_name_review, running, stopping, paused, needs_attention, validating, completed, failed]
+          enum:
+            [
+              draft,
+              preparing,
+              analyzing_names,
+              awaiting_name_review,
+              running,
+              stopping,
+              paused,
+              needs_attention,
+              validating,
+              completed,
+              failed,
+            ]
         currentStage:
-          enum: [preparation, name_analysis, name_review, translation, editing, validation, building, complete]
+          enum:
+            [
+              preparation,
+              name_analysis,
+              name_review,
+              translation,
+              editing,
+              validation,
+              building,
+              complete,
+            ]
         progress: { $ref: "#/components/schemas/Progress" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }

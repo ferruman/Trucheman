@@ -1,1 +1,11 @@
-export function GlossaryPage(){return <section><h2>Glossary</h2><p>Review proposed names before starting translation.</p><p role="status">Book text is sent to the selected external provider when processing starts.</p></section>;}
+export function GlossaryPage() {
+  return (
+    <section>
+      <h2>Glossary</h2>
+      <p>Review proposed names before starting translation.</p>
+      <p role="status">
+        Book text is sent to the selected external provider when processing starts.
+      </p>
+    </section>
+  );
+}

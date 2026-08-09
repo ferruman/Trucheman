@@ -2,7 +2,12 @@
 version: 1
 slug: "src-client-features-jobs-jobpage-tsx"
 primary_target: "src/client/features/jobs/JobPage.tsx"
-related_targets: ["src/client/features/jobs/ProgressPanel.tsx","src/client/features/jobs/JobControls.tsx","src/client/features/jobs/ResultPage.tsx"]
+related_targets:
+  [
+    "src/client/features/jobs/ProgressPanel.tsx",
+    "src/client/features/jobs/JobControls.tsx",
+    "src/client/features/jobs/ResultPage.tsx",
+  ]
 ---
 
 # Job Workbench

@@ -1,4 +1,45 @@
 import { parseXml, localName } from "./xml-dom.js";
-export type BookPackage={containerPath:string;packagePath:string;manifest:Map<string,{href:string;mediaType:string;properties?:string}>;spine:string[];title?:string;language?:string};
-export function parseContainer(xml:string):string{const d=parseXml(xml);let found:string|undefined;const walk=(n:any)=>{if(n.nodeType===1&&localName(n)==="rootfile")found=n.getAttribute("full-path")??undefined;for(let c=n.firstChild;c&&!found;c=c.nextSibling)walk(c)};walk(d);if(!found)throw new Error("EPUB package document is missing");return found;}
-export function parsePackage(xml:string,packagePath:string):BookPackage{const d=parseXml(xml),manifest=new Map<string,{href:string;mediaType:string;properties?:string}>();let title,language;const walk=(n:any)=>{if(n.nodeType!==1)return;const ln=localName(n);if(ln==="item"&&n.parentNode&&localName(n.parentNode)==="manifest")manifest.set(n.getAttribute("id"),{href:n.getAttribute("href"),mediaType:n.getAttribute("media-type"),properties:n.getAttribute("properties")??undefined});if(ln==="itemref"&&n.parentNode&&localName(n.parentNode)==="spine")spine.push(n.getAttribute("idref"));if(ln==="title")title=n.textContent?.trim();if(ln==="language")language=n.textContent?.trim();for(let c=n.firstChild;c;c=c.nextSibling)walk(c)};const spine:string[]=[];walk(d.documentElement);if(!manifest.size||!spine.length)throw new Error("EPUB manifest or spine is missing");return {containerPath:"META-INF/container.xml",packagePath,manifest,spine,title,language};}
+export type BookPackage = {
+  containerPath: string;
+  packagePath: string;
+  manifest: Map<string, { href: string; mediaType: string; properties?: string }>;
+  spine: string[];
+  title?: string;
+  language?: string;
+};
+export function parseContainer(xml: string): string {
+  const d = parseXml(xml);
+  let found: string | undefined;
+  const walk = (n: any) => {
+    if (n.nodeType === 1 && localName(n) === "rootfile")
+      found = n.getAttribute("full-path") ?? undefined;
+    for (let c = n.firstChild; c && !found; c = c.nextSibling) walk(c);
+  };
+  walk(d);
+  if (!found) throw new Error("EPUB package document is missing");
+  return found;
+}
+export function parsePackage(xml: string, packagePath: string): BookPackage {
+  const d = parseXml(xml),
+    manifest = new Map<string, { href: string; mediaType: string; properties?: string }>();
+  let title, language;
+  const walk = (n: any) => {
+    if (n.nodeType !== 1) return;
+    const ln = localName(n);
+    if (ln === "item" && n.parentNode && localName(n.parentNode) === "manifest")
+      manifest.set(n.getAttribute("id"), {
+        href: n.getAttribute("href"),
+        mediaType: n.getAttribute("media-type"),
+        properties: n.getAttribute("properties") ?? undefined,
+      });
+    if (ln === "itemref" && n.parentNode && localName(n.parentNode) === "spine")
+      spine.push(n.getAttribute("idref"));
+    if (ln === "title") title = n.textContent?.trim();
+    if (ln === "language") language = n.textContent?.trim();
+    for (let c = n.firstChild; c; c = c.nextSibling) walk(c);
+  };
+  const spine: string[] = [];
+  walk(d.documentElement);
+  if (!manifest.size || !spine.length) throw new Error("EPUB manifest or spine is missing");
+  return { containerPath: "META-INF/container.xml", packagePath, manifest, spine, title, language };
+}

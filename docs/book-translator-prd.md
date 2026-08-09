@@ -140,20 +140,20 @@ Show validation status, blocking errors, document-linked warnings, translated an
 
 ### Local API
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/api/health` | Local server health |
-| GET/PUT | `/api/settings` | Read or update non-secret provider settings |
-| POST | `/api/settings/test` | Test provider configuration |
-| GET/POST | `/api/jobs` | List or create jobs |
-| GET/PUT/POST | `/api/jobs/:id` | Read, configure, or start a job |
-| POST | `/api/jobs/:id/names/analyze` | Start or resume name analysis |
-| POST | `/api/jobs/:id/pause` | Safely pause processing |
-| POST | `/api/jobs/:id/retry` | Retry failed scope |
-| POST | `/api/jobs/:id/rebuild` | Rebuild and validate output |
-| GET | `/api/jobs/:id/events` | Replay and stream sanitized SSE events |
-| GET | `/api/jobs/:id/download` | Download the latest successful EPUB |
-| DELETE | `/api/jobs/:id` | Delete one confirmed job |
+| Method       | Path                          | Purpose                                     |
+| ------------ | ----------------------------- | ------------------------------------------- |
+| GET          | `/api/health`                 | Local server health                         |
+| GET/PUT      | `/api/settings`               | Read or update non-secret provider settings |
+| POST         | `/api/settings/test`          | Test provider configuration                 |
+| GET/POST     | `/api/jobs`                   | List or create jobs                         |
+| GET/PUT/POST | `/api/jobs/:id`               | Read, configure, or start a job             |
+| POST         | `/api/jobs/:id/names/analyze` | Start or resume name analysis               |
+| POST         | `/api/jobs/:id/pause`         | Safely pause processing                     |
+| POST         | `/api/jobs/:id/retry`         | Retry failed scope                          |
+| POST         | `/api/jobs/:id/rebuild`       | Rebuild and validate output                 |
+| GET          | `/api/jobs/:id/events`        | Replay and stream sanitized SSE events      |
+| GET          | `/api/jobs/:id/download`      | Download the latest successful EPUB         |
+| DELETE       | `/api/jobs/:id`               | Delete one confirmed job                    |
 
 SSE is a convenience layer. Persisted REST state remains authoritative. On reconnect the client refreshes job state and resumes event replay using `Last-Event-ID`.
 
