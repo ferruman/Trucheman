@@ -24,4 +24,9 @@ test("uploads, analyzes, translates, and exposes the EPUB download",async({page}
   await page.getByRole("button",{name:"Start translation"}).click();
   await expect(page.getByText("Status: completed.")).toBeVisible({timeout:15000});
   await expect(page.getByRole("link",{name:"Download translated EPUB"})).toBeVisible();
+  await page.getByRole("button",{name:"Delete job",exact:true}).click();
+  const dialog=page.getByRole("dialog",{name:"Delete this job?"});
+  await expect(dialog).toContainText("This permanently removes the source EPUB");
+  await dialog.getByRole("button",{name:"Delete job",exact:true}).click();
+  await expect(page).toHaveURL(/\/$/);
 });

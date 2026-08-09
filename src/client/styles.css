@@ -180,6 +180,8 @@ button.secondary {
   color: var(--text);
 }
 button.secondary:hover { border-color: var(--border-strong); background: var(--border); color: var(--text); }
+button.danger { border-color: var(--danger-border); background: var(--danger-soft); color: var(--danger-text); }
+button.danger:hover { border-color: var(--danger); background: var(--danger); color: var(--canvas); }
 button:disabled { cursor: not-allowed; opacity: .5; }
 .actions { display: flex; align-items: center; gap: .625rem; flex-wrap: wrap; }
 .job-header .actions { justify-content: flex-end; margin: 0; }

@@ -40,4 +40,13 @@ describe("client API", () => {
       body: JSON.stringify({ scopes: ["translations", "edits", "output"] }),
     }));
   });
+
+  it("deletes exactly the requested job", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await jobActions.remove("job-1");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/jobs/job-1", expect.objectContaining({ method: "DELETE" }));
+  });
 });

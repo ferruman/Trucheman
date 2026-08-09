@@ -3,6 +3,7 @@ import type { JobView } from "../../../shared/domain/job";
 import { api, jobActions, type JobResults } from "../../app/api";
 import { subscribeToJobEvents } from "../../app/job-events";
 import { InvalidationDialog } from "./InvalidationDialog";
+import { DeleteJobDialog } from "./DeleteJobDialog";
 import { JobControls } from "./JobControls";
 import { ProgressPanel } from "./ProgressPanel";
 import { ResultPage } from "./ResultPage";
@@ -14,6 +15,7 @@ export function JobPage({ id }: { id: string }) {
   const [busyAction, setBusyAction] = useState("");
   const [connected, setConnected] = useState(true);
   const [invalidationOpen, setInvalidationOpen] = useState(false);
+  const [deletionOpen, setDeletionOpen] = useState(false);
   const [results, setResults] = useState<JobResults>();
   const [resultsError, setResultsError] = useState("");
   const refreshVersion = useRef(0);
@@ -81,6 +83,23 @@ export function JobPage({ id }: { id: string }) {
     setInvalidationOpen(false);
   }
 
+  async function removeJob() {
+    if (actionLock.current) return;
+    actionLock.current = true;
+    setBusyAction("delete");
+    setActionError("");
+    try {
+      await jobActions.remove(id);
+      location.assign("/");
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "Unable to delete the job");
+      setDeletionOpen(false);
+    } finally {
+      actionLock.current = false;
+      setBusyAction("");
+    }
+  }
+
   if (!job && loadError) return <section><h2>Job unavailable</h2><div role="alert"><p>{loadError}</p><button type="button" onClick={() => void refresh()}>Try again</button></div></section>;
   if (!job) return <section><h2>Loading job</h2><p role="status">Loading job…</p></section>;
 
@@ -99,6 +118,7 @@ export function JobPage({ id }: { id: string }) {
         onResume={() => void act("resume", () => jobActions.resume(id))}
         onRetry={() => void act("retry", () => jobActions.retry(id))}
         onInvalidate={() => setInvalidationOpen(true)}
+        onDelete={() => setDeletionOpen(true)}
       />
     </header>
     <ProgressPanel job={job}/>
@@ -131,5 +151,6 @@ export function JobPage({ id }: { id: string }) {
       </aside>
     </div>
     <InvalidationDialog open={invalidationOpen} busy={busyAction === "invalidate"} onCancel={() => setInvalidationOpen(false)} onConfirm={() => void invalidate()}/>
+    <DeleteJobDialog open={deletionOpen} busy={busyAction === "delete"} onCancel={() => setDeletionOpen(false)} onConfirm={() => void removeJob()}/>
   </section>;
 }

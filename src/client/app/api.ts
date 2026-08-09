@@ -54,4 +54,5 @@ export const jobActions = {
   }),
   results: (id: string) => request<JobResults>(`/jobs/${id}/results`),
   rebuild: (id: string) => request<AcceptedResponse>(`/jobs/${id}/rebuild`, { method: "POST" }),
+  remove: (id: string) => request<void>(`/jobs/${id}`, { method: "DELETE" }),
 };
