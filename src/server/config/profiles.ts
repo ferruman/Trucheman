@@ -1,4 +1,4 @@
-import { loadSecrets } from "./secrets.js";
+import { loadSecrets, type SecretStore } from "./secrets.js";
 import type { ProviderProfile } from "../providers/provider.js";
 
 const DEEPSEEK_ENDPOINT = "https://api.deepseek.com/chat/completions";
@@ -9,13 +9,18 @@ export type ResolvedProfiles = {
   useExternal: boolean;
   translation: ProviderProfile;
   editing: ProviderProfile;
+  critic: ProviderProfile;
   consistency: ProviderProfile;
 };
 
-function thinkingMode(value: string | undefined, endpoint: string): ProviderProfile["thinking"] {
+function thinkingMode(
+  value: string | undefined,
+  endpoint: string,
+  variable: string,
+): ProviderProfile["thinking"] {
   const configured = value ?? (endpoint.includes("api.deepseek.com") ? "disabled" : undefined);
   if (configured !== undefined && configured !== "enabled" && configured !== "disabled") {
-    throw new Error("BOOK_TRANSLATOR_CONSISTENCY_THINKING must be enabled or disabled");
+    throw new Error(`${variable} must be enabled or disabled`);
   }
   return configured;
 }
@@ -29,8 +34,10 @@ export function defaultEditingPromptVersion(model: string): ProviderProfile["pro
  * Single source of truth for provider configuration: the pipeline runs against it and the
  * settings endpoint reports it, so what the UI shows is always what a run would use.
  */
-export function resolveProfiles(env: NodeJS.ProcessEnv = process.env): ResolvedProfiles {
-  const secrets = loadSecrets();
+export function resolveProfiles(
+  env: NodeJS.ProcessEnv = process.env,
+  secrets: SecretStore = loadSecrets(),
+): ResolvedProfiles {
   const useExternal =
     env.BOOK_TRANSLATOR_PROVIDER !== "deterministic" &&
     Boolean(secrets.translationApiKey && secrets.editingApiKey);
@@ -38,6 +45,8 @@ export function resolveProfiles(env: NodeJS.ProcessEnv = process.env): ResolvedP
     secrets.translationEndpoint ?? env.BOOK_TRANSLATOR_TRANSLATION_ENDPOINT ?? DEEPSEEK_ENDPOINT;
   const editingEndpoint =
     secrets.editingEndpoint ?? env.BOOK_TRANSLATOR_EDITING_ENDPOINT ?? DEEPSEEK_ENDPOINT;
+  const criticEndpoint =
+    secrets.criticEndpoint ?? env.BOOK_TRANSLATOR_CRITIC_ENDPOINT ?? editingEndpoint;
   const consistencyEndpoint =
     secrets.consistencyEndpoint ?? env.BOOK_TRANSLATOR_CONSISTENCY_ENDPOINT ?? translationEndpoint;
   const editingModel = secrets.editingModel ?? env.BOOK_TRANSLATOR_EDITING_MODEL ?? DEEPSEEK_MODEL;
@@ -61,6 +70,17 @@ export function resolveProfiles(env: NodeJS.ProcessEnv = process.env): ResolvedP
       thinking: editingEndpoint.includes("api.deepseek.com") ? "disabled" : undefined,
       promptVersion: editingPromptVersion || defaultEditingPromptVersion(editingModel),
     },
+    critic: {
+      name: useExternal ? "critic" : "deterministic-local",
+      endpoint: criticEndpoint,
+      model: secrets.criticModel ?? env.BOOK_TRANSLATOR_CRITIC_MODEL ?? editingModel,
+      apiKey: secrets.criticApiKey ?? secrets.editingApiKey,
+      thinking: thinkingMode(
+        secrets.criticThinking ?? env.BOOK_TRANSLATOR_CRITIC_THINKING,
+        criticEndpoint,
+        "BOOK_TRANSLATOR_CRITIC_THINKING",
+      ),
+    },
     consistency: {
       name: useExternal ? "consistency" : "deterministic-local",
       endpoint: consistencyEndpoint,
@@ -69,6 +89,7 @@ export function resolveProfiles(env: NodeJS.ProcessEnv = process.env): ResolvedP
       thinking: thinkingMode(
         secrets.consistencyThinking ?? env.BOOK_TRANSLATOR_CONSISTENCY_THINKING,
         consistencyEndpoint,
+        "BOOK_TRANSLATOR_CONSISTENCY_THINKING",
       ),
     },
   };
@@ -85,6 +106,7 @@ export function profilesView(profiles: ResolvedProfiles = resolveProfiles()) {
     provider: profiles.useExternal ? "external" : "deterministic",
     translation: view(profiles.translation),
     editing: view(profiles.editing),
+    critic: view(profiles.critic),
     consistency: view(profiles.consistency),
   };
 }

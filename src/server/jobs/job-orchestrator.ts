@@ -12,6 +12,7 @@ import { readJournal } from "../storage/ndjson-journal.js";
 import { Scheduler } from "./scheduler.js";
 import { syncParentDirectory } from "../storage/atomic-file.js";
 import { redact } from "../domain/redaction.js";
+import { readUsageReport, type UsageReport } from "./usage-service.js";
 
 type UpdateJob = (patch: Partial<PersistedJob>) => Promise<void>;
 type RunBook = (
@@ -40,6 +41,7 @@ type JournalRecord = {
 
 export type JobResults = {
   validation: ValidationReport | null;
+  usage: UsageReport;
   statistics: {
     translated: number;
     edited: number;
@@ -405,6 +407,7 @@ export class JobOrchestrator {
     }
     return {
       validation,
+      usage: await readUsageReport(root),
       statistics: {
         translated: new Set(drafts.map((x) => x.batchId)).size,
         edited: new Set(edits.map((x) => x.batchId)).size,

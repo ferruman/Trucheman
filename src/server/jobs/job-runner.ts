@@ -28,6 +28,7 @@ export type RunnerOptions = {
   root: string;
   translationProfile: ProviderProfile;
   editingProfile: ProviderProfile;
+  criticProfile?: ProviderProfile;
   sourceLanguage: ProviderLanguage;
   targetLanguage: ProviderLanguage;
   instructions?: string;
@@ -88,6 +89,7 @@ export async function runTwoPass(
   provider: LanguageModelProvider,
   options: RunnerOptions,
 ) {
+  const criticProfile = options.criticProfile ?? options.editingProfile;
   const draftRecords = checkpointMap(
     await readJournal<Checkpoint>(`${options.root}/drafts.ndjson`),
   );
@@ -178,7 +180,7 @@ export async function runTwoPass(
       const auditSegments = buildQualityAuditSegments(request, draft, editedSegments);
       const expectedAuditKey = checkpointKey(
         "audit",
-        options.editingProfile,
+        criticProfile,
         auditSegments,
         options.sourceLanguage,
         options.targetLanguage,
@@ -192,7 +194,7 @@ export async function runTwoPass(
       } else {
         const audited = await auditBatch(
           provider,
-          options.editingProfile,
+          criticProfile,
           auditSegments,
           { sourceLanguage: options.sourceLanguage, targetLanguage: options.targetLanguage },
           options.instructions,
@@ -206,7 +208,7 @@ export async function runTwoPass(
           checkpointKey: expectedAuditKey,
           attempts: audited.attempts,
           warnings: audited.warnings,
-          profile: options.editingProfile.name,
+          profile: criticProfile.name,
         });
       }
       qualityFindings.push({ batchId: batch.id, findings });

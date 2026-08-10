@@ -111,10 +111,12 @@ describe("two-pass pipeline", () => {
 
   it("audits every edited segment and repairs only flagged segments in high-quality mode", async () => {
     const root = await mkdtemp(`${tmpdir()}/book-selective-quality-`);
-    const provider: LanguageModelProvider & { requests: string[] } = {
+    const provider: LanguageModelProvider & {
+      requests: Array<{ mode: string; model: string }>;
+    } = {
       requests: [],
       async complete(request) {
-        this.requests.push(request.mode);
+        this.requests.push({ mode: request.mode, model: request.profile.model });
         return {
           segments: request.segments.map((input) => {
             if (request.mode === "translation") {
@@ -152,6 +154,7 @@ describe("two-pass pipeline", () => {
       root,
       translationProfile: profile,
       editingProfile: profile,
+      criticProfile: { ...profile, name: "critic", model: "critic-model" },
       qualityMode: "high" as const,
       ...languages,
     };
@@ -160,7 +163,12 @@ describe("two-pass pipeline", () => {
     const result = await runTwoPass(batches, provider, options);
     await runTwoPass(batches, provider, options);
 
-    expect(provider.requests).toEqual(["translation", "editing", "audit", "repair"]);
+    expect(provider.requests).toEqual([
+      { mode: "translation", model: "fake" },
+      { mode: "editing", model: "fake" },
+      { mode: "audit", model: "critic-model" },
+      { mode: "repair", model: "fake" },
+    ]);
     expect(result.edits.get("batch-quality")).toEqual([
       { id: "chapter-1:0", text: "Исправлено" },
       { id: "chapter-1:1", text: "Хорошо" },

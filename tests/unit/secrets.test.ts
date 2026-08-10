@@ -26,6 +26,10 @@ describe("secret boundaries", () => {
         "BOOK_TRANSLATOR_CONSISTENCY_ENDPOINT=https://consistency.example/v1/chat/completions",
         "BOOK_TRANSLATOR_CONSISTENCY_MODEL=consistency-model",
         "BOOK_TRANSLATOR_CONSISTENCY_THINKING=enabled",
+        "BOOK_TRANSLATOR_CRITIC_MODEL=critic-model",
+        "BOOK_TRANSLATOR_CRITIC_API_KEY=critic-key",
+        "BOOK_TRANSLATOR_CRITIC_ENDPOINT=https://critic.example/v1/chat/completions",
+        "BOOK_TRANSLATOR_CRITIC_THINKING=disabled",
       ].join("\n"),
     );
 
@@ -34,6 +38,10 @@ describe("secret boundaries", () => {
       consistencyEndpoint: "https://consistency.example/v1/chat/completions",
       consistencyModel: "consistency-model",
       consistencyThinking: "enabled",
+      criticModel: "critic-model",
+      criticApiKey: "critic-key",
+      criticEndpoint: "https://critic.example/v1/chat/completions",
+      criticThinking: "disabled",
     });
   });
 });

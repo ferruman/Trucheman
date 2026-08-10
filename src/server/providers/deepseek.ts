@@ -182,6 +182,9 @@ export class DeepSeekProvider implements LanguageModelProvider {
             requestId,
             usage: {
               promptTokens: body.usage?.prompt_tokens,
+              cachedPromptTokens:
+                body.usage?.prompt_tokens_details?.cached_tokens ??
+                body.usage?.prompt_cache_hit_tokens,
               completionTokens: body.usage?.completion_tokens,
             },
           },

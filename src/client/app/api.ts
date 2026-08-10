@@ -3,6 +3,28 @@ import type { JobView } from "../../shared/domain/job";
 export type JobResults = {
   validation: unknown | null;
   statistics: unknown | null;
+  usage: {
+    version: 1;
+    generatedAt: string;
+    totals: UsageNumbers;
+    breakdown: Array<
+      UsageNumbers & {
+        stage: "translation" | "editing" | "audit" | "repair" | "consistency";
+        profile: string;
+        endpoint: string;
+        model: string;
+      }
+    >;
+  };
+};
+
+type UsageNumbers = {
+  requests: number;
+  requestsWithUsage: number;
+  promptTokens: number;
+  cachedPromptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
 };
 
 type AcceptedResponse = { accepted: boolean };

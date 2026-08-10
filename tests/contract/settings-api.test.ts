@@ -21,6 +21,12 @@ describe("settings API boundary", () => {
         model: "other-model",
         apiKey: "sk-secret-value",
       },
+      critic: {
+        name: "critic",
+        endpoint: "https://example.test/chat",
+        model: "critic-model",
+        apiKey: "sk-secret-value",
+      },
       consistency: {
         name: "consistency",
         endpoint: "https://example.test/chat",
@@ -33,6 +39,7 @@ describe("settings API boundary", () => {
       hasApiKey: true,
     });
     expect(view.consistency.hasApiKey).toBe(false);
+    expect(view.critic.model).toBe("critic-model");
     expect(JSON.stringify(view)).not.toContain("sk-secret-value");
   });
 
@@ -46,5 +53,22 @@ describe("settings API boundary", () => {
     expect(defaultEditingPromptVersion("gpt-5.6-terra")).toBe("literary-v3.2.1");
     expect(defaultEditingPromptVersion("openai/gpt-5.6-terra")).toBe("literary-v3.2.1");
     expect(defaultEditingPromptVersion("deepseek-v4-flash")).toBeUndefined();
+  });
+
+  it("allows the critic model to diverge from the editor while inheriting its transport", () => {
+    const profiles = resolveProfiles(
+      {
+        BOOK_TRANSLATOR_PROVIDER: "deterministic",
+        BOOK_TRANSLATOR_EDITING_ENDPOINT: "https://example.test/chat",
+        BOOK_TRANSLATOR_EDITING_MODEL: "editor-model",
+        BOOK_TRANSLATOR_CRITIC_ENDPOINT: "https://critic.example/chat",
+        BOOK_TRANSLATOR_CRITIC_MODEL: "critic-model",
+      },
+      {},
+    );
+    expect(profiles.critic).toMatchObject({
+      endpoint: "https://critic.example/chat",
+      model: "critic-model",
+    });
   });
 });

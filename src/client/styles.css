@@ -579,6 +579,83 @@ dd {
   margin-top: 1.25rem;
 }
 
+.usage-section {
+  border-bottom: 1px solid var(--border);
+}
+.usage-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+}
+.usage-heading h3,
+.usage-heading p {
+  margin: 0.2rem 0 0;
+}
+.usage-heading p {
+  color: var(--muted);
+  font: 0.75rem/1.5 var(--mono);
+  white-space: nowrap;
+}
+.usage-heading p strong {
+  color: var(--text);
+}
+.usage-table-wrap {
+  overflow-x: auto;
+  border-top: 1px solid var(--border);
+}
+.usage-table {
+  width: 100%;
+  min-width: 52rem;
+  border-collapse: collapse;
+  font: 0.75rem/1.4 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.usage-table th,
+.usage-table td {
+  padding: 0.7rem 0.8rem;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+  white-space: nowrap;
+}
+.usage-table th:first-child,
+.usage-table td:nth-child(2) {
+  text-align: left;
+}
+.usage-table th:last-child,
+.usage-table td:last-child {
+  border-right: 0;
+}
+.usage-table thead th,
+.usage-table tfoot th,
+.usage-table tfoot td {
+  color: var(--muted);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.usage-table tbody th {
+  color: var(--text);
+}
+.usage-table code {
+  display: block;
+  color: var(--text);
+}
+.usage-table small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.6875rem;
+}
+.usage-empty,
+.usage-note {
+  margin: 0;
+  padding: 0 1.25rem 1rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
 .state-snapshot {
   margin: 0;
 }
@@ -1061,6 +1138,13 @@ dialog .actions {
   }
   .glossary-editor {
     width: 100%;
+  }
+  .usage-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .usage-heading p {
+    white-space: normal;
   }
 }
 

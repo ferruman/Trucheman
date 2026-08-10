@@ -30,6 +30,7 @@ BOOK_TRANSLATOR_TRANSLATION_API_KEY=your-key
 BOOK_TRANSLATOR_EDITING_API_KEY=your-key
 BOOK_TRANSLATOR_TRANSLATION_MODEL=deepseek-v4-flash
 BOOK_TRANSLATOR_EDITING_MODEL=deepseek-v4-flash
+BOOK_TRANSLATOR_CRITIC_MODEL=deepseek-v4-flash
 BOOK_TRANSLATOR_CONSISTENCY_MODEL=deepseek-v4-flash
 ```
 
@@ -59,7 +60,16 @@ High mode always adds audit inference for every eligible segment. Repair inferen
 its additional cost depends on how many concrete defects the critic finds. Audit and repair results
 are checkpointed in `audits.ndjson` and `repairs.ndjson`; the local `quality-report.json` records the
 flagged spans and applied repair count. Switching quality modes keeps completed translation and
-editing checkpoints.
+editing checkpoints. Configure the audit profile with `BOOK_TRANSLATOR_CRITIC_API_KEY`,
+`BOOK_TRANSLATOR_CRITIC_ENDPOINT`, `BOOK_TRANSLATOR_CRITIC_MODEL`, and
+`BOOK_TRANSLATOR_CRITIC_THINKING`; omitted values inherit the editing profile. Targeted repair
+continues to use the editing model.
+
+Every successful provider response is recorded in the append-only `usage.ndjson` ledger. The
+derived `usage-report.json` and the completed-job result page group request counts, input tokens,
+cached input tokens, output tokens, and total tokens by pipeline stage and exact model. Checkpoint
+reuse does not create another usage record; a genuinely repeated provider call does. Reports contain
+token usage only and intentionally do not estimate currency costs.
 
 Restart the server after changing `.env.local` or `.env`. The external-provider mode sends eligible book text to the configured service.
 

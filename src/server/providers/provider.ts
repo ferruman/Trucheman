@@ -42,7 +42,11 @@ export type ProviderRequest = {
 
 export type ProviderResponse = {
   segments: ProviderSegment[];
-  usage?: { promptTokens?: number; completionTokens?: number };
+  usage?: {
+    promptTokens?: number;
+    cachedPromptTokens?: number;
+    completionTokens?: number;
+  };
   finishReason?: string;
   requestId?: string;
 };

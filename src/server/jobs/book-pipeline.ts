@@ -15,6 +15,7 @@ import { DeepSeekProvider } from "../providers/deepseek.js";
 import { resolveProfiles } from "../config/profiles.js";
 import { LANGUAGES } from "../../shared/languages.js";
 import { runTwoPass } from "./job-runner.js";
+import { UsageTrackingProvider } from "./usage-service.js";
 import type { PersistedJob } from "../domain/job.js";
 import { syncParentDirectory } from "../storage/atomic-file.js";
 import {
@@ -92,9 +93,13 @@ export async function runPreparedBook(
     useExternal,
     translation: translationProfile,
     editing: editingProfile,
+    critic: criticProfile,
     consistency: consistencyProfile,
   } = resolveProfiles();
-  const provider = useExternal ? new DeepSeekProvider() : new FakeProvider();
+  const provider = new UsageTrackingProvider(
+    useExternal ? new DeepSeekProvider() : new FakeProvider(),
+    root,
+  );
   const instructions = job.instructions.trim();
   const sourceLanguage = providerLanguage(job.sourceLanguage),
     targetLanguage = providerLanguage(job.targetLanguage);
@@ -128,6 +133,7 @@ export async function runPreparedBook(
     root,
     translationProfile,
     editingProfile,
+    criticProfile,
     sourceLanguage,
     targetLanguage,
     instructions,
