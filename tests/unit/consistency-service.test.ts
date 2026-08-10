@@ -397,6 +397,42 @@ describe("book-wide consistency", () => {
     expect(stats.kept).toBe(entities.length);
   });
 
+  it("extracts a multi-word name as one entity instead of its separate words", () => {
+    const values: ConsistencyDocument[] = [
+      {
+        id: "phrases",
+        sourceSegments: [
+          sourceSegment(
+            "phrases:0",
+            "He met Leticia Dreams the Truth Hardin at the Little Chapel of the Stars.",
+          ),
+          sourceSegment(
+            "phrases:1",
+            "Leticia Dreams the Truth Hardin drove a Dodge Durango. Kyra waited.",
+          ),
+          sourceSegment("phrases:2", "Leticia Dreams the Truth Hardin’s truck was gone."),
+          sourceSegment("phrases:3", "Then Kyra left the Little Chapel of the Stars alone."),
+        ],
+        editedSegments: [],
+      },
+    ];
+
+    const sources = extractRepeatedSourceEntities(values).map((entity) => entity.source);
+
+    expect(sources).toContain("Leticia Dreams the Truth Hardin");
+    expect(sources).toContain("Little Chapel of the Stars");
+    // A sentence opening is not part of the name, and the possessive is the same entity.
+    expect(sources).not.toContain("Then Kyra");
+    expect(sources).not.toContain("Leticia Dreams the Truth Hardin’s");
+    // A run must not cross a sentence boundary: "Durango. Kyra" is two entities.
+    expect(sources).not.toContain("Durango Kyra");
+    expect(
+      extractRepeatedSourceEntities(values).find(
+        (entity) => entity.source === "Leticia Dreams the Truth Hardin",
+      )?.occurrences,
+    ).toBe(3);
+  });
+
   it("resolves consistency in chunks and keeps decisions when one chunk fails", async () => {
     const root = await mkdtemp(`${tmpdir()}/book-consistency-chunks-`);
     roots.push(root);

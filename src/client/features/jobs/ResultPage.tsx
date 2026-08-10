@@ -73,6 +73,20 @@ export function ResultPage({ id, results, error, busy, onRetry, onRebuild }: Pro
                     `, ${results.consistency.failedChunks} chunk(s) failed`}
                   {results.consistency.ignoredGlossaryEntries > 0 &&
                     `, ${results.consistency.ignoredGlossaryEntries} glossary entry/entries mostly ignored`}
+                  {results.consistency.documentWarnings > 0 &&
+                    `, ${results.consistency.documentWarnings} quote/ё warning(s)`}
+                </dd>
+              </div>
+            )}
+            {results.consistency && results.consistency.errors.length > 0 && (
+              <div>
+                <dt>Passes that did not run</dt>
+                <dd>
+                  <ul>
+                    {results.consistency.errors.map((error) => (
+                      <li key={error}>{error}</li>
+                    ))}
+                  </ul>
                 </dd>
               </div>
             )}

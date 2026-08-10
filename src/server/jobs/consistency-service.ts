@@ -114,6 +114,65 @@ const sourceStopWords = new Set(
     .filter(Boolean),
 );
 const lowercaseWordPattern = /(?<![\p{L}\p{N}])\p{Ll}[\p{L}\p{M}'’-]{2,}/gu;
+/** Lowercase words that stay inside a name: Little Chapel of the Stars. */
+const nameConnectors = new Set(["of", "the", "de", "del", "la", "le", "van", "von", "der", "du"]);
+const tokenPattern = /[\p{L}\p{N}\p{M}'’-]+/gu;
+
+/**
+ * Runs of capitalized words — the only way a multi-word entity ever becomes one candidate.
+ * Matching single words alone reduced "Leticia Dreams the Truth Hardin" to four unrelated
+ * ones, so the registry's answer for the whole name was discarded as unsupported and the
+ * phrase went through the book in four different renderings.
+ */
+export function capitalizedPhrases(text: string, maxWords = 5) {
+  const tokens = [...text.matchAll(tokenPattern)];
+  const phrases: Array<{ value: string; index: number }> = [];
+  const emit = (start: number, end: number) => {
+    // Trim leading stop words: "Then Kyra" is a sentence opening, not a name.
+    while (start < end && sourceStopWords.has(tokens[start][0].toLocaleLowerCase())) start++;
+    while (end > start && sourceStopWords.has(tokens[end][0].toLocaleLowerCase())) end--;
+    if (end <= start || end - start + 1 > maxWords) return;
+    const from = tokens[start].index ?? 0;
+    const to = (tokens[end].index ?? 0) + tokens[end][0].length;
+    phrases.push({ value: text.slice(from, to), index: from });
+  };
+  let start = -1,
+    lastCapital = -1;
+  for (const [index, token] of tokens.entries()) {
+    const previous = tokens[index - 1];
+    // Anything but whitespace between two words ends the run: "Johnny Church. Kyra" is two.
+    const separated =
+      !previous ||
+      !/^[ \t]+$/u.test(text.slice((previous.index ?? 0) + previous[0].length, token.index));
+    if (/^\p{Lu}/u.test(token[0])) {
+      if (separated && start >= 0) emit(start, lastCapital);
+      if (separated || start < 0) start = index;
+      lastCapital = index;
+      continue;
+    }
+    // A connector bridges only when a capitalized word follows it, possibly past further
+    // connectors: Little Chapel *of the* Stars.
+    let ahead = index;
+    while (
+      !separated &&
+      start >= 0 &&
+      nameConnectors.has(tokens[ahead][0].toLocaleLowerCase()) &&
+      tokens[ahead + 1] !== undefined &&
+      /^[ \t]+$/u.test(
+        text.slice((tokens[ahead].index ?? 0) + tokens[ahead][0].length, tokens[ahead + 1].index),
+      )
+    ) {
+      ahead++;
+      if (/^\p{Lu}/u.test(tokens[ahead][0])) break;
+    }
+    if (ahead > index && /^\p{Lu}/u.test(tokens[ahead][0])) continue;
+    if (start >= 0) emit(start, lastCapital);
+    start = -1;
+    lastCapital = -1;
+  }
+  if (start >= 0) emit(start, lastCapital);
+  return phrases.filter((phrase) => /\s/u.test(phrase.value));
+}
 
 function clipped(value: string, max = 320) {
   const normalized = value.replace(/\s+/g, " ").trim();
@@ -189,16 +248,22 @@ export function extractEntityEvidence(documents: ConsistencyDocument[]): {
     for (const segment of document.sourceSegments) {
       const candidates = [
         ...[...segment.text.matchAll(sourcePlacePattern)].map((match) => ({
-          match,
+          value: match[0],
+          index: match.index ?? 0,
           highConfidence: true,
         })),
+        ...capitalizedPhrases(segment.text).map((phrase) => ({ ...phrase, highConfidence: false })),
         ...[...segment.text.matchAll(sourceNamePattern)].map((match) => ({
-          match,
+          value: match[0],
+          index: match.index ?? 0,
           highConfidence: false,
         })),
       ];
-      for (const { match, highConfidence } of candidates) {
-        const source = match[0]
+      for (const { value, index, highConfidence } of candidates) {
+        // Kyra’s is Kyra. Keeping them apart split one entity's evidence in two and spent
+        // two of the candidate slots on it.
+        const source = value
+          .replace(/['’]s$/iu, "")
           .replace(/[.-]+$/u, "")
           .trim()
           .replace(/\s+/gu, " ");
@@ -223,10 +288,10 @@ export function extractEntityEvidence(documents: ConsistencyDocument[]): {
         };
         entry.occurrences++;
         entry.highConfidence ||= highConfidence;
-        const preceding = segment.text.slice(0, match.index).trimEnd().at(-1);
+        const preceding = segment.text.slice(0, index).trimEnd().at(-1);
         if (preceding && !/[.!?]/u.test(preceding)) entry.nonInitialOccurrences++;
-        const withoutCandidate = `${segment.text.slice(0, match.index)}${segment.text.slice(
-          (match.index ?? 0) + match[0].length,
+        const withoutCandidate = `${segment.text.slice(0, index)}${segment.text.slice(
+          index + value.length,
         )}`.replace(/[\s"'«»„“”()[\].,:;!?—-]/gu, "");
         if (!withoutCandidate) entry.isolatedOccurrences++;
         if (entry.contexts.length < 8) {

@@ -8,9 +8,19 @@ import { JobRepository } from "../../src/server/storage/job-repository.js";
 import { jobRoot } from "../../src/server/storage/job-paths.js";
 
 const roots: string[] = [];
+const orchestrators: JobOrchestrator[] = [];
 afterEach(async () => {
+  // A settled status does not mean the run stopped writing; removing the data directory
+  // under a task that is still saving is what made this suite flaky.
+  for (const orchestrator of orchestrators.splice(0)) await orchestrator.drain();
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
+
+function orchestratorFor(...args: ConstructorParameters<typeof JobOrchestrator>) {
+  const orchestrator = new JobOrchestrator(...args);
+  orchestrators.push(orchestrator);
+  return orchestrator;
+}
 
 async function fixture(status = "ready") {
   const dataDir = await mkdtemp(`${tmpdir()}/book-lifecycle-`);
@@ -41,7 +51,7 @@ describe("job lifecycle orchestration", () => {
   it("coalesces concurrent starts and durably pauses and resumes one task", async () => {
     const { repo, job } = await fixture();
     let invocations = 0;
-    const orchestrator = new JobOrchestrator(repo, {
+    const orchestrator = orchestratorFor(repo, {
       runBook: async (_root, _job, _update, signal) => {
         invocations++;
         if (invocations === 1)
@@ -87,7 +97,7 @@ describe("job lifecycle orchestration", () => {
     );
     let receivedJob: PersistedJob | undefined;
     let compatibleRecovery: boolean | undefined;
-    const orchestrator = new JobOrchestrator(repo, {
+    const orchestrator = orchestratorFor(repo, {
       runBook: async (_root, running, _update, _signal, recoverCompatibleCheckpoints) => {
         receivedJob = running;
         compatibleRecovery = recoverCompatibleCheckpoints;
@@ -132,7 +142,7 @@ describe("job lifecycle orchestration", () => {
     );
     await writeFile(`${root}/quality-report.json`, "{}");
     await writeFile(`${root}/output.epub`, "output");
-    const orchestrator = new JobOrchestrator(repo);
+    const orchestrator = orchestratorFor(repo);
 
     const next = await orchestrator.invalidateQuality(job.id);
 
@@ -150,7 +160,7 @@ describe("job lifecycle orchestration", () => {
 
   it("does not report fatal execution errors as quality warnings", async () => {
     const { repo, job } = await fixture();
-    const orchestrator = new JobOrchestrator(repo, {
+    const orchestrator = orchestratorFor(repo, {
       runBook: async () => {
         throw new Error("assembly failed");
       },
@@ -165,7 +175,7 @@ describe("job lifecycle orchestration", () => {
   it("does not report a run that skipped its consistency pass as completed", async () => {
     const { repo, job } = await fixture(),
       events: { type: string; data?: Record<string, unknown> }[] = [];
-    const orchestrator = new JobOrchestrator(repo, {
+    const orchestrator = orchestratorFor(repo, {
       runBook: async () => ({
         ok: true,
         degraded: ["Consistency resolver unavailable: Provider request timed out"],
@@ -189,7 +199,7 @@ describe("job lifecycle orchestration", () => {
 
   it("reports a clean run as completed", async () => {
     const { repo, job } = await fixture();
-    const orchestrator = new JobOrchestrator(repo, {
+    const orchestrator = orchestratorFor(repo, {
       runBook: async () => ({ ok: true, degraded: [] }),
     });
     await orchestrator.start(job.id);
@@ -201,7 +211,7 @@ describe("job lifecycle orchestration", () => {
   it("emits a readable, redacted failure event", async () => {
     const { repo, job } = await fixture(),
       events: { type: string; message: string; data?: Record<string, unknown> }[] = [];
-    const orchestrator = new JobOrchestrator(repo, {
+    const orchestrator = orchestratorFor(repo, {
       runBook: async () => {
         throw new Error("authorization: Bearer sk-sentinel12345");
       },

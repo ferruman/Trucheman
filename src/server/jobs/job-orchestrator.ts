@@ -73,6 +73,10 @@ export type JobResults = {
     glossaryAligned: number;
     /** Entries the models used in fewer than half the blocks that name them. */
     ignoredGlossaryEntries: number;
+    /** Quote and ё findings; the rest of what the job's warning counter is made of. */
+    documentWarnings: number;
+    /** Passes the run finished without, verbatim. */
+    errors: string[];
   } | null;
 };
 
@@ -117,6 +121,18 @@ export class JobOrchestrator {
 
   isActive(id: string) {
     return this.claims.has(id) || this.active.has(id);
+  }
+
+  /**
+   * Wait until no task is still writing. A run keeps saving state and emitting events after
+   * the status it reports has already settled, so anything that touches the data directory
+   * next — a shutdown, a test's cleanup — has to wait for the writes, not for the status.
+   */
+  async drain() {
+    while (this.active.size || this.launches.size) {
+      await Promise.allSettled([...this.launches.values()]);
+      await Promise.allSettled([...this.active.values()].map((task) => task.promise));
+    }
   }
 
   async listJobs() {
@@ -486,6 +502,10 @@ export class JobOrchestrator {
         ignoredGlossaryEntries: Array.isArray(consistency.ignoredGlossaryEntries)
           ? consistency.ignoredGlossaryEntries.length
           : 0,
+        documentWarnings: count(consistency.warningCount),
+        errors: Array.isArray(consistency.errors)
+          ? consistency.errors.filter((error: unknown) => typeof error === "string").map(redact)
+          : [],
       },
       statistics: {
         translated: new Set(drafts.map((x) => x.batchId)).size,

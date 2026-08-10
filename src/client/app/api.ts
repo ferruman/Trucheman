@@ -21,6 +21,8 @@ export type JobResults = {
     mechanicalApplied: number;
     glossaryAligned: number;
     ignoredGlossaryEntries: number;
+    documentWarnings: number;
+    errors: string[];
   } | null;
   usage: {
     version: 1;
