@@ -696,26 +696,64 @@ function escapedPattern(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function boundedPattern(variant: string) {
+  const wordLike = /^[\p{L}\p{N}].*[\p{L}\p{N}]$/u.test(variant);
+  const before = wordLike ? "(?<![\\p{L}\\p{N}])" : "";
+  const after = wordLike ? "(?![\\p{L}\\p{N}])" : "";
+  return `${before}${escapedPattern(variant)}${after}`;
+}
+
+/**
+ * One pass over the text, longest variant first. A pass per variant let each replacement's
+ * output be the next one's input, and a production replay walked Кайра → Кира Дэймон →
+ * Кира → Кай, renaming the protagonist in all 579 of her mentions.
+ */
 function replaceVariants(documents: ConsistencyDocument[], replacements: Map<string, string>) {
+  if (!replacements.size) return 0;
+  const variants = [...replacements.keys()].sort(
+    (left, right) => right.length - left.length || left.localeCompare(right),
+  );
+  const pattern = new RegExp(variants.map(boundedPattern).join("|"), "gu");
   let applied = 0;
   for (const document of documents) {
     for (const segment of document.editedSegments) {
-      for (const [variant, canonical] of replacements) {
-        const isWordLike = /^[\p{L}\p{N}].*[\p{L}\p{N}]$/u.test(variant);
-        const pattern = new RegExp(
-          `${isWordLike ? "(?<![\\p{L}\\p{N}])" : ""}${escapedPattern(variant)}${
-            isWordLike ? "(?![\\p{L}\\p{N}])" : ""
-          }`,
-          "gu",
-        );
-        segment.text = segment.text.replace(pattern, () => {
-          applied++;
-          return canonical;
-        });
-      }
+      segment.text = segment.text.replace(pattern, (match) => {
+        const canonical = replacements.get(match);
+        if (canonical === undefined) return match;
+        applied++;
+        return canonical;
+      });
     }
   }
   return applied;
+}
+
+function words(value: string) {
+  return value.split(/\s+/u).filter(Boolean);
+}
+
+function containsWholeWord(haystack: string, needle: string) {
+  return new RegExp(boundedPattern(needle), "u").test(haystack);
+}
+
+/**
+ * A decision may re-spell a name; it may not rename one. The resolver routinely returns the
+ * canonical's own declensions as variants, and single-word renderings as variants of the
+ * full name, so applying its output literally collapsed Летиции into Летиция and truncated
+ * Кира Дэймон to Кира.
+ */
+export function isSafeVariant(variant: string, canonical: string, nameEndings: string[] = []) {
+  if (variant === canonical || variant.length < 2) return false;
+  const stem = (value: string) => nameStem(value, nameEndings).toLocaleLowerCase();
+  if (
+    words(variant).length === 1 &&
+    words(canonical).length === 1 &&
+    stem(variant) === stem(canonical)
+  )
+    return false;
+  // A first name and a full name refer differently; swapping one for the other is a rename.
+  if ((words(variant).length === 1) !== (words(canonical).length === 1)) return false;
+  return !containsWholeWord(variant, canonical) && !containsWholeWord(canonical, variant);
 }
 
 /**
@@ -992,7 +1030,7 @@ export async function runConsistencyPass(options: {
         options.root,
         options.signal,
       );
-      applied = applyConsistencyDecisions(documents, resolution.decisions);
+      applied = applyConsistencyDecisions(documents, resolution.decisions, options.nameEndings);
     } catch (error) {
       errors.push(
         `Consistency resolver unavailable: ${error instanceof Error ? error.message : "unknown error"}`,
@@ -1025,24 +1063,26 @@ export async function runConsistencyPass(options: {
 export function applyConsistencyDecisions(
   documents: ConsistencyDocument[],
   decisions: z.infer<typeof resolutionSchema>["decisions"],
+  nameEndings: string[] = [],
 ) {
+  const canonicals = new Set(decisions.map((decision) => decision.canonical));
+  // Whole-word, not substring: "Ky" occurs inside every "Kyra", which made each of the
+  // protagonist's blocks read as evidence for her nickname.
+  const mentions = decisions.map((decision) => ({
+    key: decision.source.toLocaleLowerCase(),
+    pattern: new RegExp(boundedPattern(decision.source), "iu"),
+  }));
   const alignedTargets = new Map<string, string[]>();
   for (const document of documents) {
     const edited = new Map(document.editedSegments.map((segment) => [segment.id, segment.text]));
     for (const sourceSegment of document.sourceSegments) {
-      for (const decision of decisions) {
-        if (
-          !sourceSegment.text
-            .replace(/\s+/gu, " ")
-            .toLocaleLowerCase()
-            .includes(decision.source.toLocaleLowerCase())
-        ) {
-          continue;
-        }
-        const values = alignedTargets.get(decision.source.toLocaleLowerCase()) ?? [];
+      const text = sourceSegment.text.replace(/\s+/gu, " ");
+      for (const { key, pattern } of mentions) {
+        if (!pattern.test(text)) continue;
+        const values = alignedTargets.get(key) ?? [];
         const target = edited.get(sourceSegment.id);
         if (target) values.push(target);
-        alignedTargets.set(decision.source.toLocaleLowerCase(), values);
+        alignedTargets.set(key, values);
       }
     }
   }
@@ -1050,13 +1090,37 @@ export function applyConsistencyDecisions(
   for (const decision of decisions) {
     const evidence = alignedTargets.get(decision.source.toLocaleLowerCase()) ?? [];
     for (const variant of decision.variants) {
+      // A rendering another decision settled on is that entity's answer, not this one's
+      // mistake. The resolver offered Кира — its own canonical for Kyra — as a variant to
+      // replace with Кай, the canonical for the nickname Ky.
+      if (canonicals.has(variant)) continue;
       if (
-        variant !== decision.canonical &&
-        variant.length >= 2 &&
+        isSafeVariant(variant, decision.canonical, nameEndings) &&
         evidence.some((text) => text.includes(variant)) &&
         !replacements.has(variant)
       ) {
         replacements.set(variant, decision.canonical);
+      }
+    }
+  }
+  // The resolver only ever names nominatives, so Кайра → Кира left Кайры and Кайре behind.
+  // An accepted decision authorises its own stem substitution: unlike the glossary fallback
+  // this is not a guess, so it needs no similarity threshold — only an exact stem match,
+  // which is what keeps Кирилл and Кирове out of it.
+  if (nameEndings.length) {
+    const observed = new Set<string>();
+    for (const document of documents)
+      for (const segment of document.editedSegments)
+        for (const match of segment.text.matchAll(capitalizedTargetWord)) observed.add(match[0]);
+    for (const [variant, canonical] of [...replacements]) {
+      if (words(variant).length > 1 || words(canonical).length > 1) continue;
+      const variantStem = nameStem(variant, nameEndings);
+      const canonicalStem = nameStem(canonical, nameEndings);
+      if (variantStem === variant || variantStem === canonicalStem) continue;
+      for (const word of observed) {
+        if (replacements.has(word) || canonicals.has(word)) continue;
+        if (nameStem(word, nameEndings) !== variantStem) continue;
+        replacements.set(word, canonicalStem + word.slice(variantStem.length));
       }
     }
   }

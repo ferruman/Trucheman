@@ -248,6 +248,77 @@ describe("book-wide consistency", () => {
     expect(values[0].editedSegments[0].text).not.toContain("Канон");
   });
 
+  it("never lets resolver decisions rename an entity", () => {
+    // Every decision here is one the resolver actually returned for the reference book.
+    const values: ConsistencyDocument[] = [
+      {
+        id: "rename",
+        sourceSegments: [
+          sourceSegment("rename:0", "Kyra crossed the room. Kyra Damon said nothing."),
+          sourceSegment("rename:1", "“Not now, Ky,” Kyra said to Johnny."),
+        ],
+        editedSegments: [
+          { id: "rename:0", text: "Кайра прошла по комнате. Кайра Дэймон промолчала." },
+          { id: "rename:1", text: "«Не сейчас, Кай», — сказала Кира Джонни." },
+        ],
+      },
+    ];
+
+    applyConsistencyDecisions(
+      values,
+      [
+        { source: "Kyra", canonical: "Кира", variants: ["Кайра", "Кира Дэймон"] },
+        { source: "Kyra Damon", canonical: "Кира Дэймон", variants: ["Кайра Дэймон", "Кайра"] },
+        { source: "Ky", canonical: "Кай", variants: ["Кира"] },
+      ],
+      targetLanguageProfile("ru").nameEndings,
+    );
+    const text = values[0].editedSegments.map((segment) => segment.text).join(" ");
+
+    // Кайра → Кира Дэймон → Кира → Кай renamed the protagonist in all 579 of her mentions.
+    expect(text).not.toContain("Кай ");
+    expect(text).toContain("Кира прошла");
+    // The surname is neither dropped from the full name nor added to the bare one.
+    expect(text).toContain("Кира Дэймон промолчала");
+    expect(text).toContain("сказала Кира Джонни");
+    // The nickname keeps its own rendering.
+    expect(text).toContain("«Не сейчас, Кай»");
+  });
+
+  it("carries an accepted decision to declined forms and leaves the canonical's own alone", () => {
+    const values: ConsistencyDocument[] = [
+      {
+        id: "carry",
+        sourceSegments: [
+          sourceSegment("carry:0", "Kyra waited. They followed Kyra past Kirill and Kirov."),
+          sourceSegment("carry:1", "Leticia knew. He gave it to Leticia."),
+        ],
+        editedSegments: [
+          { id: "carry:0", text: "Кайра ждала. Пошли за Кайрой мимо Кирилла и Кирова к Кайре." },
+          { id: "carry:1", text: "Летиция знала. Он отдал это Летиции." },
+        ],
+      },
+    ];
+
+    applyConsistencyDecisions(
+      values,
+      [
+        { source: "Kyra", canonical: "Кира", variants: ["Кайра"] },
+        // The resolver routinely offers the canonical's own declensions as variants.
+        { source: "Leticia", canonical: "Летиция", variants: ["Летиции"] },
+      ],
+      targetLanguageProfile("ru").nameEndings,
+    );
+    const text = values[0].editedSegments.map((segment) => segment.text).join(" ");
+
+    expect(text).toContain("Кира ждала");
+    expect(text).toContain("за Кирой");
+    expect(text).toContain("к Кире");
+    expect(text).toContain("Кирилла и Кирова");
+    // Летиции is Летиция in the genitive, not a competing spelling of it.
+    expect(text).toContain("отдал это Летиции");
+  });
+
   it("builds and caches a validated model-generated entity registry", async () => {
     const root = await mkdtemp(`${tmpdir()}/book-entity-registry-`);
     roots.push(root);
