@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { z } from "zod";
-import { distance } from "../epub/consistency-audit.js";
+import { distance, guillemetBalance } from "../epub/consistency-audit.js";
+import { atomicJson } from "../storage/atomic-file.js";
 import type { TextSegment } from "../epub/text-segments.js";
 import type {
   LanguageModelProvider,
@@ -10,8 +11,8 @@ import type {
   ProviderSegment,
 } from "../providers/provider.js";
 
-const CONSISTENCY_VERSION = 4;
-/** One resolver request per this many entities. One big request timed out and lost everything. */
+const CONSISTENCY_VERSION = 5;
+/** One model request per this many entities. One big request timed out and lost everything. */
 export const CONSISTENCY_CHUNK_SIZE = 25;
 
 export type ConsistencyDocument = {
@@ -138,7 +139,7 @@ async function readCache<T>(
 }
 
 async function writeCache(path: string, key: string, value: unknown) {
-  await writeFile(path, JSON.stringify({ key, value }, null, 2));
+  await atomicJson(path, { key, value });
 }
 
 export type EntityEvidenceStats = {
@@ -281,9 +282,13 @@ export function normalizeRussianConsistencyMechanics(documents: ConsistencyDocum
       /(\d{1,3})\s*°\s*(\d{1,2})\s*[′´']/gu,
       (_match, degrees, minutes) => `${degrees}° ${minutes}′`,
     ],
-    [/"\s*([^"\n]{1,240}?)\s*»/gu, (_match, content) => `«${content.trim()}»`],
-    [/«\s*([^«\n]{1,240}?)\s*"/gu, (_match, content) => `«${content.trim()}»`],
-    [/"\s*([^"\n]{1,240}?)\s*"/gu, (_match, content) => `«${content.trim()}»`],
+    // «A», — сказал X. — B». One line of speech interrupted by its attribution needs one
+    // pair of guillemets around the whole line, not a pair that closes and never reopens.
+    // This is the single largest source of unmatched » in a translated dialogue scene.
+    [
+      /«([^«»\n]{1,240})»(\s*,?\s*[—–][^«»\n]{1,200}?[.!?…]\s*[—–]\s[^«»\n]{1,400}?)»/gu,
+      (_match, quoted, attribution) => `«${quoted}${attribution}»`,
+    ],
     [/«[\t ]+/gu, () => "«"],
     [/[\t ]+»/gu, () => "»"],
     [/«\s*«/gu, () => "«"],
@@ -353,7 +358,16 @@ function quoteReport(text: string) {
   const straight = text.match(/"/g)?.length ?? 0;
   const hybrid = text.match(/"[^"\n]{0,240}»|«[^«\n]{0,240}"/g)?.map((item) => clipped(item)) ?? [];
   const duplicated = text.match(/«\s*«|»\s*»/g)?.length ?? 0;
-  return { opening, closing, straight, balanced: opening === closing, hybrid, duplicated };
+  const balance = guillemetBalance(text);
+  return {
+    opening,
+    closing,
+    straight,
+    ...balance,
+    balanced: balance.unmatchedOpenings === 0 && balance.unmatchedClosings === 0,
+    hybrid,
+    duplicated,
+  };
 }
 
 function yoVariants(text: string) {
@@ -450,6 +464,80 @@ async function completeJsonTask(
   return JSON.parse(response.segments[0]?.text ?? "");
 }
 
+export type ChunkedRun = { chunks: number; resolvedChunks: number; failedChunks: ChunkFailure[] };
+export type ChunkFailure = { chunk: number; error: string };
+export type EntityRegistry = ChunkedRun & { entries: GlossaryEntry[] };
+
+const chunkCacheSchema = <T extends z.ZodTypeAny>(chunk: T) =>
+  z.object({ version: z.number(), chunks: z.record(z.string(), chunk) });
+
+/**
+ * Run a JSON task over bounded chunks of a payload. Each chunk is its own request with its
+ * own cache entry, written as soon as it succeeds: a timeout in chunk 7 keeps chunks 1-6,
+ * which is exactly what the single-request version threw away.
+ */
+async function completeChunkedJsonTask<Item, Value>(
+  provider: LanguageModelProvider,
+  profile: ProviderProfile,
+  sourceLanguage: ProviderLanguage,
+  targetLanguage: ProviderLanguage,
+  options: {
+    id: string;
+    path: string;
+    items: Item[];
+    chunkSize: number;
+    schema: z.ZodType<Value>;
+    payload: (items: Item[]) => unknown;
+    signal?: AbortSignal;
+  },
+): Promise<ChunkedRun & { values: Value[] }> {
+  const cacheSchema = chunkCacheSchema(options.schema);
+  const cache = (await readCache(options.path, String(CONSISTENCY_VERSION), cacheSchema)) ?? {
+    version: CONSISTENCY_VERSION,
+    chunks: {} as Record<string, Value>,
+  };
+  const groups: Item[][] = [];
+  for (let offset = 0; offset < options.items.length; offset += options.chunkSize)
+    groups.push(options.items.slice(offset, offset + options.chunkSize));
+  const values: Value[] = [];
+  const failedChunks: ChunkFailure[] = [];
+  let resolvedChunks = 0;
+  for (const [index, group] of groups.entries()) {
+    if (options.signal?.aborted)
+      throw options.signal.reason instanceof Error ? options.signal.reason : new Error("Aborted");
+    const payload = options.payload(group);
+    const chunkKey = stableHash({ payload, model: profile.model, targetLanguage });
+    let value = cache.chunks[chunkKey];
+    if (!value) {
+      try {
+        value = options.schema.parse(
+          await completeJsonTask(
+            provider,
+            profile,
+            sourceLanguage,
+            targetLanguage,
+            `${options.id}-${index + 1}`,
+            payload,
+            options.signal,
+          ),
+        );
+        cache.chunks[chunkKey] = value;
+        await writeCache(options.path, String(CONSISTENCY_VERSION), cache);
+      } catch (error) {
+        if (options.signal?.aborted) throw error;
+        failedChunks.push({
+          chunk: index + 1,
+          error: error instanceof Error ? error.message : "unknown error",
+        });
+        continue;
+      }
+    }
+    resolvedChunks++;
+    values.push(value);
+  }
+  return { values, chunks: groups.length, resolvedChunks, failedChunks };
+}
+
 export async function resolveEntityRegistry(
   provider: LanguageModelProvider,
   profile: ProviderProfile,
@@ -458,7 +546,8 @@ export async function resolveEntityRegistry(
   documents: ConsistencyDocument[],
   root: string,
   signal?: AbortSignal,
-): Promise<GlossaryEntry[]> {
+  chunkSize = CONSISTENCY_CHUNK_SIZE,
+): Promise<EntityRegistry> {
   const entities = extractRepeatedSourceEntities(documents).map(
     ({ source, occurrences, contexts }) => ({
       source,
@@ -466,60 +555,47 @@ export async function resolveEntityRegistry(
       contexts: contexts.map((context) => context.source),
     }),
   );
-  if (!entities.length) return [];
-  const payload = { task: "entity_registry", entities };
-  const key = stableHash({
-    version: CONSISTENCY_VERSION,
-    payload,
-    model: profile.model,
+  if (!entities.length) return { entries: [], chunks: 0, resolvedChunks: 0, failedChunks: [] };
+  const { values, ...run } = await completeChunkedJsonTask(
+    provider,
+    profile,
+    sourceLanguage,
     targetLanguage,
-  });
-  const path = `${root}/entity-registry.json`;
-  const cached = await readCache(path, key, registrySchema);
-  const value =
-    cached ??
-    registrySchema.parse(
-      await completeJsonTask(
-        provider,
-        profile,
-        sourceLanguage,
-        targetLanguage,
-        "entity-registry",
-        payload,
-        signal,
-      ),
-    );
-  if (!cached) await writeCache(path, key, value);
+    {
+      id: "entity-registry",
+      path: `${root}/entity-registry.json`,
+      items: entities,
+      chunkSize,
+      schema: registrySchema,
+      payload: (chunk) => ({ task: "entity_registry", entities: chunk }),
+      signal,
+    },
+  );
   const allowed = new Set(entities.map((entity) => entity.source.toLocaleLowerCase()));
-  return value.entries
-    .filter((entry) => allowed.has(entry.source.toLocaleLowerCase()))
-    .map((entry, index) => ({
-      id: `generated-entity-${index + 1}`,
-      source: entry.source,
-      target: entry.target,
-      category: entry.category,
-      note: entry.strategy,
-      enabled: true,
-    }));
+  const seen = new Set<string>();
+  const entries: GlossaryEntry[] = [];
+  for (const value of values) {
+    for (const entry of value.entries) {
+      const key = entry.source.toLocaleLowerCase();
+      if (!allowed.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      entries.push({
+        id: `generated-entity-${entries.length + 1}`,
+        source: entry.source,
+        target: entry.target,
+        category: entry.category,
+        note: entry.strategy,
+        enabled: true,
+      });
+    }
+  }
+  return { entries, ...run };
 }
 
-export type ConsistencyResolution = {
+export type ConsistencyResolution = ChunkedRun & {
   decisions: z.infer<typeof resolutionSchema>["decisions"];
-  chunks: number;
-  resolvedChunks: number;
-  failedChunks: Array<{ chunk: number; error: string }>;
 };
 
-const resolutionCacheSchema = z.object({
-  version: z.number(),
-  chunks: z.record(z.string(), resolutionSchema),
-});
-
-/**
- * Resolve terminology conflicts in bounded chunks. Each chunk is its own request with its
- * own cache entry, written as soon as it succeeds: a timeout in chunk 7 keeps chunks 1-6,
- * which is exactly what the single-request version threw away.
- */
 export async function resolveConsistencyConflicts(
   provider: LanguageModelProvider,
   profile: ProviderProfile,
@@ -530,54 +606,25 @@ export async function resolveConsistencyConflicts(
   signal?: AbortSignal,
   chunkSize = CONSISTENCY_CHUNK_SIZE,
 ): Promise<ConsistencyResolution> {
-  const path = `${root}/consistency-resolution.json`;
-  const cache = (await readCache(path, String(CONSISTENCY_VERSION), resolutionCacheSchema)) ?? {
-    version: CONSISTENCY_VERSION,
-    chunks: {},
-  };
-  const groups: (typeof report.entityEvidence)[] = [];
-  for (let offset = 0; offset < report.entityEvidence.length; offset += chunkSize)
-    groups.push(report.entityEvidence.slice(offset, offset + chunkSize));
-  const decisions: ConsistencyResolution["decisions"] = [];
-  const failedChunks: ConsistencyResolution["failedChunks"] = [];
-  let resolvedChunks = 0;
-  for (const [index, entityEvidence] of groups.entries()) {
-    if (signal?.aborted)
-      throw signal.reason instanceof Error ? signal.reason : new Error("Aborted");
-    const payload = {
-      task: "resolve_conflicts",
-      report: { ...report, entityEvidence, documents: [] },
-    };
-    const chunkKey = stableHash({ payload, model: profile.model, targetLanguage });
-    let value = cache.chunks[chunkKey];
-    if (!value) {
-      try {
-        value = resolutionSchema.parse(
-          await completeJsonTask(
-            provider,
-            profile,
-            sourceLanguage,
-            targetLanguage,
-            `consistency-resolution-${index + 1}`,
-            payload,
-            signal,
-          ),
-        );
-        cache.chunks[chunkKey] = value;
-        await writeCache(path, String(CONSISTENCY_VERSION), cache);
-      } catch (error) {
-        if (signal?.aborted) throw error;
-        failedChunks.push({
-          chunk: index + 1,
-          error: error instanceof Error ? error.message : "unknown error",
-        });
-        continue;
-      }
-    }
-    resolvedChunks++;
-    decisions.push(...value.decisions);
-  }
-  return { decisions, chunks: groups.length, resolvedChunks, failedChunks };
+  const { values, ...run } = await completeChunkedJsonTask(
+    provider,
+    profile,
+    sourceLanguage,
+    targetLanguage,
+    {
+      id: "consistency-resolution",
+      path: `${root}/consistency-resolution.json`,
+      items: report.entityEvidence,
+      chunkSize,
+      schema: resolutionSchema,
+      payload: (entityEvidence) => ({
+        task: "resolve_conflicts",
+        report: { ...report, entityEvidence, documents: [] },
+      }),
+      signal,
+    },
+  );
+  return { decisions: values.flatMap((value) => value.decisions), ...run };
 }
 
 function escapedPattern(value: string) {
@@ -652,21 +699,9 @@ export function alignNavigationLabels(
 }
 
 const capitalizedTargetWord = /(?<![\p{L}\p{N}])\p{Lu}[\p{L}\p{M}'’-]{2,}/gu;
-
-/**
- * A near-match is an inflection, not a spelling variant, when the two forms agree on
- * everything but their ending: Кира/Киры is one name, Кира/Кайра is two.
- */
-function isInflection(left: string, right: string) {
-  let common = 0;
-  while (
-    common < Math.min(left.length, right.length) &&
-    left[common].toLocaleLowerCase() === right[common].toLocaleLowerCase()
-  ) {
-    common++;
-  }
-  return common >= Math.min(left.length, right.length) - 2;
-}
+const singleNameTarget = /^\p{Lu}[\p{L}\p{M}'’-]+$/u;
+/** A rendering used in under 1/VARIANT_SHARE of an entity's mentions is not that entity. */
+const VARIANT_SHARE = 50;
 
 function nameStem(word: string, endings: string[]): string {
   const lower = word.toLocaleLowerCase();
@@ -678,58 +713,171 @@ function nameStem(word: string, endings: string[]): string {
 }
 
 /**
- * Deterministic fallback for when the resolver model is unavailable or times out. Anchored
- * on the glossary: only forms that are near-identical to a canonical target and differ in
- * their stem are replaced, so Кира collapses into Кайра while Кирилл is left alone. Given
- * the target language's case endings, the stem substitution also carries to declined
- * forms — Киры → Кайры.
+ * The translated blocks that can legitimately contain a rendering of an entity: the ones
+ * whose source names it. Without this anchor a bare edit-distance search rewrites ordinary
+ * target words that merely resemble a glossary name — Дети → Лети.
+ */
+export function glossaryEvidence(
+  documents: ConsistencyDocument[],
+  glossary: GlossaryEntry[],
+): Map<string, string[]> {
+  const patterns = glossary.map((entry) => ({
+    key: entry.source.toLocaleLowerCase(),
+    pattern: new RegExp(
+      `(?<![\\p{L}\\p{N}])${escapedPattern(entry.source)}(?![\\p{L}\\p{N}])`,
+      "iu",
+    ),
+  }));
+  const evidence = new Map<string, string[]>(patterns.map((entry) => [entry.key, []]));
+  for (const document of documents) {
+    const edited = new Map(document.editedSegments.map((segment) => [segment.id, segment.text]));
+    for (const segment of document.sourceSegments) {
+      const target = edited.get(segment.id);
+      if (!target) continue;
+      for (const { key, pattern } of patterns)
+        if (pattern.test(segment.text)) evidence.get(key)!.push(target);
+    }
+  }
+  return evidence;
+}
+
+/** `needle` must already be lowercased; `haystack` is lowercased by the caller once. */
+function occurrences(haystack: string, needle: string) {
+  let count = 0;
+  for (let index = haystack.indexOf(needle); index >= 0;) {
+    count++;
+    index = haystack.indexOf(needle, index + needle.length);
+  }
+  return count;
+}
+
+/** A capitalized form that also occurs lowercase in the book is an ordinary word, not a name. */
+function lowercaseStems(documents: ConsistencyDocument[], endings: string[]) {
+  const stems = new Set<string>();
+  for (const document of documents)
+    for (const segment of document.editedSegments)
+      for (const match of segment.text.matchAll(lowercaseWordPattern))
+        stems.add(nameStem(match[0].toLocaleLowerCase(), endings));
+  return stems;
+}
+
+/**
+ * Deterministic fallback for when the resolver model is unavailable or times out. For each
+ * glossary entry it looks only at the translations of blocks that name the entity, and
+ * corrects the *stem* of a near-identical form while keeping that form's case ending:
+ * Летисию → Летицию, never Летисия. Кирилл, Кирове and every ordinary word are left alone.
  */
 export function alignGlossaryVariants(
   documents: ConsistencyDocument[],
   glossary: GlossaryEntry[],
   nameEndings: string[] = [],
 ): { applied: number; replacements: Array<{ variant: string; canonical: string }> } {
-  const canonicalTargets = glossary
-    .filter((entry) => entry.enabled && entry.target.trim().length >= 4)
-    .map((entry) => entry.target.trim())
-    .filter((target) => /^\p{Lu}[\p{L}\p{M}'’-]+$/u.test(target));
-  if (!canonicalTargets.length) return { applied: 0, replacements: [] };
-  const canonicalSet = new Set(canonicalTargets);
-  const words = new Set<string>();
+  const entries = glossary.filter(
+    (entry) => entry.enabled && singleNameTarget.test(entry.target.trim()),
+  );
+  if (!entries.length) return { applied: 0, replacements: [] };
+  const evidence = glossaryEvidence(documents, entries);
+  const common = lowercaseStems(documents, nameEndings);
+  const stem = (word: string) => nameStem(word, nameEndings);
+  const canonicalStems = new Set(
+    entries.map((entry) => stem(entry.target.trim()).toLocaleLowerCase()),
+  );
+  const attested = new Set<string>();
   for (const document of documents)
     for (const segment of document.editedSegments)
-      for (const match of segment.text.matchAll(capitalizedTargetWord)) words.add(match[0]);
+      for (const match of segment.text.matchAll(capitalizedTargetWord)) attested.add(match[0]);
   const replacements = new Map<string, string>();
-  for (const word of words) {
-    if (canonicalSet.has(word)) continue;
-    const canonical = canonicalTargets.find(
-      (target) =>
-        Math.abs(target.length - word.length) <= 2 &&
-        distance(target.toLocaleLowerCase(), word.toLocaleLowerCase()) <= 2 &&
-        !isInflection(target, word),
-    );
-    if (canonical) replacements.set(word, canonical);
-  }
-  if (nameEndings.length) {
-    // Кира → Кайра also means Киры → Кайры. Carry the stem substitution to any observed
-    // form that shares the variant's stem and ends in a singular case ending.
-    const stem = (word: string) => nameStem(word, nameEndings);
-    const canonicalStems = new Set(canonicalTargets.map(stem));
-    for (const [variant, canonical] of [...replacements]) {
-      const variantStem = stem(variant);
-      const canonicalStem = stem(canonical);
-      if (variantStem === variant || canonicalStems.has(variantStem)) continue;
-      for (const word of words) {
-        if (replacements.has(word) || canonicalSet.has(word)) continue;
-        if (stem(word) !== variantStem) continue;
-        replacements.set(word, canonicalStem + word.slice(variantStem.length));
-      }
+  for (const entry of entries) {
+    const canonical = entry.target.trim();
+    const canonicalStem = stem(canonical);
+    const canonicalKey = canonicalStem.toLocaleLowerCase();
+    // A three-letter stem sits at edit distance 1 from ordinary words (Лет/Дет), so an
+    // entry that short cannot be aligned safely at all.
+    if (canonicalStem.length < 4) continue;
+    const text = (evidence.get(entry.source.toLocaleLowerCase()) ?? []).join("\n");
+    const lowercased = text.toLocaleLowerCase();
+    const canonicalUses = occurrences(lowercased, canonicalKey);
+    // A canonical the translation never once used is a registry artefact, not the truth:
+    // Westinghouse came back as "Вестнигауз" and would have overwritten every "Вестингауз".
+    if (!canonicalUses) continue;
+    const words = new Set<string>();
+    for (const match of text.matchAll(capitalizedTargetWord)) words.add(match[0]);
+    for (const word of words) {
+      if (replacements.has(word)) continue;
+      const wordStem = stem(word);
+      const wordKey = wordStem.toLocaleLowerCase();
+      // Same stem means the same rendering in another case — nothing to correct.
+      if (wordKey === canonicalKey) continue;
+      // An ordinary word (демон), and a rendering that belongs to another entry, are both
+      // out of bounds however closely they resemble this canonical form.
+      if (common.has(wordKey) || canonicalStems.has(wordKey)) continue;
+      // Кир/Кайр is two edits apart, so distance must reach 2; a misspelling of a name
+      // keeps its initial, which is what stops that reach from catching a different name.
+      if (wordKey[0] !== canonicalKey[0]) continue;
+      if (Math.abs(wordStem.length - canonicalStem.length) > 1) continue;
+      if (distance(wordKey, canonicalKey) > 2) continue;
+      // A competing rendering of the same entity is used at a rate comparable to the
+      // canonical; a different name that merely resembles it is a rounding error. Every
+      // real variant in the reference run sits above 2% of the canonical's uses (Реймондо
+      // is the rarest at 2.1%), and Денни — a separate character — sits at 1%.
+      if (occurrences(lowercased, wordKey) * VARIANT_SHARE < canonicalUses) continue;
+      const replacement = canonicalStem + word.slice(wordStem.length);
+      // Gluing an ending onto a differently declined stem invents forms: Летиш + а would
+      // give "Летициа". Only a form the book actually contains is a safe substitution.
+      if (!attested.has(replacement)) continue;
+      replacements.set(word, replacement);
     }
   }
   return {
     applied: replaceVariants(documents, replacements),
     replacements: [...replacements].map(([variant, canonical]) => ({ variant, canonical })),
   };
+}
+
+export type GlossaryAdherence = {
+  source: string;
+  target: string;
+  blocks: number;
+  blocksUsingTarget: number;
+};
+
+/**
+ * How often the translation of a block that names an entity actually contains the glossary
+ * rendering. The registry can be right and the run still ship both Кира and Кайра, so the
+ * glossary has to be measured against the output rather than assumed to have been obeyed.
+ */
+export function measureGlossaryAdherence(
+  documents: ConsistencyDocument[],
+  glossary: GlossaryEntry[],
+  nameEndings: string[] = [],
+): GlossaryAdherence[] {
+  const entries = glossary.filter((entry) => entry.enabled && entry.target.trim());
+  const evidence = glossaryEvidence(documents, entries);
+  return entries
+    .map((entry) => {
+      const target = entry.target.trim();
+      // Match on the stem so declined renderings count as usage.
+      const stem = nameStem(target, nameEndings).toLocaleLowerCase();
+      const blocks = evidence.get(entry.source.toLocaleLowerCase()) ?? [];
+      return {
+        source: entry.source,
+        target,
+        blocks: blocks.length,
+        blocksUsingTarget: blocks.filter((text) => text.toLocaleLowerCase().includes(stem)).length,
+      };
+    })
+    .filter((entry) => entry.blocks > 0)
+    .sort(
+      (left, right) =>
+        left.blocksUsingTarget / left.blocks - right.blocksUsingTarget / right.blocks,
+    );
+}
+
+/** An entry the models ignored in more than half of the blocks that name it. */
+export function glossaryAdherenceWarnings(adherence: GlossaryAdherence[]) {
+  return adherence.filter(
+    (entry) => entry.blocks >= 3 && entry.blocksUsingTarget * 2 < entry.blocks,
+  );
 }
 
 export function applyConsistencyDecisions(

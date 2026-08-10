@@ -24,13 +24,15 @@ import { LANGUAGES } from "../../shared/languages.js";
 import { runTwoPass } from "./job-runner.js";
 import { UsageTrackingProvider } from "./usage-service.js";
 import type { PersistedJob } from "../domain/job.js";
-import { syncParentDirectory } from "../storage/atomic-file.js";
+import { atomicJson, syncParentDirectory } from "../storage/atomic-file.js";
 import {
   alignGlossaryVariants,
   alignNavigationLabels,
   applyConsistencyDecisions,
   buildConsistencyReport,
+  glossaryAdherenceWarnings,
   isGlossaryEntry,
+  measureGlossaryAdherence,
   mergeGlossaries,
   normalizeRussianConsistencyMechanics,
   resolveConsistencyConflicts,
@@ -125,6 +127,9 @@ export async function runPreparedBook(
   // the output of an earlier run.
   const prepared = await prepareBook(root);
   const batches = prepared.documents.flatMap((document) => document.batches);
+  const documentTitles = new Map(
+    prepared.documents.map((document) => [document.id, document.title]),
+  );
   const {
     useExternal: resolvedUseExternal,
     postRepairAudit,
@@ -145,7 +150,7 @@ export async function runPreparedBook(
   let generatedGlossary: GlossaryEntry[] = [];
   if (useExternal) {
     try {
-      generatedGlossary = await resolveEntityRegistry(
+      const registry = await resolveEntityRegistry(
         provider,
         consistencyProfile,
         sourceLanguage,
@@ -158,6 +163,9 @@ export async function runPreparedBook(
         root,
         signal,
       );
+      generatedGlossary = registry.entries;
+      for (const failure of registry.failedChunks)
+        consistencyErrors.push(`Entity registry chunk ${failure.chunk} failed: ${failure.error}`);
     } catch (error) {
       consistencyErrors.push(
         `Entity registry unavailable: ${error instanceof Error ? error.message : "unknown error"}`,
@@ -180,19 +188,21 @@ export async function runPreparedBook(
     postRepairAudit: job.qualityMode === "high" && postRepairAudit,
     signal,
     recoverCompatibleCheckpoints,
-    onStage: async (stage) => {
+    onStage: async (stage, batch) => {
       await update({
         stage,
         status: "running",
+        currentDocument: documentTitles.get(batch.documentId),
       });
     },
-    onProgress: async (stage, _batch, cached) => {
+    onProgress: async (stage, batch, cached) => {
       if (cached) return;
       if (stage === "translation") translated++;
       else if (stage === "editing") edited++;
       await update({
         stage,
         status: "running",
+        currentDocument: documentTitles.get(batch.documentId),
         progress: { ...job.progress, translated, edited, total: batches.length },
       });
     },
@@ -257,33 +267,30 @@ export async function runPreparedBook(
     consistencyDocuments,
     glossary.filter(isGlossaryEntry),
   );
-  await writeFile(
-    join(root, "consistency-report.json"),
-    JSON.stringify(
-      {
-        ...consistencyReport,
-        decisions: resolution.decisions,
-        chunks: resolution.chunks,
-        resolvedChunks: resolution.resolvedChunks,
-        failedChunks: resolution.failedChunks,
-        applied,
-        mechanicalApplied,
-        glossaryAlignment: fallback,
-        navigationLabels,
-        errors: consistencyErrors,
-      },
-      null,
-      2,
-    ),
+  const adherence = measureGlossaryAdherence(
+    consistencyDocuments,
+    glossary.filter(isGlossaryEntry),
+    targetRules.nameEndings,
   );
-  if (consistencyReport.warningCount || consistencyErrors.length) {
-    await update({
-      warnings:
-        job.warnings +
-        result.qualityAuditErrors +
-        consistencyReport.warningCount +
-        consistencyErrors.length,
-    });
+  const ignoredGlossaryEntries = glossaryAdherenceWarnings(adherence);
+  await atomicJson(join(root, "consistency-report.json"), {
+    ...consistencyReport,
+    decisions: resolution.decisions,
+    chunks: resolution.chunks,
+    resolvedChunks: resolution.resolvedChunks,
+    failedChunks: resolution.failedChunks,
+    applied,
+    mechanicalApplied,
+    glossaryAlignment: fallback,
+    glossaryAdherence: adherence,
+    ignoredGlossaryEntries,
+    navigationLabels,
+    errors: consistencyErrors,
+  });
+  const warningCount =
+    consistencyReport.warningCount + consistencyErrors.length + ignoredGlossaryEntries.length;
+  if (warningCount) {
+    await update({ warnings: job.warnings + result.qualityAuditErrors + warningCount });
   }
   for (const document of prepared.documents) {
     const editedDocument = consistencyDocuments.find((candidate) => candidate.id === document.id);
@@ -315,14 +322,13 @@ export async function runPreparedBook(
     const report = await validateEpubArchive(temporary);
     if (!report.ok) throw new Error(`Output validation failed: ${report.errors.join(", ")}`);
     const outputAudit = await auditEpubArchive(temporary, targetLanguage.tag);
-    await writeFile(
-      join(root, "output-consistency-audit.json"),
-      JSON.stringify(outputAudit, null, 2),
-    );
+    await atomicJson(join(root, "output-consistency-audit.json"), outputAudit);
     report.warnings.push(...outputAudit.warnings);
     await rename(temporary, output);
     await syncParentDirectory(output);
-    return report;
+    // The book is built, but a failed consistency pass means it shipped unresolved name
+    // variants. Reporting that as a clean completion is how a 50/50 name split went unseen.
+    return { ...report, degraded: consistencyErrors };
   } finally {
     await rm(temporary, { force: true });
   }

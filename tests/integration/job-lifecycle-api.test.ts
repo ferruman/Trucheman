@@ -29,7 +29,6 @@ async function fixture(status = "ready") {
     createdAt: now,
     updatedAt: now,
     warnings: 0,
-    documents: [],
     instructions: "",
     glossary: [],
     qualityMode: "standard",
@@ -161,6 +160,42 @@ describe("job lifecycle orchestration", () => {
       timeout: 5000,
     });
     expect((await repo.get(job.id)).warnings).toBe(0);
+  });
+
+  it("does not report a run that skipped its consistency pass as completed", async () => {
+    const { repo, job } = await fixture(),
+      events: { type: string; data?: Record<string, unknown> }[] = [];
+    const orchestrator = new JobOrchestrator(repo, {
+      runBook: async () => ({
+        ok: true,
+        degraded: ["Consistency resolver unavailable: Provider request timed out"],
+      }),
+      onEvent: async (_id, type, _message, data) => {
+        events.push({ type, data });
+      },
+    });
+    await orchestrator.start(job.id);
+    await vi.waitFor(async () => expect((await repo.get(job.id)).status).toBe("needs_attention"), {
+      timeout: 5000,
+    });
+
+    // The book is still built, so the stage is complete and the output stays downloadable.
+    expect((await repo.get(job.id)).stage).toBe("complete");
+    expect(events).toContainEqual({
+      type: "completed_with_warnings",
+      data: { reasons: ["Consistency resolver unavailable: Provider request timed out"] },
+    });
+  });
+
+  it("reports a clean run as completed", async () => {
+    const { repo, job } = await fixture();
+    const orchestrator = new JobOrchestrator(repo, {
+      runBook: async () => ({ ok: true, degraded: [] }),
+    });
+    await orchestrator.start(job.id);
+    await vi.waitFor(async () => expect((await repo.get(job.id)).status).toBe("completed"), {
+      timeout: 5000,
+    });
   });
 
   it("emits a readable, redacted failure event", async () => {

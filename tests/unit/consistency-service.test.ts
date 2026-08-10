@@ -8,6 +8,8 @@ import {
   buildConsistencyReport,
   extractEntityEvidence,
   extractRepeatedSourceEntities,
+  glossaryAdherenceWarnings,
+  measureGlossaryAdherence,
   mergeGlossaries,
   normalizeRussianConsistencyMechanics,
   resolveConsistencyConflicts,
@@ -167,6 +169,58 @@ describe("book-wide consistency", () => {
     );
   });
 
+  it("reunites a reply that was closed before its attribution and reopened without «", () => {
+    const values: ConsistencyDocument[] = [
+      {
+        id: "dialogue",
+        sourceSegments: [],
+        editedSegments: [
+          {
+            id: "dialogue:0",
+            text: "«Что-нибудь интересное», — повторила Эмили. — А теперь тебе лучше отправляться. Ехать далеко, а у меня встреча с заведующим кафедрой».",
+          },
+          {
+            id: "dialogue:1",
+            text: "«О, да!» — закричал Джонни. — Это моя жена! Это девушка, на которой я женился!»",
+          },
+          { id: "dialogue:2", text: "«Она бесполезна, Кайра», — сказал он." },
+        ],
+      },
+    ];
+
+    expect(normalizeRussianConsistencyMechanics(values)).toBe(2);
+    expect(values[0].editedSegments[0].text).toBe(
+      "«Что-нибудь интересное, — повторила Эмили. — А теперь тебе лучше отправляться. Ехать далеко, а у меня встреча с заведующим кафедрой».",
+    );
+    expect(values[0].editedSegments[1].text).toBe(
+      "«О, да! — закричал Джонни. — Это моя жена! Это девушка, на которой я женился!»",
+    );
+    // A reply that was already correct is left exactly as it is.
+    expect(values[0].editedSegments[2].text).toBe("«Она бесполезна, Кайра», — сказал он.");
+    expect(buildConsistencyReport(values).documents[0].quotes.balanced).toBe(true);
+  });
+
+  it("does not call multi-paragraph direct speech unbalanced", () => {
+    const values: ConsistencyDocument[] = [
+      {
+        id: "speech",
+        sourceSegments: [],
+        editedSegments: [
+          { id: "speech:0", text: "«Знаешь, не проходит ни дня, ни часа." },
+          { id: "speech:1", text: "«Мы построили этот дом вместе." },
+          { id: "speech:2", text: "«И хочешь не хочешь, а жить надо»." },
+          { id: "speech:3", text: "А потом она замолчала»." },
+        ],
+      },
+    ];
+
+    const quotes = buildConsistencyReport(values).documents[0].quotes;
+
+    // Two paragraph-initial « continue one quotation; the trailing » closes nothing.
+    expect(quotes).toMatchObject({ continuations: 2, unmatchedOpenings: 0, unmatchedClosings: 1 });
+    expect(quotes.balanced).toBe(false);
+  });
+
   it("flags a long document region that unexpectedly stops using ё", () => {
     const values: ConsistencyDocument[] = [
       {
@@ -235,11 +289,68 @@ describe("book-wide consistency", () => {
     const first = await resolveEntityRegistry(...args);
     const second = await resolveEntityRegistry(...args);
 
-    expect(first).toEqual([
+    expect(first.entries).toEqual([
       expect.objectContaining({ source: "Vigilant", target: "«Виджилент»", enabled: true }),
     ]);
+    expect(first.failedChunks).toEqual([]);
     expect(second).toEqual(first);
     expect(calls).toBe(1);
+  });
+
+  it("builds the entity registry in chunks and keeps the chunks that succeeded", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-entity-registry-chunks-`);
+    roots.push(root);
+    const names = ["Kyra", "Leticia", "Damon", "Raymondo"];
+    let call = 0;
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        call++;
+        // The second chunk always times out, exactly like the production run.
+        if (call === 2) throw new Error("Provider request timed out");
+        const payload = JSON.parse(request.segments[0].text);
+        return {
+          segments: [
+            {
+              id: request.segments[0].id,
+              text: JSON.stringify({
+                entries: payload.entities.map((entity: { source: string }) => ({
+                  source: entity.source,
+                  target: entity.source.toLocaleUpperCase(),
+                  category: "person",
+                })),
+              }),
+            },
+          ],
+        };
+      },
+    };
+    const input: ConsistencyDocument[] = [
+      {
+        id: "book",
+        sourceSegments: names.flatMap((name, index) => [
+          sourceSegment(`book:${index * 2}`, `${name} arrived at dawn.`),
+          sourceSegment(`book:${index * 2 + 1}`, `Later ${name} left again.`),
+        ]),
+        editedSegments: [],
+      },
+    ];
+
+    const registry = await resolveEntityRegistry(
+      provider,
+      { name: "resolver", endpoint: "local", model: "m" },
+      { tag: "en", name: "English" },
+      { tag: "ru", name: "Russian" },
+      input,
+      root,
+      undefined,
+      2,
+    );
+
+    expect(registry.chunks).toBe(2);
+    expect(registry.resolvedChunks).toBe(1);
+    expect(registry.failedChunks).toEqual([{ chunk: 2, error: "Provider request timed out" }]);
+    // A failed chunk must not cost the entries the other chunk produced.
+    expect(registry.entries).toHaveLength(2);
   });
 
   it("keeps an explicit user glossary entry ahead of generated choices", () => {
@@ -379,7 +490,11 @@ describe("book-wide consistency", () => {
     const values: ConsistencyDocument[] = [
       {
         id: "fallback",
-        sourceSegments: [],
+        sourceSegments: [
+          sourceSegment("fallback:0", "Kyra waited. Kyra waited. Kyra left."),
+          sourceSegment("fallback:1", "Leticia called Kyra. Leticia said nothing."),
+          sourceSegment("fallback:2", "Kyra had a plan."),
+        ],
         editedSegments: [
           { id: "fallback:0", text: "Кайра ждала. Кира ждала. Кайра ушла." },
           { id: "fallback:1", text: "Летиция звала Кира. Летисия молчала. Летиция ушла." },
@@ -402,35 +517,156 @@ describe("book-wide consistency", () => {
     expect(text).toContain("Киры");
   });
 
-  it("carries a name substitution to its declined forms without touching lookalikes", () => {
+  it("corrects the stem of a declined variant and keeps its case ending", () => {
     const values: ConsistencyDocument[] = [
       {
         id: "inflected",
-        sourceSegments: [],
+        // Both renderings are in use throughout, which is what an unresolved run looks like.
+        sourceSegments: [
+          sourceSegment("inflected:0", "Kyra waited. Kyra left. Kyra had a plan."),
+          sourceSegment("inflected:1", "He told Kyra about Kirill and the town of Kirov."),
+          sourceSegment("inflected:2", "Kyra saw it. They followed Kyra out of Kyra's house."),
+          sourceSegment("inflected:3", "He looked at Leticia and Leticia was afraid."),
+          sourceSegment("inflected:4", "Leticia knew. He gave it to Leticia and left Leticia."),
+          sourceSegment("inflected:5", "Damon hit Church, and Church said nothing to Damon."),
+          sourceSegment("inflected:6", "Damon watched Church. Church nodded to Damon."),
+        ],
         editedSegments: [
           { id: "inflected:0", text: "Кайра ждала. Кира ушла. У Киры был план." },
           { id: "inflected:1", text: "Он рассказал Кире о Кирилле и о городе Кирове." },
+          { id: "inflected:2", text: "Кайра видела. Пошли за Кайрой из дома Кайры к Кайре." },
+          { id: "inflected:3", text: "Он посмотрел на Летисию, и Летисии стало страшно." },
+          { id: "inflected:4", text: "Летиция знала. Отдал Летиции и оставил Летицию." },
+          { id: "inflected:5", text: "Дэймон ударил Черча, и Черч ничего не сказал Дэймону." },
+          { id: "inflected:6", text: "Деймон смотрел на Чёрча. Чёрч кивнул Деймону." },
         ],
       },
     ];
     const glossary = [
       { id: "g1", source: "Kyra", target: "Кайра", category: "person", enabled: true },
+      { id: "g2", source: "Leticia", target: "Летиция", category: "person", enabled: true },
+      { id: "g3", source: "Damon", target: "Деймон", category: "person", enabled: true },
+      { id: "g4", source: "Church", target: "Чёрч", category: "person", enabled: true },
     ];
 
-    const result = alignGlossaryVariants(values, glossary, targetLanguageProfile("ru").nameEndings);
+    alignGlossaryVariants(values, glossary, targetLanguageProfile("ru").nameEndings);
     const text = values[0].editedSegments.map((segment) => segment.text).join(" ");
 
     expect(text).toContain("Кайры");
     expect(text).toContain("Кайре");
     expect(text).not.toMatch(/Кир[аыеу]\b/u);
+    // The whole point: a declined variant keeps its case, it is not flattened to the
+    // nominative canonical the way "Он ударил Чёрч по лицу" used to be.
+    expect(text).toContain("на Летицию");
+    expect(text).toContain("Летиции стало");
+    expect(text).toContain("ударил Чёрча");
+    expect(text).toContain("сказал Деймону");
+    expect(text).not.toMatch(/Летис|Дэймон|Черч/u);
     // A different name and a place that merely share the prefix must survive.
     expect(text).toContain("Кирилле");
     expect(text).toContain("Кирове");
-    expect(result.replacements.map((entry) => entry.variant).sort()).toEqual([
-      "Кира",
-      "Кире",
-      "Киры",
-    ]);
+  });
+
+  it("never rewrites an ordinary word or an unrelated name that resembles a glossary entry", () => {
+    const values: ConsistencyDocument[] = [
+      {
+        id: "lookalikes",
+        sourceSegments: [
+          sourceSegment("lookalikes:0", "Leti watched. Children were playing outside."),
+          sourceSegment("lookalikes:1", "Cody nodded. Hordi walked into the bar."),
+          sourceSegment("lookalikes:2", "Damon turned. Demon or man, he was coming."),
+          sourceSegment("lookalikes:3", "The children ran to the demon."),
+        ],
+        editedSegments: [
+          { id: "lookalikes:0", text: "Лети смотрела. Дети играли во дворе." },
+          { id: "lookalikes:1", text: "Коди кивнул. Хорди зашёл в бар." },
+          { id: "lookalikes:2", text: "Деймон обернулся. Демон или человек, он шёл." },
+          { id: "lookalikes:3", text: "Дети побежали к демону." },
+        ],
+      },
+    ];
+    const glossary = [
+      { id: "g1", source: "Leti", target: "Лети", category: "person", enabled: true },
+      { id: "g2", source: "Cody", target: "Коди", category: "person", enabled: true },
+      { id: "g3", source: "Damon", target: "Деймон", category: "person", enabled: true },
+    ];
+
+    const result = alignGlossaryVariants(values, glossary, targetLanguageProfile("ru").nameEndings);
+    const text = values[0].editedSegments.map((segment) => segment.text).join(" ");
+
+    expect(result.replacements).toEqual([]);
+    expect(text).toContain("Дети играли");
+    expect(text).toContain("Хорди зашёл");
+    expect(text).toContain("Демон или человек");
+  });
+
+  it("leaves a rare bystander name and a canonical the book never used alone", () => {
+    const mentions = Array.from({ length: 60 }, (_, index) => index);
+    const values: ConsistencyDocument[] = [
+      {
+        id: "rare",
+        sourceSegments: [
+          ...mentions.map((index) => sourceSegment(`rare:${index}`, `Johnny spoke again.`)),
+          sourceSegment("rare:60", "Johnny looked at Denny."),
+          sourceSegment("rare:61", "The Westinghouse hummed in the corner."),
+        ],
+        editedSegments: [
+          ...mentions.map((index) => ({ id: `rare:${index}`, text: "Джонни снова заговорил." })),
+          { id: "rare:60", text: "Джонни посмотрел на Денни." },
+          { id: "rare:61", text: "Вестингауз гудел в углу." },
+        ],
+      },
+    ];
+    const glossary = [
+      { id: "g1", source: "Johnny", target: "Джонни", category: "person", enabled: true },
+      // The registry misspelled this one; a canonical the book never uses is not authority.
+      { id: "g2", source: "Westinghouse", target: "Вестнигауз", category: "other", enabled: true },
+    ];
+
+    const result = alignGlossaryVariants(values, glossary, targetLanguageProfile("ru").nameEndings);
+    const text = values[0].editedSegments.map((segment) => segment.text).join(" ");
+
+    expect(result.replacements).toEqual([]);
+    expect(text).toContain("на Денни");
+    expect(text).toContain("Вестингауз гудел");
+  });
+
+  it("measures how often the models actually used the glossary rendering", () => {
+    const values: ConsistencyDocument[] = [
+      {
+        id: "adherence",
+        sourceSegments: [
+          sourceSegment("adherence:0", "Kyra waited."),
+          sourceSegment("adherence:1", "Kyra left."),
+          sourceSegment("adherence:2", "Kyra had a plan."),
+          sourceSegment("adherence:3", "Leticia waited for Kyra."),
+        ],
+        editedSegments: [
+          { id: "adherence:0", text: "Кира ждала." },
+          { id: "adherence:1", text: "Кира ушла." },
+          { id: "adherence:2", text: "У Кайры был план." },
+          { id: "adherence:3", text: "Летиция ждала Киру." },
+        ],
+      },
+    ];
+    const glossary = [
+      { id: "g1", source: "Kyra", target: "Кайра", category: "person", enabled: true },
+      { id: "g2", source: "Leticia", target: "Летиция", category: "person", enabled: true },
+    ];
+
+    const adherence = measureGlossaryAdherence(
+      values,
+      glossary,
+      targetLanguageProfile("ru").nameEndings,
+    );
+
+    expect(adherence).toContainEqual({
+      source: "Kyra",
+      target: "Кайра",
+      blocks: 4,
+      blocksUsingTarget: 1,
+    });
+    expect(glossaryAdherenceWarnings(adherence).map((entry) => entry.source)).toEqual(["Kyra"]);
   });
 
   it("makes the NCX navMap the authority for a table-of-contents label", () => {

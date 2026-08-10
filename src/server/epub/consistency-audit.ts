@@ -70,6 +70,32 @@ const russianStopWords = new Set([
   "Все",
 ]);
 
+/**
+ * Guillemets do not pair one-for-one in Russian: multi-paragraph direct speech reopens with
+ * « in every paragraph and closes once at the end. Counting « against » calls that a defect
+ * and misses the real one — a » that closes nothing. Paragraphs are separated by newlines.
+ */
+export function guillemetBalance(text: string) {
+  let depth = 0,
+    unmatchedClosings = 0,
+    continuations = 0;
+  for (const line of text.split("\n")) {
+    let paragraph = line;
+    if (depth > 0 && paragraph.trimStart().startsWith("«")) {
+      continuations++;
+      paragraph = paragraph.replace("«", "");
+    }
+    for (const character of paragraph) {
+      if (character === "«") depth++;
+      else if (character === "»") {
+        if (depth > 0) depth--;
+        else unmatchedClosings++;
+      }
+    }
+  }
+  return { unmatchedOpenings: depth, unmatchedClosings, continuations };
+}
+
 export function distance(left: string, right: string) {
   const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
   for (let leftIndex = 1; leftIndex <= left.length; leftIndex++) {
@@ -138,6 +164,7 @@ export function analyzeEpubConsistency(
     opening: document.text.match(/«/gu)?.length ?? 0,
     closing: document.text.match(/»/gu)?.length ?? 0,
     straight: document.text.match(/"/gu)?.length ?? 0,
+    ...guillemetBalance(document.text),
   }));
   const yoDocuments = documents.map((document) => ({
     id: document.id,
@@ -178,8 +205,10 @@ export function analyzeEpubConsistency(
   }));
   const warnings: string[] = [];
   for (const quotes of quoteDocuments) {
-    if (quotes.opening !== quotes.closing)
-      warnings.push(`${quotes.id}: unbalanced guillemets ${quotes.opening}/${quotes.closing}`);
+    if (quotes.unmatchedOpenings || quotes.unmatchedClosings)
+      warnings.push(
+        `${quotes.id}: unbalanced guillemets, ${quotes.unmatchedOpenings} unclosed and ${quotes.unmatchedClosings} unopened`,
+      );
     if (quotes.straight) warnings.push(`${quotes.id}: ${quotes.straight} straight double quote(s)`);
   }
   if (yoDocuments.some((document) => document.cyrillicWords >= 100 && document.yo === 0))

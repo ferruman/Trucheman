@@ -71,8 +71,16 @@ export type JobResults = {
     applied: number;
     mechanicalApplied: number;
     glossaryAligned: number;
+    /** Entries the models used in fewer than half the blocks that name them. */
+    ignoredGlossaryEntries: number;
   } | null;
 };
+
+/** Reasons the pipeline finished the book without one of its correctness passes. */
+function degradedReasons(outcome: unknown): string[] {
+  const reasons = (outcome as { degraded?: unknown } | null)?.degraded;
+  return Array.isArray(reasons) ? reasons.filter((reason) => typeof reason === "string") : [];
+}
 
 function count(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
@@ -155,15 +163,7 @@ export class JobOrchestrator {
               status: "ready",
               stage: "analysis",
               progress: { translated: 0, edited: 0, total, failed: 0 },
-              documents: prepared.documents.map((document) => ({
-                id: document.id,
-                path: document.id,
-                title: document.title,
-                total: document.batches.length,
-                translated: 0,
-                edited: 0,
-                status: "ready",
-              })),
+              currentDocument: undefined,
               updatedAt: new Date().toISOString(),
             };
             await this.repo.save(ready);
@@ -343,7 +343,7 @@ export class JobOrchestrator {
       progress: prepared
         ? { translated: drafts, edited: edits, total: job.progress.total, failed: 0 }
         : { translated: 0, edited: 0, total: 0, failed: 0 },
-      documents: prepared ? job.documents : [],
+      currentDocument: undefined,
       updatedAt: new Date().toISOString(),
     };
     await this.repo.save(next);
@@ -483,6 +483,9 @@ export class JobOrchestrator {
         applied: count(consistency.applied),
         mechanicalApplied: count(consistency.mechanicalApplied),
         glossaryAligned: count(consistency.glossaryAlignment?.applied),
+        ignoredGlossaryEntries: Array.isArray(consistency.ignoredGlossaryEntries)
+          ? consistency.ignoredGlossaryEntries.length
+          : 0,
       },
       statistics: {
         translated: new Set(drafts.map((x) => x.batchId)).size,
@@ -531,7 +534,7 @@ export class JobOrchestrator {
       await this.emit(id, "execution_started", "Preparing translation workspace", {
         stage: running.stage,
       });
-      await this.runBook(
+      const outcome = await this.runBook(
         jobRoot(this.repo.dataDir, id),
         running,
         async (patch) => {
@@ -573,13 +576,20 @@ export class JobOrchestrator {
       );
       if (controller.signal.aborted) throw controller.signal.reason;
       const current = await this.repo.get(id);
+      // A book that was built without its consistency pass is finished, not correct.
+      const degraded = degradedReasons(outcome);
       await this.repo.save({
         ...current,
-        status: "completed",
+        status: degraded.length ? "needs_attention" : "completed",
         stage: "complete",
+        currentDocument: undefined,
         updatedAt: new Date().toISOString(),
       });
-      await this.emit(id, "completed", "Translation completed");
+      if (degraded.length)
+        await this.emit(id, "completed_with_warnings", "Translation completed with warnings", {
+          reasons: degraded.map(redact),
+        });
+      else await this.emit(id, "completed", "Translation completed");
     } catch (error) {
       const current = await this.repo.get(id);
       if (controller.signal.aborted) {

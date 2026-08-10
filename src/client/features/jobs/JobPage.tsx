@@ -9,6 +9,11 @@ import { ProgressPanel } from "./ProgressPanel";
 import { ResultPage } from "./ResultPage";
 import { JobLogPanel } from "./JobLogPanel";
 
+/** The book exists and is downloadable — a run degraded to needs_attention still built one. */
+function built(job: JobView) {
+  return job.stage === "complete" && ["completed", "needs_attention"].includes(job.status);
+}
+
 export function JobPage({ id }: { id: string }) {
   const [job, setJob] = useState<JobView>();
   const [loadError, setLoadError] = useState("");
@@ -69,8 +74,8 @@ export function JobPage({ id }: { id: string }) {
   }, [id, refresh]);
 
   useEffect(() => {
-    if (job?.status === "completed") void loadResults();
-  }, [job?.status, loadResults]);
+    if (job && built(job)) void loadResults();
+  }, [job, loadResults]);
 
   async function act(name: string, action: () => Promise<unknown>) {
     if (actionLock.current) return;
@@ -169,7 +174,7 @@ export function JobPage({ id }: { id: string }) {
             </div>
           )}
           {actionError && <p role="alert">{actionError}</p>}
-          {job.status === "completed" && (
+          {built(job) && (
             <ResultPage
               id={id}
               results={results}
@@ -179,7 +184,7 @@ export function JobPage({ id }: { id: string }) {
               onRebuild={() => void act("rebuild", () => jobActions.rebuild(id))}
             />
           )}
-          {job.status !== "completed" && (
+          {!built(job) && (
             <section className="operation-panel" aria-labelledby="operation-heading">
               <div className="panel-heading">
                 <span className="section-label">Active operation</span>

@@ -18,19 +18,9 @@ export const persistedJobSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   warnings: z.number().default(0),
-  documents: z
-    .array(
-      z.object({
-        id: z.string(),
-        path: z.string(),
-        title: z.string(),
-        total: z.number(),
-        translated: z.number(),
-        edited: z.number(),
-        status: z.string(),
-      }),
-    )
-    .default([]),
+  /** Title of the document the run is working on; the per-document array it replaced was
+   * written once at analysis and never updated again. */
+  currentDocument: z.string().optional(),
   instructions: z.string().default(""),
   glossary: z.array(z.unknown()).default([]),
   qualityMode: z.enum(["standard", "high"]).default("standard"),
@@ -57,7 +47,7 @@ export function toJobView(job: PersistedJob) {
     progress: job.progress,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
-    currentDocument: job.documents.find((d) => d.status === "running")?.title,
+    currentDocument: job.currentDocument,
     warnings: job.warnings,
     qualityMode: job.qualityMode,
   });

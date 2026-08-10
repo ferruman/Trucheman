@@ -20,6 +20,7 @@ export type JobResults = {
     applied: number;
     mechanicalApplied: number;
     glossaryAligned: number;
+    ignoredGlossaryEntries: number;
   } | null;
   usage: {
     version: 1;

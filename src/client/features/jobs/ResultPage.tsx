@@ -71,6 +71,8 @@ export function ResultPage({ id, results, error, busy, onRetry, onRebuild }: Pro
                   {`${results.consistency.entities} entities (${results.consistency.filteredEntities} filtered), ${results.consistency.resolvedChunks}/${results.consistency.chunks} chunks resolved, ${results.consistency.applied} replacements applied`}
                   {results.consistency.failedChunks > 0 &&
                     `, ${results.consistency.failedChunks} chunk(s) failed`}
+                  {results.consistency.ignoredGlossaryEntries > 0 &&
+                    `, ${results.consistency.ignoredGlossaryEntries} glossary entry/entries mostly ignored`}
                 </dd>
               </div>
             )}

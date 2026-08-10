@@ -64,7 +64,6 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
         createdAt: now,
         updatedAt: now,
         warnings: 0,
-        documents: [],
         instructions: "",
         glossary: [],
         qualityMode: "standard",
@@ -130,7 +129,7 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
         status: "created",
         stage: "import",
         progress: { translated: 0, edited: 0, total: 0, failed: 0 },
-        documents: [],
+        currentDocument: undefined,
         updatedAt: new Date().toISOString(),
       });
       res.status(204).end();
@@ -156,7 +155,9 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
   router.get("/:id/download", async (req, res) => {
     try {
       const job = await repo.get(req.params.id);
-      if (job.status !== "completed")
+      // A run degraded to needs_attention still built the book; withholding it would be
+      // worse than the warning it carries.
+      if (job.stage !== "complete" || !["completed", "needs_attention"].includes(job.status))
         throw new DomainError("output_not_ready", "The translated EPUB is not ready", 409);
       const path = join(jobRoot(repo.dataDir, req.params.id), "output.epub");
       await access(path);
