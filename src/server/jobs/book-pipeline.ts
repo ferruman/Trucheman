@@ -26,19 +26,10 @@ import { UsageTrackingProvider } from "./usage-service.js";
 import type { PersistedJob } from "../domain/job.js";
 import { atomicJson, syncParentDirectory } from "../storage/atomic-file.js";
 import {
-  alignGlossaryVariants,
-  alignNavigationLabels,
-  applyConsistencyDecisions,
-  buildConsistencyReport,
-  glossaryAdherenceWarnings,
-  isGlossaryEntry,
-  measureGlossaryAdherence,
   mergeGlossaries,
-  normalizeRussianConsistencyMechanics,
-  resolveConsistencyConflicts,
   resolveEntityRegistry,
+  runConsistencyPass,
   type ConsistencyDocument,
-  type ConsistencyResolution,
   type GlossaryEntry,
 } from "./consistency-service.js";
 
@@ -218,77 +209,27 @@ export async function runPreparedBook(
     ),
   }));
   const targetRules = targetLanguageProfile(targetLanguage.tag);
-  const mechanicalApplied =
-    targetRules.mechanics === "russian"
-      ? normalizeRussianConsistencyMechanics(consistencyDocuments)
-      : 0;
-  const resolverReport = buildConsistencyReport(
-    consistencyDocuments,
-    glossary.filter(isGlossaryEntry),
-  );
-  let resolution: ConsistencyResolution = {
-    decisions: [],
-    chunks: 0,
-    resolvedChunks: 0,
-    failedChunks: [],
-  };
-  let applied = 0;
-  if (useExternal && resolverReport.entityEvidence.length) {
-    try {
-      resolution = await resolveConsistencyConflicts(
-        provider,
-        consistencyProfile,
-        sourceLanguage,
-        targetLanguage,
-        resolverReport,
-        root,
-        signal,
-      );
-      applied = applyConsistencyDecisions(consistencyDocuments, resolution.decisions);
-    } catch (error) {
-      consistencyErrors.push(
-        `Consistency resolver unavailable: ${error instanceof Error ? error.message : "unknown error"}`,
-      );
-    }
-    for (const failure of resolution.failedChunks)
-      consistencyErrors.push(`Consistency chunk ${failure.chunk} failed: ${failure.error}`);
-  }
-  // Whatever the resolver could not decide, align deterministically from the glossary.
-  const fallback = alignGlossaryVariants(
-    consistencyDocuments,
-    glossary.filter(isGlossaryEntry),
-    targetRules.nameEndings,
-  );
-  const navigationLabels = alignNavigationLabels(
-    consistencyDocuments,
-    new Map(prepared.documents.map((document) => [document.id, document.navigation])),
-  );
-  const consistencyReport = buildConsistencyReport(
-    consistencyDocuments,
-    glossary.filter(isGlossaryEntry),
-  );
-  const adherence = measureGlossaryAdherence(
-    consistencyDocuments,
-    glossary.filter(isGlossaryEntry),
-    targetRules.nameEndings,
-  );
-  const ignoredGlossaryEntries = glossaryAdherenceWarnings(adherence);
-  await atomicJson(join(root, "consistency-report.json"), {
-    ...consistencyReport,
-    decisions: resolution.decisions,
-    chunks: resolution.chunks,
-    resolvedChunks: resolution.resolvedChunks,
-    failedChunks: resolution.failedChunks,
-    applied,
-    mechanicalApplied,
-    glossaryAlignment: fallback,
-    glossaryAdherence: adherence,
-    ignoredGlossaryEntries,
-    navigationLabels,
+  const consistencyReport = await runConsistencyPass({
+    documents: consistencyDocuments,
+    navigation: new Map(prepared.documents.map((document) => [document.id, document.navigation])),
+    glossary,
+    sourceLanguage,
+    targetLanguage,
+    mechanics: targetRules.mechanics,
+    nameEndings: targetRules.nameEndings,
+    provider,
+    profile: consistencyProfile,
+    root,
+    useExternal,
+    signal,
     errors: consistencyErrors,
   });
+  consistencyErrors.splice(0, consistencyErrors.length, ...consistencyReport.errors);
+  await atomicJson(join(root, "consistency-report.json"), consistencyReport);
   const warningCount =
-    consistencyReport.warningCount + consistencyErrors.length + ignoredGlossaryEntries.length;
+    consistencyReport.warningCount +
+    consistencyReport.errors.length +
+    consistencyReport.ignoredGlossaryEntries.length;
   if (warningCount) {
     await update({ warnings: job.warnings + result.qualityAuditErrors + warningCount });
   }

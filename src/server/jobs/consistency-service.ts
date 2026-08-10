@@ -945,6 +945,83 @@ export function glossaryAdherenceWarnings(adherence: GlossaryAdherence[]) {
   );
 }
 
+/**
+ * Every book-wide correction, in the order they have to run: typography, then the model's
+ * decisions, then the deterministic fallback for whatever it could not decide, then the
+ * navigation authority. Mutates `documents`. The pipeline and the replay tool share this so
+ * that replaying a job exercises the pass the pipeline actually runs.
+ */
+export async function runConsistencyPass(options: {
+  documents: ConsistencyDocument[];
+  /** Navigation role per document id; the NCX is the authority for TOC labels. */
+  navigation: Map<string, "ncx" | "nav" | null>;
+  glossary: unknown[];
+  sourceLanguage: ProviderLanguage;
+  targetLanguage: ProviderLanguage;
+  mechanics: "russian" | undefined;
+  nameEndings: string[] | undefined;
+  provider: LanguageModelProvider;
+  profile: ProviderProfile;
+  root: string;
+  useExternal: boolean;
+  signal?: AbortSignal;
+  /** Failures from earlier in the run, so one report carries all of them. */
+  errors?: string[];
+}) {
+  const { documents } = options;
+  const glossary = options.glossary.filter(isGlossaryEntry);
+  const errors = [...(options.errors ?? [])];
+  const mechanicalApplied =
+    options.mechanics === "russian" ? normalizeRussianConsistencyMechanics(documents) : 0;
+  const resolverReport = buildConsistencyReport(documents, glossary);
+  let resolution: ConsistencyResolution = {
+    decisions: [],
+    chunks: 0,
+    resolvedChunks: 0,
+    failedChunks: [],
+  };
+  let applied = 0;
+  if (options.useExternal && resolverReport.entityEvidence.length) {
+    try {
+      resolution = await resolveConsistencyConflicts(
+        options.provider,
+        options.profile,
+        options.sourceLanguage,
+        options.targetLanguage,
+        resolverReport,
+        options.root,
+        options.signal,
+      );
+      applied = applyConsistencyDecisions(documents, resolution.decisions);
+    } catch (error) {
+      errors.push(
+        `Consistency resolver unavailable: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+    }
+    for (const failure of resolution.failedChunks)
+      errors.push(`Consistency chunk ${failure.chunk} failed: ${failure.error}`);
+  }
+  const glossaryAlignment = alignGlossaryVariants(documents, glossary, options.nameEndings);
+  const navigationLabels = alignNavigationLabels(documents, options.navigation);
+  const adherence = measureGlossaryAdherence(documents, glossary, options.nameEndings);
+  const ignoredGlossaryEntries = glossaryAdherenceWarnings(adherence);
+  const report = buildConsistencyReport(documents, glossary);
+  return {
+    ...report,
+    decisions: resolution.decisions,
+    chunks: resolution.chunks,
+    resolvedChunks: resolution.resolvedChunks,
+    failedChunks: resolution.failedChunks,
+    applied,
+    mechanicalApplied,
+    glossaryAlignment,
+    glossaryAdherence: adherence,
+    ignoredGlossaryEntries,
+    navigationLabels,
+    errors,
+  };
+}
+
 export function applyConsistencyDecisions(
   documents: ConsistencyDocument[],
   decisions: z.infer<typeof resolutionSchema>["decisions"],
