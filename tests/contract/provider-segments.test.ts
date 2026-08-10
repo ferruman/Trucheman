@@ -43,7 +43,7 @@ describe("provider prompt contract", () => {
       buildPromptInput({
         mode: "translation",
         ...languages,
-        segments: [{ id: "s1", text: "Hello" }],
+        segments: [{ id: "s1", text: "Hello Moon" }],
         instructions: "Preserve formal dialogue",
         glossary: [
           { source: "Moon", target: "Луна", enabled: true },
@@ -71,8 +71,37 @@ describe("provider prompt contract", () => {
       },
       userPreferences: "Preserve formal dialogue",
       glossary: [{ source: "Moon", target: "Луна", enabled: true }],
-      segments: [{ id: "s1", text: "Hello" }],
+      segments: [{ id: "s1", text: "Hello Moon" }],
     });
+  });
+
+  it("sends only the glossary entries the batch can use", () => {
+    const glossary = [
+      { source: "Moon", target: "Луна", enabled: true },
+      { source: "Kyra", target: "Кайра", enabled: true },
+      { source: "Hearse", target: "Хёрс", enabled: true },
+      "an entry this code cannot inspect",
+    ];
+    const read = (
+      segments: Parameters<typeof buildPromptInput>[0]["segments"],
+      mode: "translation" | "editing" = "translation",
+    ) => JSON.parse(buildPromptInput({ mode, ...languages, segments, glossary })).glossary;
+
+    // The source term appears in the batch.
+    expect(read([{ id: "s1", text: "The Moon rose over the desert." }])).toEqual([
+      { source: "Moon", target: "Луна", enabled: true },
+      "an entry this code cannot inspect",
+    ]);
+    // "Moonlight" is not "Moon"; a batch that names nobody carries no name rules.
+    expect(read([{ id: "s1", text: "Moonlight on the highway." }])).toEqual([
+      "an entry this code cannot inspect",
+    ]);
+    // The editor keeps the rule for a rendering already in its draft.
+    expect(
+      read([{ id: "s1", original: "She waited.", draft: "Кайра ждала." }], "editing").map(
+        (entry: { source?: string }) => entry.source,
+      ),
+    ).toEqual(["Kyra", undefined]);
   });
 
   it("keeps editing originals and drafts in separate fields", () => {

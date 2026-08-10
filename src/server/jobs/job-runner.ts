@@ -9,7 +9,11 @@ import type {
   ProviderRequest,
   ProviderSegment,
 } from "../providers/provider.js";
-import { PROMPT_INPUT_VERSION, promptVersionForMode } from "../providers/prompts.js";
+import {
+  PROMPT_INPUT_VERSION,
+  promptVersionForMode,
+  relevantGlossary,
+} from "../providers/prompts.js";
 import type { Batch } from "../epub/batcher.js";
 import { processBatch } from "./translation-service.js";
 import { buildEditingSegments, editBatch } from "./editing-service.js";
@@ -104,7 +108,9 @@ function checkpointKey(
         targetLanguage,
         segments,
         instructions: instructions ?? "",
-        glossary: glossary ?? [],
+        // The key must describe the prompt that was sent, so an entry this batch never
+        // sees cannot invalidate its checkpoint.
+        glossary: relevantGlossary(glossary, segments),
       }),
     )
     .digest("hex");

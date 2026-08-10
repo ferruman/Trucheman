@@ -2,7 +2,7 @@ import { targetLanguageProfile } from "../config/target-language.js";
 import type { ProviderInputSegment, ProviderRequest } from "./provider.js";
 
 export const PROMPT_VERSION = "literary-v3.1";
-export const PROMPT_INPUT_VERSION = "structured-v2";
+export const PROMPT_INPUT_VERSION = "structured-v3";
 export const QUALITY_PROMPT_VERSION = "selective-quality-v2";
 export const PROMPT_VERSIONS = [PROMPT_VERSION, "literary-v3.2.1"] as const;
 export type PromptVersion = (typeof PROMPT_VERSIONS)[number];
@@ -200,6 +200,40 @@ function enabledGlossary(glossary: unknown[] | undefined): unknown[] {
   );
 }
 
+function mentions(text: string, term: string) {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "iu").test(text);
+}
+
+/**
+ * The glossary entries this batch can actually use — the ones whose term appears in it.
+ *
+ * A book-wide glossary is mostly irrelevant to any one paragraph: on a reference run it was
+ * 54 entries and 40% of every translation prompt, of which the median batch mentioned six.
+ * Sending the other 48 buries the rules that matter, and none of it caches, because the
+ * response contract carries this batch's segment ids ahead of it in the prompt.
+ *
+ * Both terms count, so the editor still sees the rule for a rendering already in its draft.
+ * An entry that cannot be inspected — anything but an object with a string term — is kept.
+ */
+export function relevantGlossary(
+  glossary: unknown[] | undefined,
+  segments: ProviderInputSegment[],
+): unknown[] {
+  const entries = enabledGlossary(glossary);
+  if (!entries.length) return entries;
+  const text = segments
+    .flatMap((segment) => Object.values(segment).filter((value) => typeof value === "string"))
+    .join("\n");
+  return entries.filter((entry) => {
+    if (typeof entry !== "object" || entry === null) return true;
+    const terms = (["source", "target"] as const)
+      .map((key) => (key in entry ? (entry as Record<string, unknown>)[key] : undefined))
+      .filter((term): term is string => typeof term === "string" && term.trim().length > 0);
+    return !terms.length || terms.some((term) => mentions(text, term));
+  });
+}
+
 function serializeSegment(mode: ProviderRequest["mode"], segment: ProviderInputSegment) {
   if (mode === "translation" || mode === "consistency") {
     if (!("text" in segment)) throw new Error("Translation prompt requires text segments");
@@ -274,7 +308,7 @@ export function buildPromptInput(
             textType: "string",
           },
     userPreferences: request.instructions ?? "",
-    glossary: enabledGlossary(request.glossary),
+    glossary: relevantGlossary(request.glossary, request.segments),
     targetStyle,
     segments: request.segments.map((segment) => serializeSegment(request.mode, segment)),
   });
