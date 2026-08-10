@@ -364,8 +364,74 @@ describe("book-wide consistency", () => {
       expect.objectContaining({ source: "Vigilant", target: "«Виджилент»", enabled: true }),
     ]);
     expect(first.failedChunks).toEqual([]);
-    expect(second).toEqual(first);
+    expect(second.entries).toEqual(first.entries);
+    // The second run asks about nothing, so it has no chunks to resolve.
+    expect(second.chunks).toBe(0);
     expect(calls).toBe(1);
+  });
+
+  it("keeps a settled canonical when new entities appear alongside it", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-entity-registry-stable-`);
+    roots.push(root);
+    const asked: string[][] = [];
+    let answer = "Кайра";
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        const payload = JSON.parse(request.segments[0].text);
+        const sources = payload.entities.map((entity: { source: string }) => entity.source);
+        asked.push(sources);
+        return {
+          segments: [
+            {
+              id: request.segments[0].id,
+              text: JSON.stringify({
+                entries: sources.map((source: string) => ({
+                  source,
+                  target: source === "Kyra" ? answer : source,
+                  category: "person",
+                })),
+              }),
+            },
+          ],
+        };
+      },
+    };
+    const book = (extra: string[]): ConsistencyDocument[] => [
+      {
+        id: "book",
+        sourceSegments: ["Kyra", ...extra].flatMap((name, index) => [
+          sourceSegment(`book:${index * 2}`, `${name} arrived at dawn.`),
+          sourceSegment(`book:${index * 2 + 1}`, `Later ${name} left again.`),
+        ]),
+        editedSegments: [],
+      },
+    ];
+    const profile = { name: "resolver", endpoint: "local", model: "m" };
+    const languages = [
+      { tag: "en", name: "English" },
+      { tag: "ru", name: "Russian" },
+    ] as const;
+
+    const first = await resolveEntityRegistry(provider, profile, ...languages, book([]), root);
+    // The model would answer differently now, and a new entity forces a second request.
+    answer = "Кира";
+    const second = await resolveEntityRegistry(
+      provider,
+      { ...profile, model: "another-model" },
+      ...languages,
+      book(["Raymondo"]),
+      root,
+    );
+
+    expect(first.entries[0]).toMatchObject({ source: "Kyra", target: "Кайра" });
+    // Kyra was settled; only the new entity is asked about, so her rendering cannot flip.
+    expect(asked).toEqual([["Kyra"], ["Raymondo"]]);
+    expect(second.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "Kyra", target: "Кайра" }),
+        expect.objectContaining({ source: "Raymondo" }),
+      ]),
+    );
   });
 
   it("builds the entity registry in chunks and keeps the chunks that succeeded", async () => {
@@ -588,9 +654,11 @@ describe("book-wide consistency", () => {
       expect(text).not.toContain(variants[name]);
     }
 
-    // Successful chunks are persisted as they complete, so a rerun only retries the failure.
+    // Answers are persisted per entity as each chunk completes, so a rerun only retries
+    // the entities whose chunk failed.
     const cache = JSON.parse(await readFile(`${root}/consistency-resolution.json`, "utf8"));
-    expect(Object.keys(cache.value.chunks)).toHaveLength(resolution.resolvedChunks);
+    // Five entities in chunks of two: chunk 2 failed, so chunks 1 and 3 left 2 + 1 answers.
+    expect(Object.keys(cache.value.entities)).toHaveLength(3);
   });
 
   it("aligns name variants from the glossary when the resolver is unavailable", () => {

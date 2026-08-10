@@ -130,6 +130,28 @@ describe("job lifecycle orchestration", () => {
     expect(() => parseJobConfig({ qualityMode: "maximum" })).toThrow();
   });
 
+  it("re-decides entity renderings only when the whole job is invalidated", async () => {
+    const { repo, job } = await fixture();
+    const root = jobRoot(repo.dataDir, job.id);
+    await mkdir(root, { recursive: true });
+    const settled = ["entity-registry.json", "consistency-resolution.json"];
+    const write = () =>
+      Promise.all([
+        ...settled.map((name) => writeFile(`${root}/${name}`, "{}")),
+        writeFile(`${root}/drafts.ndjson`, `${JSON.stringify({ batchId: "b1", segments: [] })}\n`),
+      ]);
+    const orchestrator = orchestratorFor(repo);
+
+    await write();
+    await orchestrator.invalidate(job.id, "b1");
+    // Re-deciding for one batch would rename entities across the batches being kept.
+    for (const name of settled) await expect(access(`${root}/${name}`)).resolves.toBeUndefined();
+
+    await write();
+    await orchestrator.invalidate(job.id);
+    for (const name of settled) await expect(access(`${root}/${name}`)).rejects.toThrow();
+  });
+
   it("resets only quality work when switching quality modes", async () => {
     const { repo, job } = await fixture();
     const root = jobRoot(repo.dataDir, job.id);

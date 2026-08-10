@@ -11,7 +11,13 @@ import type {
   ProviderSegment,
 } from "../providers/provider.js";
 
-const CONSISTENCY_VERSION = 5;
+/**
+ * Layout of the on-disk answer caches. This is not a lever for re-asking the model: bumping
+ * it discards decisions the book already depends on. Bump it only when the file shape below
+ * changes, and re-resolve a job through its invalidation instead.
+ */
+const CONSISTENCY_CACHE_FORMAT = 1;
+const CONSISTENCY_CACHE_KEY = `entity-answers-v${CONSISTENCY_CACHE_FORMAT}`;
 /** One model request per this many entities. One big request timed out and lost everything. */
 export const CONSISTENCY_CHUNK_SIZE = 25;
 
@@ -533,15 +539,23 @@ export type ChunkedRun = { chunks: number; resolvedChunks: number; failedChunks:
 export type ChunkFailure = { chunk: number; error: string };
 export type EntityRegistry = ChunkedRun & { entries: GlossaryEntry[] };
 
-const chunkCacheSchema = <T extends z.ZodTypeAny>(chunk: T) =>
-  z.object({ version: z.number(), chunks: z.record(z.string(), chunk) });
+const answeredSchema = z.object({
+  format: z.literal(CONSISTENCY_CACHE_FORMAT),
+  entities: z.record(z.string(), z.array(z.object({ source: z.string() }).passthrough())),
+});
 
 /**
- * Run a JSON task over bounded chunks of a payload. Each chunk is its own request with its
- * own cache entry, written as soon as it succeeds: a timeout in chunk 7 keeps chunks 1-6,
- * which is exactly what the single-request version threw away.
+ * Ask the model about a set of entities, in bounded chunks, remembering its answer per
+ * entity.
+ *
+ * Per entity, not per request, and deliberately not keyed on the code version or the model:
+ * what a name is called in the translation is a decision about the book, and re-asking
+ * re-rolls it. A version bump once flipped Kyra from Кайра to Кира across the whole book,
+ * and because the glossary feeds the checkpoint key, that also re-spent every stage. An
+ * entity whose evidence has not changed is never asked about twice; adding new entities
+ * only costs the new ones. Use the job's invalidation to deliberately start over.
  */
-async function completeChunkedJsonTask<Item, Value>(
+async function completeEntityTask<Item, Answer extends { source: string }>(
   provider: LanguageModelProvider,
   profile: ProviderProfile,
   sourceLanguage: ProviderLanguage,
@@ -550,57 +564,61 @@ async function completeChunkedJsonTask<Item, Value>(
     id: string;
     path: string;
     items: Item[];
+    itemSource: (item: Item) => string;
     chunkSize: number;
-    schema: z.ZodType<Value>;
+    parse: (value: unknown) => Answer[];
     payload: (items: Item[]) => unknown;
     signal?: AbortSignal;
   },
-): Promise<ChunkedRun & { values: Value[] }> {
-  const cacheSchema = chunkCacheSchema(options.schema);
-  const cache = (await readCache(options.path, String(CONSISTENCY_VERSION), cacheSchema)) ?? {
-    version: CONSISTENCY_VERSION,
-    chunks: {} as Record<string, Value>,
+): Promise<ChunkedRun & { answers: Answer[] }> {
+  const cache = (await readCache(options.path, CONSISTENCY_CACHE_KEY, answeredSchema)) ?? {
+    format: CONSISTENCY_CACHE_FORMAT,
+    entities: {} as Record<string, Array<{ source: string }>>,
   };
-  const groups: Item[][] = [];
-  for (let offset = 0; offset < options.items.length; offset += options.chunkSize)
-    groups.push(options.items.slice(offset, offset + options.chunkSize));
-  const values: Value[] = [];
+  const keyed = options.items.map((item) => ({
+    item,
+    source: options.itemSource(item).toLocaleLowerCase(),
+    key: stableHash({ item, targetLanguage }),
+  }));
+  const pending = keyed.filter((entry) => !cache.entities[entry.key]);
+  const groups: (typeof pending)[] = [];
+  for (let offset = 0; offset < pending.length; offset += options.chunkSize)
+    groups.push(pending.slice(offset, offset + options.chunkSize));
   const failedChunks: ChunkFailure[] = [];
   let resolvedChunks = 0;
   for (const [index, group] of groups.entries()) {
     if (options.signal?.aborted)
       throw options.signal.reason instanceof Error ? options.signal.reason : new Error("Aborted");
-    const payload = options.payload(group);
-    const chunkKey = stableHash({ payload, model: profile.model, targetLanguage });
-    let value = cache.chunks[chunkKey];
-    if (!value) {
-      try {
-        value = options.schema.parse(
-          await completeJsonTask(
-            provider,
-            profile,
-            sourceLanguage,
-            targetLanguage,
-            `${options.id}-${index + 1}`,
-            payload,
-            options.signal,
-          ),
+    try {
+      const answers = options.parse(
+        await completeJsonTask(
+          provider,
+          profile,
+          sourceLanguage,
+          targetLanguage,
+          `${options.id}-${index + 1}`,
+          options.payload(group.map((entry) => entry.item)),
+          options.signal,
+        ),
+      );
+      // Record an answer for every entity asked about, empty ones included, so that an
+      // entity the model declined to answer is not asked about again on the next run.
+      for (const entry of group)
+        cache.entities[entry.key] = answers.filter(
+          (answer) => answer.source.toLocaleLowerCase() === entry.source,
         );
-        cache.chunks[chunkKey] = value;
-        await writeCache(options.path, String(CONSISTENCY_VERSION), cache);
-      } catch (error) {
-        if (options.signal?.aborted) throw error;
-        failedChunks.push({
-          chunk: index + 1,
-          error: error instanceof Error ? error.message : "unknown error",
-        });
-        continue;
-      }
+      await writeCache(options.path, CONSISTENCY_CACHE_KEY, cache);
+      resolvedChunks++;
+    } catch (error) {
+      if (options.signal?.aborted) throw error;
+      failedChunks.push({
+        chunk: index + 1,
+        error: error instanceof Error ? error.message : "unknown error",
+      });
     }
-    resolvedChunks++;
-    values.push(value);
   }
-  return { values, chunks: groups.length, resolvedChunks, failedChunks };
+  const answers = keyed.flatMap((entry) => (cache.entities[entry.key] ?? []) as Answer[]);
+  return { answers, chunks: groups.length, resolvedChunks, failedChunks };
 }
 
 export async function resolveEntityRegistry(
@@ -621,7 +639,7 @@ export async function resolveEntityRegistry(
     }),
   );
   if (!entities.length) return { entries: [], chunks: 0, resolvedChunks: 0, failedChunks: [] };
-  const { values, ...run } = await completeChunkedJsonTask(
+  const { answers, ...run } = await completeEntityTask(
     provider,
     profile,
     sourceLanguage,
@@ -630,8 +648,9 @@ export async function resolveEntityRegistry(
       id: "entity-registry",
       path: `${root}/entity-registry.json`,
       items: entities,
+      itemSource: (entity) => entity.source,
       chunkSize,
-      schema: registrySchema,
+      parse: (value) => registrySchema.parse(value).entries,
       payload: (chunk) => ({ task: "entity_registry", entities: chunk }),
       signal,
     },
@@ -639,20 +658,18 @@ export async function resolveEntityRegistry(
   const allowed = new Set(entities.map((entity) => entity.source.toLocaleLowerCase()));
   const seen = new Set<string>();
   const entries: GlossaryEntry[] = [];
-  for (const value of values) {
-    for (const entry of value.entries) {
-      const key = entry.source.toLocaleLowerCase();
-      if (!allowed.has(key) || seen.has(key)) continue;
-      seen.add(key);
-      entries.push({
-        id: `generated-entity-${entries.length + 1}`,
-        source: entry.source,
-        target: entry.target,
-        category: entry.category,
-        note: entry.strategy,
-        enabled: true,
-      });
-    }
+  for (const entry of answers) {
+    const key = entry.source.toLocaleLowerCase();
+    if (!allowed.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    entries.push({
+      id: `generated-entity-${entries.length + 1}`,
+      source: entry.source,
+      target: entry.target,
+      category: entry.category,
+      note: entry.strategy,
+      enabled: true,
+    });
   }
   return { entries, ...run };
 }
@@ -671,7 +688,7 @@ export async function resolveConsistencyConflicts(
   signal?: AbortSignal,
   chunkSize = CONSISTENCY_CHUNK_SIZE,
 ): Promise<ConsistencyResolution> {
-  const { values, ...run } = await completeChunkedJsonTask(
+  const { answers, ...run } = await completeEntityTask(
     provider,
     profile,
     sourceLanguage,
@@ -680,8 +697,9 @@ export async function resolveConsistencyConflicts(
       id: "consistency-resolution",
       path: `${root}/consistency-resolution.json`,
       items: report.entityEvidence,
+      itemSource: (entity) => entity.source,
       chunkSize,
-      schema: resolutionSchema,
+      parse: (value) => resolutionSchema.parse(value).decisions,
       payload: (entityEvidence) => ({
         task: "resolve_conflicts",
         report: { ...report, entityEvidence, documents: [] },
@@ -689,7 +707,7 @@ export async function resolveConsistencyConflicts(
       signal,
     },
   );
-  return { decisions: values.flatMap((value) => value.decisions), ...run };
+  return { decisions: answers, ...run };
 }
 
 function escapedPattern(value: string) {

@@ -346,6 +346,14 @@ export class JobOrchestrator {
     await this.filterJournal(join(root, "repairs.ndjson"), batchId);
     await rm(join(root, "quality-report.json"), { force: true });
     await rm(join(root, "output.epub"), { force: true });
+    if (!batchId) {
+      // Settled entity answers outlive code and model changes on purpose, so invalidating
+      // the whole job is the only way to ask for new ones. Re-deciding for a single batch
+      // would rename entities across every batch that is being kept.
+      await rm(join(root, "entity-registry.json"), { force: true });
+      await rm(join(root, "consistency-resolution.json"), { force: true });
+      await rm(join(root, "consistency-report.json"), { force: true });
+    }
     let prepared = true;
     try {
       await access(join(root, "prepared.json"));
