@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { processBatch } from "../../src/server/jobs/translation-service.js";
-import type { LanguageModelProvider } from "../../src/server/providers/provider.js";
+import { ProviderError, type LanguageModelProvider } from "../../src/server/providers/provider.js";
 
 describe("translation service", () => {
   it("forwards the prompt version selected by the provider profile", async () => {
@@ -75,5 +75,57 @@ describe("translation service", () => {
       segments.map((segment) => segment.id),
     );
     expect(result.attempts).toBe(3);
+  });
+
+  it("recovers only empty output segments instead of repeating the whole batch", async () => {
+    const requestIds: string[][] = [];
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        requestIds.push(request.segments.map((segment) => segment.id));
+        if (request.segments.length > 1) {
+          throw new ProviderError(
+            "invalid_response",
+            "One empty segment",
+            undefined,
+            { promptTokens: 100, completionTokens: 20 },
+            "partial-request",
+            {
+              segments: [
+                { id: "s1", text: "Что ты" },
+                { id: "s2", text: "" },
+                { id: "s3", text: "хочешь?" },
+              ],
+            },
+          );
+        }
+        return { segments: [{ id: request.segments[0].id, text: "ты" }] };
+      },
+    };
+
+    const result = await processBatch(
+      provider,
+      { name: "test", endpoint: "local", model: "test" },
+      "translation",
+      [
+        { id: "s1", text: "What do" },
+        { id: "s2", text: "you" },
+        { id: "s3", text: "want?" },
+      ],
+      {
+        sourceLanguage: { tag: "en", name: "English" },
+        targetLanguage: { tag: "ru", name: "Russian" },
+      },
+      "",
+      [],
+      0,
+    );
+
+    expect(requestIds).toEqual([["s1", "s2", "s3"], ["s2"]]);
+    expect(result.result.segments).toEqual([
+      { id: "s1", text: "Что ты" },
+      { id: "s2", text: "ты" },
+      { id: "s3", text: "хочешь?" },
+    ]);
+    expect(result.attempts).toBe(2);
   });
 });

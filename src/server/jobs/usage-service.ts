@@ -5,12 +5,16 @@ import type {
   ProviderRequest,
   ProviderResponse,
 } from "../providers/provider.js";
+import { ProviderError } from "../providers/provider.js";
 import { atomicJson } from "../storage/atomic-file.js";
 import { appendJournal, readJournal } from "../storage/ndjson-journal.js";
 
 export type UsageStage = ProviderRequest["mode"];
+/** Cached checkpoints never reach the provider, so they never produce a usage record. */
+export type UsageOutcome = "ok" | "invalid_response" | "timeout" | "configuration" | "error";
 
 export type UsageRecord = {
+  outcome?: UsageOutcome;
   version: 1;
   recordedAt: string;
   callId: string;
@@ -33,6 +37,9 @@ export type UsageBreakdown = {
   model: string;
   requests: number;
   requestsWithUsage: number;
+  failedRequests: number;
+  invalidResponses: number;
+  timeouts: number;
   promptTokens: number;
   cachedPromptTokens: number;
   completionTokens: number;
@@ -54,7 +61,11 @@ function token(value: unknown): number | null {
     : null;
 }
 
-function usageRecord(request: ProviderRequest, response: ProviderResponse): UsageRecord {
+function usageRecord(
+  request: ProviderRequest,
+  response: ProviderResponse,
+  outcome: UsageOutcome = "ok",
+): UsageRecord {
   const promptTokens = token(response.usage?.promptTokens);
   const cachedPromptTokens = token(response.usage?.cachedPromptTokens);
   const completionTokens = token(response.usage?.completionTokens);
@@ -64,6 +75,7 @@ function usageRecord(request: ProviderRequest, response: ProviderResponse): Usag
       : (promptTokens ?? 0) + (completionTokens ?? 0);
   return {
     version: 1,
+    outcome,
     recordedAt: new Date().toISOString(),
     callId: randomUUID(),
     requestId: response.requestId,
@@ -86,6 +98,9 @@ function emptyNumbers() {
   return {
     requests: 0,
     requestsWithUsage: 0,
+    failedRequests: 0,
+    invalidResponses: 0,
+    timeouts: 0,
     promptTokens: 0,
     cachedPromptTokens: 0,
     completionTokens: 0,
@@ -106,6 +121,11 @@ export function buildUsageReport(records: UsageRecord[]): UsageReport {
     };
     row.requests++;
     if (record.totalTokens !== null) row.requestsWithUsage++;
+    if (record.outcome && record.outcome !== "ok") {
+      row.failedRequests++;
+      if (record.outcome === "invalid_response") row.invalidResponses++;
+      if (record.outcome === "timeout") row.timeouts++;
+    }
     row.promptTokens += record.promptTokens ?? 0;
     row.cachedPromptTokens += record.cachedPromptTokens ?? 0;
     row.completionTokens += record.completionTokens ?? 0;
@@ -120,6 +140,9 @@ export function buildUsageReport(records: UsageRecord[]): UsageReport {
     (sum, row) => ({
       requests: sum.requests + row.requests,
       requestsWithUsage: sum.requestsWithUsage + row.requestsWithUsage,
+      failedRequests: sum.failedRequests + row.failedRequests,
+      invalidResponses: sum.invalidResponses + row.invalidResponses,
+      timeouts: sum.timeouts + row.timeouts,
       promptTokens: sum.promptTokens + row.promptTokens,
       cachedPromptTokens: sum.cachedPromptTokens + row.cachedPromptTokens,
       completionTokens: sum.completionTokens + row.completionTokens,
@@ -134,8 +157,13 @@ export async function readUsageReport(root: string): Promise<UsageReport> {
   return buildUsageReport(await readJournal<UsageRecord>(join(root, "usage.ndjson")));
 }
 
-async function recordUsage(root: string, request: ProviderRequest, response: ProviderResponse) {
-  await appendJournal(join(root, "usage.ndjson"), usageRecord(request, response));
+async function recordUsage(
+  root: string,
+  request: ProviderRequest,
+  response: ProviderResponse,
+  outcome: UsageOutcome = "ok",
+) {
+  await appendJournal(join(root, "usage.ndjson"), usageRecord(request, response, outcome));
   const report = await readUsageReport(root);
   await atomicJson(join(root, "usage-report.json"), report);
 }
@@ -149,9 +177,33 @@ export class UsageTrackingProvider implements LanguageModelProvider {
   ) {}
 
   async complete(request: ProviderRequest, signal?: AbortSignal): Promise<ProviderResponse> {
-    const response = await this.provider.complete(request, signal);
-    this.writes = this.writes.then(() => recordUsage(this.root, request, response));
-    await this.writes;
-    return response;
+    try {
+      const response = await this.provider.complete(request, signal);
+      this.writes = this.writes.then(() => recordUsage(this.root, request, response));
+      await this.writes;
+      return response;
+    } catch (error) {
+      // Failed and invalid attempts still cost tokens and still have to show up in the report.
+      if (error instanceof ProviderError) {
+        const outcome: UsageOutcome =
+          error.kind === "invalid_response"
+            ? "invalid_response"
+            : error.kind === "configuration"
+              ? "configuration"
+              : /timed out/i.test(error.message)
+                ? "timeout"
+                : "error";
+        this.writes = this.writes.then(() =>
+          recordUsage(
+            this.root,
+            request,
+            { segments: [], usage: error.usage, requestId: error.requestId },
+            outcome,
+          ),
+        );
+        await this.writes;
+      }
+      throw error;
+    }
   }
 }

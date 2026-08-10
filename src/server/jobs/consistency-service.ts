@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { z } from "zod";
+import { distance } from "../epub/consistency-audit.js";
 import type { TextSegment } from "../epub/text-segments.js";
 import type {
   LanguageModelProvider,
@@ -9,7 +10,9 @@ import type {
   ProviderSegment,
 } from "../providers/provider.js";
 
-const CONSISTENCY_VERSION = 3;
+const CONSISTENCY_VERSION = 4;
+/** One resolver request per this many entities. One big request timed out and lost everything. */
+export const CONSISTENCY_CHUNK_SIZE = 25;
 
 export type ConsistencyDocument = {
   id: string;
@@ -87,46 +90,29 @@ const sourceNamePattern = /(?<![\p{L}\p{N}])\p{Lu}[\p{L}\p{M}'’.-]{2,}/gu;
 const sourcePlacePattern =
   /(?<![\p{L}\p{N}])\p{Lu}[\p{L}\p{M}'’-]{2,}\s+(?:Street|St\.|Avenue|Ave\.|Road|Rd\.|Lane|Square|Place)(?![\p{L}\p{N}])/gu;
 const wordPattern = /[\p{L}\p{M}]*[её][\p{L}\p{M}]*/giu;
-const sourceStopWords = new Set([
-  "the",
-  "this",
-  "that",
-  "these",
-  "those",
-  "when",
-  "where",
-  "while",
-  "then",
-  "there",
-  "but",
-  "and",
-  "after",
-  "before",
-  "however",
-  "although",
-  "with",
-  "without",
-  "from",
-  "into",
-  "upon",
-  "chapter",
-  "part",
-  "project",
-  "gutenberg",
-  "professor",
-  "doctor",
-  "mister",
-  "missus",
-  "street",
-  "st",
-  "avenue",
-  "ave",
-  "road",
-  "rd",
-  "lane",
-  "square",
-  "place",
-]);
+// A capitalized word is not an entity just because a sentence started with it. The registry
+// spent a production run resolving "She" and "The"; that noise is what timed the resolver out.
+const sourceStopWords = new Set(
+  `a an the this that these those he she it they we you i me him her them us my your his hers its
+   their our mine yours ours theirs myself himself herself itself themselves who whom whose which
+   what when where why how while then there here now once again always never ever still just only
+   very too also even both each few more most other some any all such than as at by in on to of off
+   out up down over under about above below between through during against for from into onto upon
+   with without within toward towards after before behind beside besides beyond near since until
+   unless because although though however therefore moreover meanwhile nevertheless otherwise
+   and but or nor so yet if else is are was were be been being am have has had having do does did
+   will would shall should can could may might must let lets need dare used
+   yes no not oh ah ay well now good great sure right okay
+   one two three four five six seven eight nine ten first second third last next
+   said says say tell told asked answered replied cried thought knew know
+   chapter part book volume section epilogue prologue appendix contents introduction preface
+   project gutenberg ebook copyright
+   professor doctor mister missus madam madame sir lord lady captain colonel major general
+   street st avenue ave road rd lane square place drive court`
+    .split(/\s+/)
+    .filter(Boolean),
+);
+const lowercaseWordPattern = /(?<![\p{L}\p{N}])\p{Ll}[\p{L}\p{M}'’-]{2,}/gu;
 
 function clipped(value: string, max = 320) {
   const normalized = value.replace(/\s+/g, " ").trim();
@@ -155,7 +141,37 @@ async function writeCache(path: string, key: string, value: unknown) {
   await writeFile(path, JSON.stringify({ key, value }, null, 2));
 }
 
+export type EntityEvidenceStats = {
+  candidates: number;
+  stopWords: number;
+  commonWords: number;
+  weakEvidence: number;
+  overflow: number;
+  kept: number;
+};
+
 export function extractRepeatedSourceEntities(documents: ConsistencyDocument[]): EntityEvidence[] {
+  return extractEntityEvidence(documents).entities;
+}
+
+export function extractEntityEvidence(documents: ConsistencyDocument[]): {
+  entities: EntityEvidence[];
+  stats: EntityEvidenceStats;
+} {
+  // A word that also occurs lowercase somewhere in the book is a common word, not a name.
+  const lowercaseWords = new Set<string>();
+  for (const document of documents)
+    for (const segment of document.sourceSegments)
+      for (const match of segment.text.matchAll(lowercaseWordPattern))
+        lowercaseWords.add(match[0].toLocaleLowerCase());
+  const stats: EntityEvidenceStats = {
+    candidates: 0,
+    stopWords: 0,
+    commonWords: 0,
+    weakEvidence: 0,
+    overflow: 0,
+    kept: 0,
+  };
   const found = new Map<
     string,
     {
@@ -186,7 +202,16 @@ export function extractRepeatedSourceEntities(documents: ConsistencyDocument[]):
           .trim()
           .replace(/\s+/gu, " ");
         const key = source.toLocaleLowerCase();
-        if (sourceStopWords.has(key)) continue;
+        if (!found.has(key)) stats.candidates++;
+        if (sourceStopWords.has(key)) {
+          if (!found.has(key)) stats.stopWords++;
+          continue;
+        }
+        // Multi-word matches (place patterns) never appear as a single lowercase token.
+        if (!key.includes(" ") && lowercaseWords.has(key)) {
+          if (!found.has(key)) stats.commonWords++;
+          continue;
+        }
         const entry = found.get(key) ?? {
           source,
           occurrences: 0,
@@ -210,13 +235,14 @@ export function extractRepeatedSourceEntities(documents: ConsistencyDocument[]):
       }
     }
   }
-  return [...found.values()]
-    .filter(
-      (entry) =>
-        entry.highConfidence ||
-        (entry.occurrences >= 2 &&
-          (entry.nonInitialOccurrences > 0 || entry.isolatedOccurrences > 0)),
-    )
+  const strong = [...found.values()].filter(
+    (entry) =>
+      entry.highConfidence ||
+      (entry.occurrences >= 2 &&
+        (entry.nonInitialOccurrences > 0 || entry.isolatedOccurrences > 0)),
+  );
+  stats.weakEvidence = found.size - strong.length;
+  const ranked = strong
     .map(
       ({
         nonInitialOccurrences: _nonInitialOccurrences,
@@ -228,8 +254,11 @@ export function extractRepeatedSourceEntities(documents: ConsistencyDocument[]):
     .sort(
       (left, right) =>
         right.occurrences - left.occurrences || left.source.localeCompare(right.source),
-    )
-    .slice(0, 250);
+    );
+  const entities = ranked.slice(0, 250);
+  stats.overflow = ranked.length - entities.length;
+  stats.kept = entities.length;
+  return { entities, stats };
 }
 
 function replaceCounted(
@@ -345,7 +374,8 @@ export function buildConsistencyReport(
   documents: ConsistencyDocument[],
   glossary: GlossaryEntry[] = [],
 ) {
-  const entityEvidence = extractRepeatedSourceEntities(documents).map((entity) => ({
+  const evidence = extractEntityEvidence(documents);
+  const entityEvidence = evidence.entities.map((entity) => ({
     ...entity,
     expectedTarget: glossary.find(
       (entry) =>
@@ -389,7 +419,13 @@ export function buildConsistencyReport(
       (document.yo.possibleDrift ? 1 : 0),
     0,
   );
-  return { version: 1, entityEvidence, documents: documentReports, warningCount };
+  return {
+    version: 1,
+    entityEvidence,
+    entityStats: evidence.stats,
+    documents: documentReports,
+    warningCount,
+  };
 }
 
 async function completeJsonTask(
@@ -467,6 +503,23 @@ export async function resolveEntityRegistry(
     }));
 }
 
+export type ConsistencyResolution = {
+  decisions: z.infer<typeof resolutionSchema>["decisions"];
+  chunks: number;
+  resolvedChunks: number;
+  failedChunks: Array<{ chunk: number; error: string }>;
+};
+
+const resolutionCacheSchema = z.object({
+  version: z.number(),
+  chunks: z.record(z.string(), resolutionSchema),
+});
+
+/**
+ * Resolve terminology conflicts in bounded chunks. Each chunk is its own request with its
+ * own cache entry, written as soon as it succeeds: a timeout in chunk 7 keeps chunks 1-6,
+ * which is exactly what the single-request version threw away.
+ */
 export async function resolveConsistencyConflicts(
   provider: LanguageModelProvider,
   profile: ProviderProfile,
@@ -475,35 +528,135 @@ export async function resolveConsistencyConflicts(
   report: ReturnType<typeof buildConsistencyReport>,
   root: string,
   signal?: AbortSignal,
-) {
-  const payload = { task: "resolve_conflicts", report };
-  const key = stableHash({
-    version: CONSISTENCY_VERSION,
-    payload,
-    model: profile.model,
-    targetLanguage,
-  });
+  chunkSize = CONSISTENCY_CHUNK_SIZE,
+): Promise<ConsistencyResolution> {
   const path = `${root}/consistency-resolution.json`;
-  const cached = await readCache(path, key, resolutionSchema);
-  const value =
-    cached ??
-    resolutionSchema.parse(
-      await completeJsonTask(
-        provider,
-        profile,
-        sourceLanguage,
-        targetLanguage,
-        "consistency-resolution",
-        payload,
-        signal,
-      ),
-    );
-  if (!cached) await writeCache(path, key, value);
-  return value.decisions;
+  const cache = (await readCache(path, String(CONSISTENCY_VERSION), resolutionCacheSchema)) ?? {
+    version: CONSISTENCY_VERSION,
+    chunks: {},
+  };
+  const groups: (typeof report.entityEvidence)[] = [];
+  for (let offset = 0; offset < report.entityEvidence.length; offset += chunkSize)
+    groups.push(report.entityEvidence.slice(offset, offset + chunkSize));
+  const decisions: ConsistencyResolution["decisions"] = [];
+  const failedChunks: ConsistencyResolution["failedChunks"] = [];
+  let resolvedChunks = 0;
+  for (const [index, entityEvidence] of groups.entries()) {
+    if (signal?.aborted)
+      throw signal.reason instanceof Error ? signal.reason : new Error("Aborted");
+    const payload = {
+      task: "resolve_conflicts",
+      report: { ...report, entityEvidence, documents: [] },
+    };
+    const chunkKey = stableHash({ payload, model: profile.model, targetLanguage });
+    let value = cache.chunks[chunkKey];
+    if (!value) {
+      try {
+        value = resolutionSchema.parse(
+          await completeJsonTask(
+            provider,
+            profile,
+            sourceLanguage,
+            targetLanguage,
+            `consistency-resolution-${index + 1}`,
+            payload,
+            signal,
+          ),
+        );
+        cache.chunks[chunkKey] = value;
+        await writeCache(path, String(CONSISTENCY_VERSION), cache);
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        failedChunks.push({
+          chunk: index + 1,
+          error: error instanceof Error ? error.message : "unknown error",
+        });
+        continue;
+      }
+    }
+    resolvedChunks++;
+    decisions.push(...value.decisions);
+  }
+  return { decisions, chunks: groups.length, resolvedChunks, failedChunks };
 }
 
 function escapedPattern(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function replaceVariants(documents: ConsistencyDocument[], replacements: Map<string, string>) {
+  let applied = 0;
+  for (const document of documents) {
+    for (const segment of document.editedSegments) {
+      for (const [variant, canonical] of replacements) {
+        const isWordLike = /^[\p{L}\p{N}].*[\p{L}\p{N}]$/u.test(variant);
+        const pattern = new RegExp(
+          `${isWordLike ? "(?<![\\p{L}\\p{N}])" : ""}${escapedPattern(variant)}${
+            isWordLike ? "(?![\\p{L}\\p{N}])" : ""
+          }`,
+          "gu",
+        );
+        segment.text = segment.text.replace(pattern, () => {
+          applied++;
+          return canonical;
+        });
+      }
+    }
+  }
+  return applied;
+}
+
+const capitalizedTargetWord = /(?<![\p{L}\p{N}])\p{Lu}[\p{L}\p{M}'’-]{2,}/gu;
+
+/**
+ * A near-match is an inflection, not a spelling variant, when the two forms agree on
+ * everything but their ending: Кира/Киры is one name, Кира/Кайра is two.
+ */
+function isInflection(left: string, right: string) {
+  let common = 0;
+  while (
+    common < Math.min(left.length, right.length) &&
+    left[common].toLocaleLowerCase() === right[common].toLocaleLowerCase()
+  ) {
+    common++;
+  }
+  return common >= Math.min(left.length, right.length) - 2;
+}
+
+/**
+ * Deterministic fallback for when the resolver model is unavailable or times out. Anchored
+ * on the glossary: only forms that are near-identical to a canonical target and differ in
+ * their stem are replaced, so Кира collapses into Кайра while Киры is left alone.
+ */
+export function alignGlossaryVariants(
+  documents: ConsistencyDocument[],
+  glossary: GlossaryEntry[],
+): { applied: number; replacements: Array<{ variant: string; canonical: string }> } {
+  const canonicalTargets = glossary
+    .filter((entry) => entry.enabled && entry.target.trim().length >= 4)
+    .map((entry) => entry.target.trim())
+    .filter((target) => /^\p{Lu}[\p{L}\p{M}'’-]+$/u.test(target));
+  if (!canonicalTargets.length) return { applied: 0, replacements: [] };
+  const canonicalSet = new Set(canonicalTargets);
+  const words = new Set<string>();
+  for (const document of documents)
+    for (const segment of document.editedSegments)
+      for (const match of segment.text.matchAll(capitalizedTargetWord)) words.add(match[0]);
+  const replacements = new Map<string, string>();
+  for (const word of words) {
+    if (canonicalSet.has(word)) continue;
+    const canonical = canonicalTargets.find(
+      (target) =>
+        Math.abs(target.length - word.length) <= 2 &&
+        distance(target.toLocaleLowerCase(), word.toLocaleLowerCase()) <= 2 &&
+        !isInflection(target, word),
+    );
+    if (canonical) replacements.set(word, canonical);
+  }
+  return {
+    applied: replaceVariants(documents, replacements),
+    replacements: [...replacements].map(([variant, canonical]) => ({ variant, canonical })),
+  };
 }
 
 export function applyConsistencyDecisions(
@@ -544,23 +697,5 @@ export function applyConsistencyDecisions(
       }
     }
   }
-  let applied = 0;
-  for (const document of documents) {
-    for (const segment of document.editedSegments) {
-      for (const [variant, canonical] of replacements) {
-        const isWordLike = /^[\p{L}\p{N}].*[\p{L}\p{N}]$/u.test(variant);
-        const pattern = new RegExp(
-          `${isWordLike ? "(?<![\\p{L}\\p{N}])" : ""}${escapedPattern(variant)}${
-            isWordLike ? "(?![\\p{L}\\p{N}])" : ""
-          }`,
-          "gu",
-        );
-        segment.text = segment.text.replace(pattern, () => {
-          applied++;
-          return canonical;
-        });
-      }
-    }
-  }
-  return applied;
+  return replaceVariants(documents, replacements);
 }

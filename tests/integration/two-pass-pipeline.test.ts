@@ -2,7 +2,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { FakeProvider } from "../../src/server/providers/fake-provider.js";
-import type { LanguageModelProvider } from "../../src/server/providers/provider.js";
+import { ProviderError, type LanguageModelProvider } from "../../src/server/providers/provider.js";
 import { runTwoPass } from "../../src/server/jobs/job-runner.js";
 
 const languages = {
@@ -35,6 +35,37 @@ describe("two-pass pipeline", () => {
     expect((await readFile(`${root}/drafts.ndjson`, "utf8")).length).toBeGreaterThan(0);
   });
 
+  it("reports the active model stage before a provider failure", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-stage-failure-`);
+    const stages: string[] = [];
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        if (request.mode === "editing") {
+          throw new ProviderError("configuration", "Editor failed");
+        }
+        return {
+          segments: request.segments.map((item) => ({ id: item.id, text: "Черновик" })),
+          finishReason: "stop",
+        };
+      },
+    };
+    const profile = { name: "fake", endpoint: "local", model: "fake" };
+
+    await expect(
+      runTwoPass([{ id: "batch-1", documentId: "chapter-1", segments: [segment] }], provider, {
+        root,
+        translationProfile: profile,
+        editingProfile: profile,
+        ...languages,
+        onStage: (stage) => {
+          stages.push(stage);
+        },
+      }),
+    ).rejects.toThrow("Editor failed");
+
+    expect(stages).toEqual(["translation", "editing"]);
+  });
+
   it("reuses only checkpoints produced from the same inputs and provider profile", async () => {
     const root = await mkdtemp(`${tmpdir()}/book-resume-`);
     const provider = new FakeProvider();
@@ -58,6 +89,91 @@ describe("two-pass pipeline", () => {
     });
     expect(provider.requests).toHaveLength(4);
   });
+
+  it("recovers compatible batch checkpoints when explicitly resuming failed work", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-compatible-resume-`);
+    const provider = new FakeProvider();
+    const profile = { name: "fake", endpoint: "local", model: "v1" };
+    const batches = [{ id: "chapter-1-batch-1", documentId: "chapter-1", segments: [segment] }];
+    const options = {
+      root,
+      translationProfile: profile,
+      editingProfile: profile,
+      glossary: [{ source: "name", target: "имя" }],
+      ...languages,
+    };
+
+    await runTwoPass(batches, provider, options);
+    await runTwoPass(batches, provider, {
+      ...options,
+      translationProfile: { ...profile, model: "v2" },
+      editingProfile: { ...profile, model: "v2" },
+      glossary: [{ source: "name", target: "название" }],
+      recoverCompatibleCheckpoints: true,
+    });
+
+    expect(provider.requests).toHaveLength(2);
+  });
+
+  // 274 batches means ~1000 fsynced journal appends; the default 5s timeout is too tight
+  // when this file runs alongside the rest of the suite.
+  it(
+    "resumes a large failed run without re-paying for its completed batches",
+    { timeout: 30_000 },
+    async () => {
+      const root = await mkdtemp(`${tmpdir()}/book-large-resume-`);
+      const profile = { name: "fake", endpoint: "local", model: "v1" };
+      const batches = Array.from({ length: 274 }, (_, index) => ({
+        id: `document-1-batch-${index + 1}`,
+        documentId: "document-1",
+        segments: [{ ...segment, id: `document-1:${index}`, text: `Sentence ${index}.` }],
+      }));
+      const options = {
+        root,
+        translationProfile: profile,
+        editingProfile: profile,
+        ...languages,
+      };
+
+      // A run that dies after 253 batches.
+      const first = new FakeProvider();
+      await expect(
+        runTwoPass(batches, first, {
+          ...options,
+          onStage: (stage, batch) => {
+            if (stage === "translation" && batch.id === "document-1-batch-254")
+              throw new ProviderError("temporary", "Crashed");
+          },
+        }),
+      ).rejects.toThrow("Crashed");
+      const drafted = new Set(
+        (await readFile(`${root}/drafts.ndjson`, "utf8"))
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line).batchId),
+      );
+      expect(drafted.size).toBe(253);
+
+      // The retry re-reads those checkpoints and only calls the model for what is left.
+      const second = new FakeProvider();
+      const cached: Record<string, number> = { translation: 0, editing: 0 };
+      const result = await runTwoPass(batches, second, {
+        ...options,
+        onProgress: (stage, _batch, isCached) => {
+          if (isCached) cached[stage]++;
+        },
+      });
+
+      expect(cached.translation).toBe(253);
+      expect(result.cachedCheckpoints.translation).toBe(253);
+      expect(second.requests.filter((request) => request.mode === "translation")).toHaveLength(
+        274 - 253,
+      );
+      expect(second.requests.filter((request) => request.mode === "editing")).toHaveLength(
+        274 - cached.editing,
+      );
+    },
+  );
 
   it("invalidates only the editing checkpoint when its prompt version changes", async () => {
     const root = await mkdtemp(`${tmpdir()}/book-prompt-checkpoint-`);
@@ -128,18 +244,18 @@ describe("two-pass pipeline", () => {
             if (request.mode === "audit") {
               return {
                 id: input.id,
-                text: JSON.stringify({
-                  issues: input.id.endsWith(":0")
-                    ? [
+                text: input.id.endsWith(":1")
+                  ? "truncated audit json"
+                  : JSON.stringify({
+                      issues: [
                         {
                           span: "Плохая калька",
                           type: "source_language_interference",
                           severity: "medium",
                           reason: "Literal source construction",
                         },
-                      ]
-                    : [],
-                }),
+                      ],
+                    }),
               };
             }
             return { id: input.id, text: "Исправлено" };
@@ -178,6 +294,7 @@ describe("two-pass pipeline", () => {
       auditedSegments: 2,
       flaggedSegments: 1,
       repairedSegments: 1,
+      auditErrorSegments: 1,
       rejectedIssues: 0,
     });
   });

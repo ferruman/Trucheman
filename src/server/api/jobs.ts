@@ -45,7 +45,7 @@ export function parseJobConfig(value: unknown) {
 
 export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
   const router = Router();
-  router.get("/", async (_req, res) => res.json((await repo.list()).map(toJobView)));
+  router.get("/", async (_req, res) => res.json((await orchestrator.listJobs()).map(toJobView)));
   router.post("/", async (req, res) => {
     try {
       const { title, sourceLanguage, targetLanguage } = parseBody(createJobSchema, req.body);
@@ -77,7 +77,7 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
   });
   router.get("/:id", async (req, res) => {
     try {
-      res.json(toJobView(await repo.get(req.params.id)));
+      res.json(toJobView(await orchestrator.getJob(req.params.id)));
     } catch (error) {
       problemResponse(res, error, req);
     }

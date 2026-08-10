@@ -7,6 +7,7 @@ import type {
   ProviderRequest,
   ProviderResponse,
 } from "../../src/server/providers/provider.js";
+import { ProviderError } from "../../src/server/providers/provider.js";
 import {
   UsageTrackingProvider,
   buildUsageReport,
@@ -56,6 +57,9 @@ describe("model usage tracking", () => {
     expect(report.totals).toEqual({
       requests: 3,
       requestsWithUsage: 3,
+      failedRequests: 0,
+      invalidResponses: 0,
+      timeouts: 0,
       promptTokens: 230,
       cachedPromptTokens: 20,
       completionTokens: 45,
@@ -122,5 +126,91 @@ describe("model usage tracking", () => {
       }),
     ]);
     expect(report.totals).toMatchObject({ requests: 1, requestsWithUsage: 0, totalTokens: 0 });
+  });
+
+  it("records billed usage from an invalid provider response before rethrowing", async () => {
+    const root = await mkdtemp(join(tmpdir(), "book-failed-usage-"));
+    roots.push(root);
+    const provider: LanguageModelProvider = {
+      async complete() {
+        throw new ProviderError(
+          "invalid_response",
+          "Malformed response",
+          undefined,
+          { promptTokens: 200, completionTokens: 10 },
+          "failed-request",
+        );
+      },
+    };
+    const tracked = new UsageTrackingProvider(provider, root);
+
+    await expect(
+      tracked.complete({
+        profile: { name: "editor", endpoint: "https://example.test", model: "editor-model" },
+        mode: "editing",
+        sourceLanguage: { tag: "en", name: "English" },
+        targetLanguage: { tag: "ru", name: "Russian" },
+        segments: [{ id: "s1", original: "Hello", draft: "Привет" }],
+      }),
+    ).rejects.toThrow("Malformed response");
+
+    expect(await readUsageReport(root)).toMatchObject({
+      totals: {
+        requests: 1,
+        promptTokens: 200,
+        completionTokens: 10,
+        totalTokens: 210,
+        failedRequests: 1,
+        invalidResponses: 1,
+      },
+    });
+  });
+
+  it("separates timeouts and invalid responses per stage", async () => {
+    const root = await mkdtemp(join(tmpdir(), "book-outcome-usage-"));
+    roots.push(root);
+    const failures: Record<string, ProviderError> = {
+      audit: new ProviderError("invalid_response", "Provider returned malformed structured output"),
+      consistency: new ProviderError("temporary", "Provider request timed out"),
+    };
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        const failure = failures[request.mode];
+        if (failure) throw failure;
+        return {
+          segments: request.segments.map((segment) => ({ id: segment.id, text: "ok" })),
+          usage: { promptTokens: 10, completionTokens: 5 },
+        };
+      },
+    };
+    const tracked = new UsageTrackingProvider(provider, root);
+    const call = (mode: ProviderRequest["mode"]) =>
+      tracked
+        .complete({
+          profile: { name: mode, endpoint: "https://example.test", model: "m" },
+          mode,
+          sourceLanguage: { tag: "en", name: "English" },
+          targetLanguage: { tag: "ru", name: "Russian" },
+          segments: [{ id: "s1", text: "Hello" }],
+        })
+        .catch(() => undefined);
+
+    await call("translation");
+    await call("audit");
+    await call("consistency");
+
+    const report = await readUsageReport(root);
+    expect(report.totals).toMatchObject({
+      requests: 3,
+      failedRequests: 2,
+      invalidResponses: 1,
+      timeouts: 1,
+    });
+    // Cached checkpoints never call the provider, so they never inflate this count.
+    expect(report.breakdown.map((row) => row.stage)).toEqual([
+      "translation",
+      "audit",
+      "consistency",
+    ]);
   });
 });

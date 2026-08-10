@@ -25,7 +25,7 @@ export function JobControls({
   const deletable = status !== "running" && status !== "stopping" && status !== "analyzing";
   return (
     <div className="actions" aria-label="Job controls">
-      {(status === "ready" || status === "completed" || status === "failed") && (
+      {(status === "ready" || status === "completed") && (
         <button disabled={busy} type="button" onClick={onStart}>
           {busyAction === "start"
             ? "Starting…"
@@ -49,7 +49,7 @@ export function JobControls({
           {busyAction === "resume" ? "Resuming…" : "Resume"}
         </button>
       )}
-      {status === "needs_attention" && (
+      {(status === "failed" || status === "needs_attention") && (
         <button disabled={busy} type="button" onClick={onRetry}>
           {busyAction === "retry" ? "Retrying…" : "Retry failed work"}
         </button>

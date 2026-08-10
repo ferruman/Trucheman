@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { parseXml, serializeXml } from "../../src/server/epub/xml-dom.js";
-import { extractTextSegments, reinsertText } from "../../src/server/epub/text-segments.js";
+import {
+  extractTextSegments,
+  mergeLogicalBlocks,
+  reinsertText,
+} from "../../src/server/epub/text-segments.js";
 describe("text segments", () => {
   it("extracts visible text and preserves whitespace", () => {
     const d = parseXml(
@@ -10,6 +14,46 @@ describe("text segments", () => {
     expect(s.map((x) => x.text)).toEqual([" Hello ", "world"]);
     expect(s[0].leading).toBe(" ");
   });
+  it("merges a heading fragmented into one span per word into a single unit", () => {
+    const d = parseXml(
+      `<html xmlns="http://www.w3.org/1999/xhtml"><body><h1><span>In</span> <span>the</span> <span>Desert</span></h1><p>He said <em>nothing</em> at all.</p></body></html>`,
+    );
+    const { units, absorbed } = mergeLogicalBlocks(extractTextSegments(d, "doc"));
+
+    expect(units.map((unit) => unit.text)).toEqual([
+      "In the Desert",
+      "He said ",
+      "nothing",
+      " at all.",
+    ]);
+    // The two absorbed spans reinsert as empty; `<em>` keeps its own segment.
+    expect(absorbed.size).toBe(2);
+    expect([...absorbed.values()]).toEqual([units[0].id, units[0].id]);
+  });
+
+  it("never merges across a line break or a nested block", () => {
+    const d = parseXml(
+      `<html xmlns="http://www.w3.org/1999/xhtml"><body><p><span>First</span><br/><span>Second</span></p><div>Lead<p>Inner</p>Tail</div></body></html>`,
+    );
+    const { units } = mergeLogicalBlocks(extractTextSegments(d, "doc"));
+
+    expect(units.map((unit) => unit.text)).toEqual(["First", "Second", "Lead", "Inner", "Tail"]);
+  });
+
+  it("writes the whole block into the first node and empties the rest", () => {
+    const d = parseXml(
+      `<html xmlns="http://www.w3.org/1999/xhtml"><body><h1><span>In</span> <span>the</span> <span>Desert</span></h1></body></html>`,
+    );
+    const segments = extractTextSegments(d, "doc");
+    const { units, absorbed } = mergeLogicalBlocks(segments);
+    const values = new Map<string, string>([[units[0].id, "В пустыне"]]);
+    for (const id of absorbed.keys()) values.set(id, "");
+
+    reinsertText(d, segments, values);
+    const text = serializeXml(d).replace(/<[^>]*>/g, "");
+    expect(text.trim()).toBe("В пустыне");
+  });
+
   it("reinserts only the original text node", () => {
     const d = parseXml(`<html><body>Hello</body></html>`);
     const s = extractTextSegments(d, "doc");

@@ -1,12 +1,15 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  alignGlossaryVariants,
   applyConsistencyDecisions,
   buildConsistencyReport,
+  extractEntityEvidence,
   extractRepeatedSourceEntities,
   mergeGlossaries,
   normalizeRussianConsistencyMechanics,
+  resolveConsistencyConflicts,
   resolveEntityRegistry,
   type ConsistencyDocument,
 } from "../../src/server/jobs/consistency-service.js";
@@ -258,5 +261,142 @@ describe("book-wide consistency", () => {
     ];
 
     expect(mergeGlossaries(user, generated)).toEqual(user);
+  });
+
+  it("keeps pronouns, articles, and ordinary words out of the entity registry", () => {
+    const values: ConsistencyDocument[] = [
+      {
+        id: "noise",
+        sourceSegments: [
+          sourceSegment("noise:0", "She walked on. The wind rose. But Kyra waited for Damon."),
+          sourceSegment("noise:1", "She saw the wind and knew that Kyra had left with Damon."),
+          sourceSegment("noise:2", "they saw her wind but she waited."),
+        ],
+        editedSegments: [],
+      },
+    ];
+    const { entities, stats } = extractEntityEvidence(values);
+    const sources = entities.map((entity) => entity.source);
+
+    expect(sources).toEqual(expect.arrayContaining(["Kyra", "Damon"]));
+    for (const noise of ["She", "The", "But", "Wind"]) expect(sources).not.toContain(noise);
+    expect(stats.stopWords + stats.commonWords).toBeGreaterThan(0);
+    expect(stats.kept).toBe(entities.length);
+  });
+
+  it("resolves consistency in chunks and keeps decisions when one chunk fails", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-consistency-chunks-`);
+    roots.push(root);
+    const names = ["Kyra", "Leticia", "Damon", "Raymondo", "Spain"];
+    const canonical: Record<string, string> = {
+      Kyra: "Кайра",
+      Leticia: "Летиция",
+      Damon: "Деймон",
+      Raymondo: "Раймондо",
+      Spain: "Спайн",
+    };
+    const variants: Record<string, string> = {
+      Kyra: "Кира",
+      Leticia: "Летисия",
+      Damon: "Дэймон",
+      Raymondo: "Рэймондо",
+      Spain: "Спэйн",
+    };
+    const values: ConsistencyDocument[] = [
+      {
+        id: "book",
+        sourceSegments: names.flatMap((name, index) => [
+          sourceSegment(`book:${index * 2}`, `${name} arrived at dawn.`),
+          sourceSegment(`book:${index * 2 + 1}`, `Later ${name} left again.`),
+        ]),
+        editedSegments: names.flatMap((name, index) => [
+          { id: `book:${index * 2}`, text: `${canonical[name]} прибыл на рассвете.` },
+          { id: `book:${index * 2 + 1}`, text: `Позже ${variants[name]} снова ушёл.` },
+        ]),
+      },
+    ];
+
+    let call = 0;
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        call++;
+        // The second chunk always times out, exactly like the production run.
+        if (call === 2) throw new Error("Provider request timed out");
+        const payload = JSON.parse(request.segments[0].text);
+        return {
+          segments: [
+            {
+              id: request.segments[0].id,
+              text: JSON.stringify({
+                decisions: payload.report.entityEvidence.map((entity: { source: string }) => ({
+                  source: entity.source,
+                  canonical: canonical[entity.source],
+                  variants: [variants[entity.source]],
+                })),
+              }),
+            },
+          ],
+          finishReason: "stop",
+        };
+      },
+    };
+
+    const report = buildConsistencyReport(values);
+    const resolution = await resolveConsistencyConflicts(
+      provider,
+      { name: "consistency", endpoint: "local", model: "m" },
+      { tag: "en", name: "English" },
+      { tag: "ru", name: "Russian" },
+      report,
+      root,
+      undefined,
+      2,
+    );
+
+    expect(resolution.chunks).toBe(Math.ceil(report.entityEvidence.length / 2));
+    expect(resolution.failedChunks).toEqual([{ chunk: 2, error: "Provider request timed out" }]);
+    // One failed chunk must not cancel the decisions the other chunks produced.
+    expect(resolution.resolvedChunks).toBe(resolution.chunks - 1);
+    expect(resolution.decisions.length).toBeGreaterThan(0);
+
+    const applied = applyConsistencyDecisions(values, resolution.decisions);
+    expect(applied).toBeGreaterThan(0);
+    const text = values[0].editedSegments.map((segment) => segment.text).join(" ");
+    const resolved = resolution.decisions.map((decision) => decision.source);
+    for (const name of resolved) {
+      expect(text).toContain(canonical[name]);
+      expect(text).not.toContain(variants[name]);
+    }
+
+    // Successful chunks are persisted as they complete, so a rerun only retries the failure.
+    const cache = JSON.parse(await readFile(`${root}/consistency-resolution.json`, "utf8"));
+    expect(Object.keys(cache.value.chunks)).toHaveLength(resolution.resolvedChunks);
+  });
+
+  it("aligns name variants from the glossary when the resolver is unavailable", () => {
+    const values: ConsistencyDocument[] = [
+      {
+        id: "fallback",
+        sourceSegments: [],
+        editedSegments: [
+          { id: "fallback:0", text: "Кайра ждала. Кира ждала. Кайра ушла." },
+          { id: "fallback:1", text: "Летиция звала Кира. Летисия молчала. Летиция ушла." },
+          { id: "fallback:2", text: "У Киры был план." },
+        ],
+      },
+    ];
+    const glossary = [
+      { id: "g1", source: "Kyra", target: "Кайра", category: "person", enabled: true },
+      { id: "g2", source: "Leticia", target: "Летиция", category: "person", enabled: true },
+    ];
+
+    const result = alignGlossaryVariants(values, glossary);
+
+    expect(result.applied).toBeGreaterThan(0);
+    const text = values[0].editedSegments.map((segment) => segment.text).join(" ");
+    expect(text).not.toContain("Кира");
+    expect(text).not.toContain("Летисия");
+    // Inflected forms are a different word, not a variant, and must survive untouched.
+    expect(text).toContain("Киры");
   });
 });

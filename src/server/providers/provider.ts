@@ -1,3 +1,5 @@
+import type { QualityIssue } from "./audit-contract.js";
+
 export type ProviderProfile = {
   name: string;
   endpoint: string;
@@ -9,7 +11,12 @@ export type ProviderProfile = {
   promptVersion?: string;
 };
 
-export type ProviderSegment = { id: string; text: string };
+/**
+ * `issues` is the structured audit payload. It is authoritative for audit responses;
+ * `text` then only carries a canonical serialization written by this code (never by the
+ * model) so journals, checkpoints, and the shared response validator stay unchanged.
+ */
+export type ProviderSegment = { id: string; text: string; issues?: QualityIssue[] };
 export type ProviderEditingInputSegment = { id: string; original: string; draft: string };
 export type ProviderAuditInputSegment = {
   id: string;
@@ -60,6 +67,9 @@ export class ProviderError extends Error {
     public readonly kind: "temporary" | "configuration" | "invalid_response",
     message: string,
     public readonly status?: number,
+    public readonly usage?: ProviderResponse["usage"],
+    public readonly requestId?: string,
+    public readonly partialResponse?: ProviderResponse,
   ) {
     super(message);
   }

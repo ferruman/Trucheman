@@ -2,7 +2,7 @@ import type { ProviderInputSegment, ProviderRequest } from "./provider.js";
 
 export const PROMPT_VERSION = "literary-v3.1";
 export const PROMPT_INPUT_VERSION = "structured-v2";
-export const QUALITY_PROMPT_VERSION = "selective-quality-v1";
+export const QUALITY_PROMPT_VERSION = "selective-quality-v2";
 export const PROMPT_VERSIONS = [PROMPT_VERSION, "literary-v3.2.1"] as const;
 export type PromptVersion = (typeof PROMPT_VERSIONS)[number];
 
@@ -27,13 +27,28 @@ const OUTPUT_CONTRACT = `OUTPUT CONTRACT — mandatory and higher priority than 
 3. "segments" must be an array with exactly the requested number of elements, in the requested order.
 4. Every element must contain exactly two keys: "id" and "text".
 5. Copy every "id" byte-for-byte from the input. Never translate, shorten, renumber, or reformat an id.
-6. "text" must always be a JSON string. It must never be an object, array, number, boolean, or null.
+6. "text" must always be a non-empty JSON string. It must never be an object, array, number, boolean, or null. Never delete a segment; when no change is needed, copy its input wording.
 7. Never return "original", "draft", "edited", "translation", "result", "output", or any other key in a segment.
 
 Valid response example:
 {"segments":[{"id":"s0001","text":"First result."},{"id":"s0002","text":"Second result."}]}
 
 Before responding, silently verify: valid JSON; exact segment count; exact id order; only id/text keys; every text is a string. Do not output this verification.`;
+
+const AUDIT_OUTPUT_CONTRACT = `OUTPUT CONTRACT — mandatory and higher priority than stylistic preferences:
+1. Return exactly one valid JSON object and nothing else. No prose, Markdown, or code fences.
+2. The top-level object must contain exactly one key named "segments".
+3. "segments" must be an array with exactly the requested number of elements, in the requested order.
+4. Every element must contain exactly two keys: "id" and "issues".
+5. Copy every "id" byte-for-byte from the input. Never translate, shorten, renumber, or reformat an id.
+6. "issues" must be a real JSON array of objects, never a string and never JSON encoded inside a string. Use [] when the segment needs no repair.
+7. Every issue object must contain exactly the keys "span", "type", "severity", and "reason", all JSON strings. "type" must be one of semantic_error, source_language_interference, unnatural_language, context_error, glossary_inconsistency, editor_regression. "severity" must be medium or high. "span" must be copied byte-for-byte from editedTranslation.
+8. Never return "text", "translation", "edited", or any other key in a segment.
+
+Valid response example:
+{"segments":[{"id":"s0001","issues":[]},{"id":"s0002","issues":[{"span":"exact suspicious span","type":"unnatural_language","severity":"medium","reason":"concise concrete reason"}]}]}
+
+Before responding, silently verify: valid JSON; exact segment count; exact id order; only id/issues keys; every issues value is an array. Do not output this verification.`;
 
 const NATIVE_WRITER_CHECK = `For every sentence, silently ask: "Would a skilled native-language literary writer plausibly phrase this idea this way without seeing the source text?" If not, rewrite it while preserving the author's meaning, tone, period, and stylistic character.`;
 
@@ -108,11 +123,7 @@ Report only concrete defects that justify another paid editing call:
 
 Do not flag a passage merely because another stylistic wording is possible or smoother. Prefer no issue when the editedTranslation is faithful, natural, and stylistically appropriate. Never invent a span: every span must be copied exactly from editedTranslation.
 
-For each segment, put a JSON object encoded as a string in text:
-{"issues":[{"span":"exact suspicious span","type":"semantic_error|source_language_interference|unnatural_language|context_error|glossary_inconsistency|editor_regression","severity":"medium|high","reason":"concise concrete reason"}]}
-
-Example for a clean segment:
-{"segments":[{"id":"s0001","text":"{\\"issues\\":[]}"}]}
+A segment is one complete logical block — a paragraph, heading, table-of-contents entry, or caption. Judge it as a whole. Never treat a short segment as a defective sentence merely because it is short; headings and list entries are legitimately terse and must not be padded, completed, or expanded.
 
 Use an empty issues array when no repair is warranted. Do not report low-severity polish, alternatives, rewritten text, or hidden reasoning.`,
   repair: `Act as a targeted senior literary translation repairer.
@@ -120,6 +131,8 @@ Use an empty issues array when no repair is warranted. Do not report low-severit
 Each segment contains the original, initialTranslation, editedTranslation, and a validated list of medium/high issues. Return a corrected final translation.
 
 Fix every listed issue while preserving the editedTranslation everywhere else. Prefer the edited wording whenever it remains faithful, natural, and stylistically appropriate. You may change nearby words only when grammar or coherence requires it. Do not rewrite passages merely to make them different or smoother. A stylistic alternative is not by itself an improvement.
+
+A segment is one complete logical block. Return exactly that block, with the same structure and no added, repeated, or completed material. Never append a word already present in the segment, never restate the segment's subject, and never expand a heading or table-of-contents entry into a sentence. If the listed issues cannot be fixed without changing the block's structure, return the editedTranslation unchanged.
 
 Use the original to protect meaning and authorial effect, the initialTranslation as a possible fallback when the editor regressed, neighboring request segments as context, and the glossary as binding terminology guidance.
 
@@ -184,7 +197,8 @@ export function buildPrompt(
     Partial<Pick<ProviderRequest, "targetLanguage">>,
 ): string {
   const promptVersion = promptVersionForMode(request.mode, request.promptVersion);
-  return `${COMMON_RULES}\n\nTask: ${modeRules(request.mode, promptVersion)}${targetLanguageRules(request.targetLanguage)}\n\n${OUTPUT_CONTRACT}`;
+  const contract = request.mode === "audit" ? AUDIT_OUTPUT_CONTRACT : OUTPUT_CONTRACT;
+  return `${COMMON_RULES}\n\nTask: ${modeRules(request.mode, promptVersion)}${targetLanguageRules(request.targetLanguage)}\n\n${contract}`;
 }
 
 function enabledGlossary(glossary: unknown[] | undefined): unknown[] {
@@ -260,13 +274,22 @@ export function buildPromptInput(
     task: request.mode,
     sourceLanguage: request.sourceLanguage,
     targetLanguage: request.targetLanguage,
-    responseContract: {
-      format: "json",
-      segmentCount: ids.length,
-      ids,
-      segmentKeys: ["id", "text"],
-      textType: "string",
-    },
+    responseContract:
+      request.mode === "audit"
+        ? {
+            format: "json",
+            segmentCount: ids.length,
+            ids,
+            segmentKeys: ["id", "issues"],
+            issuesType: "array",
+          }
+        : {
+            format: "json",
+            segmentCount: ids.length,
+            ids,
+            segmentKeys: ["id", "text"],
+            textType: "string",
+          },
     userPreferences: request.instructions ?? "",
     glossary: enabledGlossary(request.glossary),
     targetStyle,

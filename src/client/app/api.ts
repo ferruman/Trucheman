@@ -3,6 +3,24 @@ import type { JobView } from "../../shared/domain/job";
 export type JobResults = {
   validation: unknown | null;
   statistics: unknown | null;
+  quality: {
+    auditedSegments: number;
+    flaggedSegments: number;
+    auditErrorSegments: number;
+    auditErrorsByKind: { malformed_json: number; invalid_issues: number };
+    rejectedRepairs: number;
+  } | null;
+  consistency: {
+    entities: number;
+    filteredEntities: number;
+    chunks: number;
+    resolvedChunks: number;
+    failedChunks: number;
+    decisions: number;
+    applied: number;
+    mechanicalApplied: number;
+    glossaryAligned: number;
+  } | null;
   usage: {
     version: 1;
     generatedAt: string;

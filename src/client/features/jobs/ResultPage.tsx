@@ -48,6 +48,32 @@ export function ResultPage({ id, results, error, busy, onRetry, onRebuild }: Pro
               <dt>Translation statistics</dt>
               <dd>{results.statistics === null ? "Not available" : "Available"}</dd>
             </div>
+            {results.quality && (
+              <div>
+                <dt>Audit failures</dt>
+                <dd>
+                  {results.quality.auditErrorSegments === 0
+                    ? "None"
+                    : `${results.quality.auditErrorSegments} of ${results.quality.auditedSegments} segments (${results.quality.auditErrorsByKind.malformed_json} malformed, ${results.quality.auditErrorsByKind.invalid_issues} invalid)`}
+                </dd>
+              </div>
+            )}
+            {results.quality && (
+              <div>
+                <dt>Repairs rejected as unsafe</dt>
+                <dd>{results.quality.rejectedRepairs}</dd>
+              </div>
+            )}
+            {results.consistency && (
+              <div>
+                <dt>Consistency resolution</dt>
+                <dd>
+                  {`${results.consistency.entities} entities (${results.consistency.filteredEntities} filtered), ${results.consistency.resolvedChunks}/${results.consistency.chunks} chunks resolved, ${results.consistency.applied} replacements applied`}
+                  {results.consistency.failedChunks > 0 &&
+                    `, ${results.consistency.failedChunks} chunk(s) failed`}
+                </dd>
+              </div>
+            )}
           </dl>
           <section className="usage-section" aria-labelledby="usage-heading">
             <div className="usage-heading">

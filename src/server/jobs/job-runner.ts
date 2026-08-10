@@ -21,6 +21,7 @@ import {
   parseQualityFindings,
   repairBatch,
   type QualityFinding,
+  type RepairRejection,
 } from "./quality-service.js";
 
 export type RunnerStage = "translation" | "editing" | "audit" | "repair";
@@ -34,7 +35,14 @@ export type RunnerOptions = {
   instructions?: string;
   glossary?: unknown[];
   qualityMode?: "standard" | "high";
-  onProgress?: (stage: RunnerStage, batch: Batch) => Promise<void> | void;
+  /**
+   * Re-audit only the logical blocks a repair actually changed, reverting any that still
+   * carry a high-severity issue. Off by default: it is a second paid critic pass.
+   */
+  postRepairAudit?: boolean;
+  recoverCompatibleCheckpoints?: boolean;
+  onStage?: (stage: RunnerStage, batch: Batch) => Promise<void> | void;
+  onProgress?: (stage: RunnerStage, batch: Batch, cached: boolean) => Promise<void> | void;
   signal?: AbortSignal;
 };
 type Checkpoint = { batchId: string; segments: ProviderSegment[]; checkpointKey?: string };
@@ -45,6 +53,29 @@ function checkpointMap(records: Checkpoint[]) {
     if (record && typeof record.checkpointKey === "string" && Array.isArray(record.segments))
       result.set(record.checkpointKey, record);
   return result;
+}
+
+function checkpointBatchMap(records: Checkpoint[]) {
+  const result = new Map<string, Checkpoint>();
+  for (const record of records) {
+    if (record && typeof record.batchId === "string" && Array.isArray(record.segments)) {
+      result.set(record.batchId, record);
+    }
+  }
+  return result;
+}
+
+function compatibleCheckpoint(
+  record: Checkpoint | undefined,
+  expected: ProviderInputSegment[],
+): Checkpoint | undefined {
+  if (
+    record?.segments.length === expected.length &&
+    record.segments.every((segment, index) => segment.id === expected[index].id)
+  ) {
+    return record;
+  }
+  return undefined;
 }
 
 function checkpointKey(
@@ -84,25 +115,73 @@ function throwIfAborted(signal?: AbortSignal) {
     throw signal.reason instanceof Error ? signal.reason : new Error("Job paused");
 }
 
+/**
+ * Second critic pass over the blocks a repair changed. A block that still carries a
+ * high-severity issue falls back to its pre-repair edited text, which the first audit
+ * already judged acceptable enough to keep.
+ */
+async function verifyRepairedBlocks(
+  provider: LanguageModelProvider,
+  criticProfile: ProviderProfile,
+  options: RunnerOptions,
+  request: ProviderSegment[],
+  draft: ProviderSegment[],
+  before: ProviderSegment[],
+  after: ProviderSegment[],
+): Promise<ProviderSegment[]> {
+  const beforeById = new Map(before.map((segment) => [segment.id, segment.text]));
+  const changed = new Set(
+    after.filter((segment) => beforeById.get(segment.id) !== segment.text).map((s) => s.id),
+  );
+  if (!changed.size) return after;
+  const verified = await auditBatch(
+    provider,
+    criticProfile,
+    buildQualityAuditSegments(
+      request.filter((segment) => changed.has(segment.id)),
+      draft.filter((segment) => changed.has(segment.id)),
+      after.filter((segment) => changed.has(segment.id)),
+    ),
+    { sourceLanguage: options.sourceLanguage, targetLanguage: options.targetLanguage },
+    options.instructions,
+    options.glossary,
+    options.signal,
+  );
+  const stillBroken = new Set(
+    verified.findings
+      .filter((finding) => finding.issues.some((issue) => issue.severity === "high"))
+      .map((finding) => finding.id),
+  );
+  return after.map((segment) =>
+    stillBroken.has(segment.id)
+      ? { ...segment, text: beforeById.get(segment.id) ?? segment.text }
+      : segment,
+  );
+}
+
 export async function runTwoPass(
   batches: Batch[],
   provider: LanguageModelProvider,
   options: RunnerOptions,
 ) {
   const criticProfile = options.criticProfile ?? options.editingProfile;
-  const draftRecords = checkpointMap(
-    await readJournal<Checkpoint>(`${options.root}/drafts.ndjson`),
-  );
-  const editRecords = checkpointMap(await readJournal<Checkpoint>(`${options.root}/edits.ndjson`));
-  const auditRecords = checkpointMap(
-    await readJournal<Checkpoint>(`${options.root}/audits.ndjson`),
-  );
-  const repairRecords = checkpointMap(
-    await readJournal<Checkpoint>(`${options.root}/repairs.ndjson`),
-  );
+  const draftJournal = await readJournal<Checkpoint>(`${options.root}/drafts.ndjson`);
+  const editJournal = await readJournal<Checkpoint>(`${options.root}/edits.ndjson`);
+  const auditJournal = await readJournal<Checkpoint>(`${options.root}/audits.ndjson`);
+  const repairJournal = await readJournal<Checkpoint>(`${options.root}/repairs.ndjson`);
+  const draftRecords = checkpointMap(draftJournal);
+  const editRecords = checkpointMap(editJournal);
+  const auditRecords = checkpointMap(auditJournal);
+  const repairRecords = checkpointMap(repairJournal);
+  const draftsByBatch = checkpointBatchMap(draftJournal);
+  const editsByBatch = checkpointBatchMap(editJournal);
+  const auditsByBatch = checkpointBatchMap(auditJournal);
+  const repairsByBatch = checkpointBatchMap(repairJournal);
   const drafts = new Map<string, ProviderSegment[]>(),
     edits = new Map<string, ProviderSegment[]>();
   const qualityFindings: Array<{ batchId: string; findings: QualityFinding[] }> = [];
+  const rejectedRepairs: Array<RepairRejection & { batchId: string }> = [];
+  const cachedCheckpoints = { translation: 0, editing: 0, audit: 0, repair: 0 };
   for (const batch of batches) {
     throwIfAborted(options.signal);
     const request = batch.segments.map((s) => ({ id: s.id, text: s.text }));
@@ -115,9 +194,14 @@ export async function runTwoPass(
       options.instructions,
       options.glossary,
     );
-    const savedDraft = draftRecords.get(expectedDraftKey);
+    const savedDraft =
+      draftRecords.get(expectedDraftKey) ??
+      (options.recoverCompatibleCheckpoints
+        ? compatibleCheckpoint(draftsByBatch.get(batch.id), request)
+        : undefined);
     let draft = savedDraft?.segments;
     if (!draft) {
+      await options.onStage?.("translation", batch);
       const translated = await processBatch(
         provider,
         options.translationProfile,
@@ -140,20 +224,27 @@ export async function runTwoPass(
       });
     }
     drafts.set(batch.id, draft);
-    await options.onProgress?.("translation", batch);
+    if (savedDraft) cachedCheckpoints.translation++;
+    await options.onProgress?.("translation", batch, Boolean(savedDraft));
     throwIfAborted(options.signal);
+    const editingSegments = buildEditingSegments(request, draft);
     const expectedEditKey = checkpointKey(
       "editing",
       options.editingProfile,
-      buildEditingSegments(request, draft),
+      editingSegments,
       options.sourceLanguage,
       options.targetLanguage,
       options.instructions,
       options.glossary,
     );
-    const savedEdit = editRecords.get(expectedEditKey);
+    const savedEdit =
+      editRecords.get(expectedEditKey) ??
+      (options.recoverCompatibleCheckpoints
+        ? compatibleCheckpoint(editsByBatch.get(batch.id), editingSegments)
+        : undefined);
     let editedSegments = savedEdit?.segments;
     if (!editedSegments) {
+      await options.onStage?.("editing", batch);
       const edited = await editBatch(
         provider,
         options.editingProfile,
@@ -174,7 +265,8 @@ export async function runTwoPass(
         profile: options.editingProfile.name,
       });
     }
-    await options.onProgress?.("editing", batch);
+    if (savedEdit) cachedCheckpoints.editing++;
+    await options.onProgress?.("editing", batch, Boolean(savedEdit));
     if (options.qualityMode === "high") {
       throwIfAborted(options.signal);
       const auditSegments = buildQualityAuditSegments(request, draft, editedSegments);
@@ -187,11 +279,16 @@ export async function runTwoPass(
         options.instructions,
         options.glossary,
       );
-      const savedAudit = auditRecords.get(expectedAuditKey);
+      const savedAudit =
+        auditRecords.get(expectedAuditKey) ??
+        (options.recoverCompatibleCheckpoints
+          ? compatibleCheckpoint(auditsByBatch.get(batch.id), auditSegments)
+          : undefined);
       let findings: QualityFinding[];
       if (savedAudit) {
         findings = parseQualityFindings(auditSegments, savedAudit.segments);
       } else {
+        await options.onStage?.("audit", batch);
         const audited = await auditBatch(
           provider,
           criticProfile,
@@ -212,7 +309,8 @@ export async function runTwoPass(
         });
       }
       qualityFindings.push({ batchId: batch.id, findings });
-      await options.onProgress?.("audit", batch);
+      if (savedAudit) cachedCheckpoints.audit++;
+      await options.onProgress?.("audit", batch, Boolean(savedAudit));
       const repairSegments = buildRepairSegments(auditSegments, findings);
       if (repairSegments.length) {
         throwIfAborted(options.signal);
@@ -225,9 +323,14 @@ export async function runTwoPass(
           options.instructions,
           options.glossary,
         );
-        const savedRepair = repairRecords.get(expectedRepairKey);
+        const savedRepair =
+          repairRecords.get(expectedRepairKey) ??
+          (options.recoverCompatibleCheckpoints
+            ? compatibleCheckpoint(repairsByBatch.get(batch.id), repairSegments)
+            : undefined);
         let repairs = savedRepair?.segments;
         if (!repairs) {
+          await options.onStage?.("repair", batch);
           const repaired = await repairBatch(
             provider,
             options.editingProfile,
@@ -247,8 +350,24 @@ export async function runTwoPass(
             profile: options.editingProfile.name,
           });
         }
-        editedSegments = applySelectiveRepairs(editedSegments, repairs);
-        await options.onProgress?.("repair", batch);
+        const beforeRepair = editedSegments;
+        const reviewed = applySelectiveRepairs(editedSegments, repairs);
+        editedSegments = reviewed.segments;
+        for (const rejection of reviewed.rejected)
+          rejectedRepairs.push({ batchId: batch.id, ...rejection });
+        if (savedRepair) cachedCheckpoints.repair++;
+        await options.onProgress?.("repair", batch, Boolean(savedRepair));
+        if (options.postRepairAudit) {
+          editedSegments = await verifyRepairedBlocks(
+            provider,
+            criticProfile,
+            options,
+            request,
+            draft,
+            beforeRepair,
+            editedSegments,
+          );
+        }
       }
     }
     edits.set(batch.id, editedSegments);
@@ -261,17 +380,35 @@ export async function runTwoPass(
       `${options.root}/quality-report.json`,
       JSON.stringify(
         {
-          version: 1,
+          version: 2,
           auditedSegments: allFindings.length,
           flaggedSegments: allFindings.filter((finding) => finding.issues.length).length,
-          repairedSegments: allFindings.filter((finding) => finding.issues.length).length,
+          repairedSegments:
+            allFindings.filter((finding) => finding.issues.length).length - rejectedRepairs.length,
+          auditErrorSegments: allFindings.filter((finding) => finding.auditError).length,
+          auditErrorsByKind: {
+            malformed_json: allFindings.filter((f) => f.auditError === "malformed_json").length,
+            invalid_issues: allFindings.filter((f) => f.auditError === "invalid_issues").length,
+          },
           rejectedIssues: allFindings.reduce((total, finding) => total + finding.rejectedIssues, 0),
-          findings: allFindings.filter((finding) => finding.issues.length),
+          rejectedRepairs,
+          cachedCheckpoints,
+          findings: allFindings.filter((finding) => finding.issues.length || finding.auditError),
         },
         null,
         2,
       ),
     );
   }
-  return { drafts, edits };
+  return {
+    drafts,
+    edits,
+    cachedCheckpoints,
+    rejectedRepairs,
+    qualityAuditErrors: qualityFindings.reduce(
+      (total, batch) =>
+        total + batch.findings.filter((finding) => finding.auditError !== undefined).length,
+      0,
+    ),
+  };
 }

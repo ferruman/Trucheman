@@ -54,4 +54,29 @@ describe("EPUB consistency audit", () => {
       "Possible ё drift: a 4000-character Russian window contains no ё",
     );
   });
+
+  it("flags duplicated fragments, empty documents, and corrupted TOC labels", () => {
+    const report = analyzeEpubConsistency(
+      [
+        { id: "chapter", lang: "ru", xmlLang: "ru", text: "В пустыне пустыня. Из земли Земля." },
+        { id: "blank", lang: "ru", xmlLang: "ru", text: "   " },
+      ],
+      "ru",
+      "ru",
+      ["Часть 5 Маленькие птицы ночи Эпилог Ночи", "Часть 2. В пустыне"],
+    );
+
+    expect(report.warnings).toEqual(
+      expect.arrayContaining([
+        'chapter: duplicated fragment "пустыне пустыня"',
+        'chapter: duplicated fragment "земли земля"',
+        "blank: translated document is empty",
+        'Table of contents entry is corrupted: "Часть 5 Маленькие птицы ночи Эпилог Ночи"',
+      ]),
+    );
+    expect(report.checks.tableOfContents[1]).toEqual({
+      label: "Часть 2. В пустыне",
+      duplicates: [],
+    });
+  });
 });

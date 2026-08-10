@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { access, open, rename, rm, writeFile } from "node:fs/promises";
+import { access, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { PersistedJob } from "../domain/job.js";
 import { DomainError } from "../domain/errors.js";
@@ -20,6 +20,7 @@ type RunBook = (
   job: PersistedJob,
   update: UpdateJob,
   signal?: AbortSignal,
+  recoverCompatibleCheckpoints?: boolean,
 ) => Promise<unknown>;
 type EventCallback = (
   jobId: string,
@@ -52,7 +53,40 @@ export type JobResults = {
     warnings: number;
     outputAvailable: boolean;
   };
+  /** Audit failures are their own signal, not another quality warning. */
+  quality: {
+    auditedSegments: number;
+    flaggedSegments: number;
+    auditErrorSegments: number;
+    auditErrorsByKind: { malformed_json: number; invalid_issues: number };
+    rejectedRepairs: number;
+  } | null;
+  consistency: {
+    entities: number;
+    filteredEntities: number;
+    chunks: number;
+    resolvedChunks: number;
+    failedChunks: number;
+    decisions: number;
+    applied: number;
+    mechanicalApplied: number;
+    glossaryAligned: number;
+  } | null;
 };
+
+function count(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/** Reports are advisory: a job that never reached a stage simply has no file for it. */
+async function readJsonReport(path: string): Promise<Record<string, any> | null> {
+  try {
+    const parsed = JSON.parse(await readFile(path, "utf8"));
+    return typeof parsed === "object" && parsed !== null ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 export class JobOrchestrator {
   private readonly scheduler = new Scheduler();
@@ -68,12 +102,21 @@ export class JobOrchestrator {
   ) {
     this.runBook =
       options.runBook ??
-      ((root, job, update, signal) => runPreparedBook(root, job, update, signal));
+      ((root, job, update, signal, recoverCompatibleCheckpoints) =>
+        runPreparedBook(root, job, update, signal, recoverCompatibleCheckpoints));
     this.onEvent = options.onEvent;
   }
 
   isActive(id: string) {
     return this.claims.has(id) || this.active.has(id);
+  }
+
+  async listJobs() {
+    return Promise.all((await this.repo.list()).map((job) => this.withCheckpointProgress(job)));
+  }
+
+  async getJob(id: string) {
+    return this.withCheckpointProgress(await this.repo.get(id));
   }
 
   assertMutable(id: string, job?: PersistedJob) {
@@ -178,15 +221,19 @@ export class JobOrchestrator {
           "Analyze the uploaded EPUB before starting",
           409,
         );
+      const recoverCompatibleCheckpoints = ["paused", "failed", "needs_attention"].includes(
+        job.status,
+      );
+      const root = jobRoot(this.repo.dataDir, id);
+      const resumedProgress = recoverCompatibleCheckpoints
+        ? await this.checkpointProgress(root, job)
+        : { ...job.progress, translated: 0, edited: 0, failed: 0 };
       const controller = new AbortController();
       const running: PersistedJob = {
         ...job,
         status: "running",
-        stage: job.status === "paused" ? job.stage : "translation",
-        progress:
-          job.status === "paused"
-            ? job.progress
-            : { ...job.progress, translated: 0, edited: 0, failed: 0 },
+        stage: recoverCompatibleCheckpoints ? job.stage : "translation",
+        progress: resumedProgress,
         updatedAt: new Date().toISOString(),
       };
       let release!: () => void;
@@ -195,7 +242,7 @@ export class JobOrchestrator {
       });
       const scheduled = this.scheduler.schedule(id, async () => {
         await gate;
-        return this.execute(id, running, controller);
+        return this.execute(id, running, controller, recoverCompatibleCheckpoints);
       });
       const promise = scheduled.promise;
       this.active.set(id, { controller, promise, kind: "translation" });
@@ -405,9 +452,38 @@ export class JobOrchestrator {
     } catch {
       /* no prepared output */
     }
+    const quality = await readJsonReport(join(root, "quality-report.json"));
+    const consistency = await readJsonReport(join(root, "consistency-report.json"));
     return {
       validation,
       usage: await readUsageReport(root),
+      quality: quality && {
+        auditedSegments: count(quality.auditedSegments),
+        flaggedSegments: count(quality.flaggedSegments),
+        auditErrorSegments: count(quality.auditErrorSegments),
+        auditErrorsByKind: {
+          malformed_json: count(quality.auditErrorsByKind?.malformed_json),
+          invalid_issues: count(quality.auditErrorsByKind?.invalid_issues),
+        },
+        rejectedRepairs: Array.isArray(quality.rejectedRepairs)
+          ? quality.rejectedRepairs.length
+          : 0,
+      },
+      consistency: consistency && {
+        entities: count(consistency.entityStats?.kept),
+        filteredEntities:
+          count(consistency.entityStats?.stopWords) +
+          count(consistency.entityStats?.commonWords) +
+          count(consistency.entityStats?.weakEvidence) +
+          count(consistency.entityStats?.overflow),
+        chunks: count(consistency.chunks),
+        resolvedChunks: count(consistency.resolvedChunks),
+        failedChunks: Array.isArray(consistency.failedChunks) ? consistency.failedChunks.length : 0,
+        decisions: Array.isArray(consistency.decisions) ? consistency.decisions.length : 0,
+        applied: count(consistency.applied),
+        mechanicalApplied: count(consistency.mechanicalApplied),
+        glossaryAligned: count(consistency.glossaryAlignment?.applied),
+      },
       statistics: {
         translated: new Set(drafts.map((x) => x.batchId)).size,
         edited: new Set(edits.map((x) => x.batchId)).size,
@@ -424,7 +500,33 @@ export class JobOrchestrator {
     };
   }
 
-  private async execute(id: string, running: PersistedJob, controller: AbortController) {
+  private async checkpointProgress(root: string, job: PersistedJob) {
+    const [drafts, edits] = await Promise.all([
+      readJournal<JournalRecord>(join(root, "drafts.ndjson")),
+      readJournal<JournalRecord>(join(root, "edits.ndjson")),
+    ]);
+    return {
+      translated: new Set(drafts.map((record) => record.batchId)).size,
+      edited: new Set(edits.map((record) => record.batchId)).size,
+      total: job.progress.total,
+      failed: 0,
+    };
+  }
+
+  private async withCheckpointProgress(job: PersistedJob) {
+    if (!["paused", "failed", "needs_attention"].includes(job.status)) return job;
+    return {
+      ...job,
+      progress: await this.checkpointProgress(jobRoot(this.repo.dataDir, job.id), job),
+    };
+  }
+
+  private async execute(
+    id: string,
+    running: PersistedJob,
+    controller: AbortController,
+    recoverCompatibleCheckpoints = false,
+  ) {
     try {
       await this.emit(id, "execution_started", "Preparing translation workspace", {
         stage: running.stage,
@@ -467,6 +569,7 @@ export class JobOrchestrator {
           }
         },
         controller.signal,
+        recoverCompatibleCheckpoints,
       );
       if (controller.signal.aborted) throw controller.signal.reason;
       const current = await this.repo.get(id);

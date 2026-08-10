@@ -1,3 +1,4 @@
+import { parseAuditSegments } from "./audit-contract.js";
 import { buildPromptMessages } from "./prompts.js";
 import {
   ProviderError,
@@ -91,6 +92,26 @@ function normalizeResponseSegments(
   }) as ProviderResponse["segments"];
 }
 
+function preserveInputForEmptyEdits(
+  segments: ProviderResponse["segments"],
+  request: ProviderRequest,
+): ProviderResponse["segments"] {
+  if (request.mode !== "editing" && request.mode !== "repair") return segments;
+  return segments.map((segment, index) => {
+    if (typeof segment?.text !== "string" || segment.text.trim()) return segment;
+    const input = request.segments[index];
+    const fallback =
+      input && "draft" in input
+        ? input.draft
+        : input && "editedTranslation" in input
+          ? input.editedTranslation
+          : undefined;
+    return typeof fallback === "string" && fallback.length
+      ? { id: segment.id, text: fallback }
+      : segment;
+  });
+}
+
 function valueShape(value: unknown): string {
   if (value === null) return "null";
   if (Array.isArray(value)) return "array";
@@ -108,6 +129,77 @@ function responseFieldSummary(value: unknown): string | undefined {
     .join(", ");
 }
 
+function parseTransportBody(text: string): unknown {
+  const normalized = text.replace(/^\uFEFF/, "").trim();
+  try {
+    return JSON.parse(normalized);
+  } catch (initialError) {
+    const payloads = normalized
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trim())
+      .filter((line) => line && line !== "[DONE]");
+    if (payloads.length === 1) return JSON.parse(payloads[0]);
+    throw initialError;
+  }
+}
+
+function transportBodyShape(text: string, contentType: string | null) {
+  const trimmed = text.trimStart();
+  const form = trimmed.startsWith("<")
+    ? "markup"
+    : trimmed.startsWith("data:")
+      ? "event-stream"
+      : trimmed.startsWith("{") || trimmed.startsWith("[")
+        ? "truncated-json"
+        : trimmed
+          ? "plain-text"
+          : "empty";
+  return `content-type ${contentType ?? "missing"}, ${Buffer.byteLength(text)} bytes, ${form}`;
+}
+
+function parseStructuredContent(content: string): unknown {
+  const trimmed = content.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch (initialError) {
+    const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)?.[1];
+    if (fenced) return JSON.parse(fenced);
+    const firstBrace = trimmed.indexOf("{");
+    const lastBrace = trimmed.lastIndexOf("}");
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
+    }
+    throw initialError;
+  }
+}
+
+/**
+ * Audit responses are validated against their own schema, per segment. A segment whose
+ * issues are unusable is marked `invalid_issues` and the rest of the batch survives.
+ */
+function auditResponse(
+  parsed: unknown,
+  request: ProviderRequest,
+  transportIds: string[],
+  usage: ProviderResponse["usage"],
+  requestId?: string,
+): ProviderResponse {
+  const audited = parseAuditSegments(parsed, transportIds);
+  return {
+    segments: audited.map((segment, index) => ({
+      id: request.segments[index].id,
+      // Canonical serialization written here, never by the model; journals keep one shape.
+      text: JSON.stringify({ issues: segment.issues, auditError: segment.auditError }),
+      issues: segment.issues,
+    })),
+    finishReason: "stop",
+    usage,
+    requestId,
+  };
+}
+
 export class DeepSeekProvider implements LanguageModelProvider {
   async complete(request: ProviderRequest, signal?: AbortSignal): Promise<ProviderResponse> {
     if (!request.profile.apiKey) {
@@ -119,6 +211,8 @@ export class DeepSeekProvider implements LanguageModelProvider {
     // accumulate for the whole run. AbortSignal.any owns that wiring and releases it.
     const timeout = AbortSignal.timeout(request.profile.timeoutMs ?? 60000);
     const aborted = signal ? AbortSignal.any([signal, timeout]) : timeout;
+    let observedRequestId: string | undefined;
+    let observedUsage: ProviderResponse["usage"];
 
     try {
       const res = await fetch(request.profile.endpoint, {
@@ -137,7 +231,7 @@ export class DeepSeekProvider implements LanguageModelProvider {
         }),
         signal: aborted,
       });
-      const requestId = res.headers.get("x-request-id") ?? undefined;
+      observedRequestId = res.headers.get("x-request-id") ?? undefined;
       if (!res.ok) {
         if (res.status === 401 || res.status === 403 || res.status === 400) {
           throw new ProviderError(
@@ -153,43 +247,82 @@ export class DeepSeekProvider implements LanguageModelProvider {
         );
       }
 
+      const responseText = await res.text();
       let body: any;
       try {
-        body = await res.json();
+        body = parseTransportBody(responseText);
       } catch {
-        throw new ProviderError("invalid_response", "Provider returned invalid JSON");
+        throw new ProviderError(
+          "invalid_response",
+          `Provider returned invalid JSON (${transportBodyShape(
+            responseText,
+            res.headers.get("content-type"),
+          )})`,
+        );
       }
+      observedUsage = {
+        promptTokens: body.usage?.prompt_tokens,
+        cachedPromptTokens:
+          body.usage?.prompt_tokens_details?.cached_tokens ?? body.usage?.prompt_cache_hit_tokens,
+        completionTokens: body.usage?.completion_tokens,
+      };
       const content = body?.choices?.[0]?.message?.content;
       if (typeof content !== "string" || !content.trim()) {
-        throw new ProviderError("invalid_response", "Provider returned an empty response");
+        throw new ProviderError(
+          "invalid_response",
+          "Provider returned an empty response",
+          undefined,
+          observedUsage,
+          observedRequestId,
+        );
       }
 
       let parsed: any;
       try {
-        parsed = JSON.parse(content);
+        parsed = parseStructuredContent(content);
       } catch {
         throw new ProviderError(
           "invalid_response",
           "Provider returned malformed structured output",
+          undefined,
+          observedUsage,
+          observedRequestId,
         );
       }
 
-      try {
-        const validated = validateProviderResponse(
-          {
-            segments: normalizeResponseSegments(parsed.segments, request.mode),
-            finishReason: body.choices?.[0]?.finish_reason,
-            requestId,
-            usage: {
-              promptTokens: body.usage?.prompt_tokens,
-              cachedPromptTokens:
-                body.usage?.prompt_tokens_details?.cached_tokens ??
-                body.usage?.prompt_cache_hit_tokens,
-              completionTokens: body.usage?.completion_tokens,
-            },
-          },
-          transportRequest.segments,
+      if (request.mode === "audit") {
+        if (
+          !Array.isArray(parsed?.segments) ||
+          parsed.segments.length !== request.segments.length
+        ) {
+          throw new ProviderError(
+            "invalid_response",
+            `Audit response must contain ${request.segments.length} segments`,
+            undefined,
+            observedUsage,
+            observedRequestId,
+          );
+        }
+        return auditResponse(
+          parsed,
+          request,
+          transportRequest.segments.map((segment) => segment.id),
+          observedUsage,
+          observedRequestId,
         );
+      }
+
+      const candidate: ProviderResponse = {
+        segments: preserveInputForEmptyEdits(
+          normalizeResponseSegments(parsed.segments, request.mode),
+          transportRequest,
+        ),
+        finishReason: body.choices?.[0]?.finish_reason,
+        requestId: observedRequestId,
+        usage: observedUsage,
+      };
+      try {
+        const validated = validateProviderResponse(candidate, transportRequest.segments);
         return {
           ...validated,
           segments: validated.segments.map((segment, index) => ({
@@ -204,6 +337,16 @@ export class DeepSeekProvider implements LanguageModelProvider {
           `${error instanceof Error ? error.message : "Invalid provider response"}${
             fields ? ` (received fields: ${fields})` : ""
           }`,
+          undefined,
+          observedUsage,
+          observedRequestId,
+          {
+            ...candidate,
+            segments: candidate.segments.map((segment, index) => ({
+              ...segment,
+              id: request.segments[index]?.id ?? segment.id,
+            })),
+          },
         );
       }
     } catch (error) {

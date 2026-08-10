@@ -2,6 +2,42 @@ import yazl from "yazl";
 import { mkdir } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { dirname } from "node:path";
+async function writeZip(path: string, files: Record<string, string>) {
+  const zip = new yazl.ZipFile();
+  zip.addBuffer(Buffer.from("application/epub+zip"), "mimetype", { compress: false });
+  for (const [name, content] of Object.entries(files)) zip.addBuffer(Buffer.from(content), name);
+  await mkdir(dirname(path), { recursive: true });
+  await new Promise<void>((resolve, reject) => {
+    const stream = createWriteStream(path);
+    stream.on("error", reject).on("close", resolve);
+    zip.outputStream.pipe(stream);
+    zip.end();
+  });
+  return path;
+}
+
+/**
+ * Reproduces the Wicked Prayer markup: logical headings typeset as one `<span>` per word.
+ * Translating those spans independently is what produced "В пустыне пустыня".
+ */
+export async function buildFragmentedFixtureEpub(path: string) {
+  const spans = (words: string) =>
+    words
+      .split(" ")
+      .map((word) => `<span>${word}</span>`)
+      .join(" ");
+  return writeZip(path, {
+    "META-INF/container.xml": `<?xml version="1.0"?><container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>`,
+    "OEBPS/content.opf": `<package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Fragmented</dc:title><dc:language>en</dc:language></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/></manifest><spine toc="ncx"><itemref idref="chapter"/></spine></package>`,
+    "OEBPS/chapter.xhtml": `<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en"><body><h1>${spans(
+      "In the Desert",
+    )}</h1><h1>${spans("From the Land of the Farther Suns")}</h1><h1>${spans(
+      "Part 5 Little Birds of the Night",
+    )}</h1><p>He said <em>nothing</em> at all.</p></body></html>`,
+    "OEBPS/toc.ncx": `<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" xml:lang="en"><navMap><navPoint id="chapter"><navLabel><text>Part 2. In the Desert</text></navLabel><content src="chapter.xhtml"/></navPoint></navMap></ncx>`,
+  });
+}
+
 export async function buildFixtureEpub(path: string) {
   const zip = new yazl.ZipFile();
   zip.addBuffer(Buffer.from("application/epub+zip"), "mimetype", { compress: false });

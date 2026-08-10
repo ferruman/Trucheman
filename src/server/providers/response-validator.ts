@@ -7,7 +7,15 @@ export function validateProviderResponse(
 ): ProviderResponse {
   const result = providerResultSchema.safeParse({ segments: response.segments });
   if (!result.success) {
-    throw new Error("Provider response segments must contain string id and text fields");
+    const detail = result.error.issues
+      .slice(0, 3)
+      .map((issue) => `${issue.path.join(".") || "response"}: ${issue.message}`)
+      .join("; ");
+    throw new Error(
+      `Provider response segments must contain non-empty string id and text fields${
+        detail ? ` (${detail})` : ""
+      }`,
+    );
   }
   const parsed = result.data;
   const ids = expected.map((item) => item.id);

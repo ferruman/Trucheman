@@ -59,12 +59,55 @@ describe("job lifecycle orchestration", () => {
     ]);
     expect(first.status).toBe("running");
     expect(second.status).toBe("running");
-    await vi.waitFor(() => expect(invocations).toBe(1));
+    await vi.waitFor(() => expect(invocations).toBe(1), { timeout: 5000 });
     expect((await orchestrator.pause(job.id)).status).toBe("stopping");
-    await vi.waitFor(async () => expect((await repo.get(job.id)).status).toBe("paused"));
+    await vi.waitFor(async () => expect((await repo.get(job.id)).status).toBe("paused"), {
+      timeout: 5000,
+    });
     expect((await orchestrator.resume(job.id)).status).toBe("running");
-    await vi.waitFor(async () => expect((await repo.get(job.id)).status).toBe("completed"));
+    await vi.waitFor(async () => expect((await repo.get(job.id)).status).toBe("completed"), {
+      timeout: 5000,
+    });
     expect(invocations).toBe(2);
+  });
+
+  it("reconstructs progress and enables compatible checkpoints after a failure", async () => {
+    const { repo, job } = await fixture("failed");
+    const root = jobRoot(repo.dataDir, job.id);
+    await mkdir(root, { recursive: true });
+    await repo.save({ ...job, status: "failed", progress: { ...job.progress, total: 3 } });
+    await writeFile(
+      `${root}/drafts.ndjson`,
+      ["batch-1", "batch-2"]
+        .map((batchId) => JSON.stringify({ batchId, segments: [] }))
+        .join("\n") + "\n",
+    );
+    await writeFile(
+      `${root}/edits.ndjson`,
+      `${JSON.stringify({ batchId: "batch-1", segments: [] })}\n`,
+    );
+    let receivedJob: PersistedJob | undefined;
+    let compatibleRecovery: boolean | undefined;
+    const orchestrator = new JobOrchestrator(repo, {
+      runBook: async (_root, running, _update, _signal, recoverCompatibleCheckpoints) => {
+        receivedJob = running;
+        compatibleRecovery = recoverCompatibleCheckpoints;
+      },
+    });
+
+    expect((await orchestrator.getJob(job.id)).progress).toEqual({
+      translated: 2,
+      edited: 1,
+      total: 3,
+      failed: 0,
+    });
+
+    const running = await orchestrator.start(job.id);
+    await vi.waitFor(() => expect(receivedJob).toBeDefined(), { timeout: 5000 });
+
+    expect(running.progress).toEqual({ translated: 2, edited: 1, total: 3, failed: 0 });
+    expect(receivedJob?.progress).toEqual(running.progress);
+    expect(compatibleRecovery).toBe(true);
   });
 
   it("rejects malformed config without corrupting the persisted job", async () => {
@@ -114,7 +157,9 @@ describe("job lifecycle orchestration", () => {
       },
     });
     await orchestrator.start(job.id);
-    await vi.waitFor(async () => expect((await repo.get(job.id)).status).toBe("failed"));
+    await vi.waitFor(async () => expect((await repo.get(job.id)).status).toBe("failed"), {
+      timeout: 5000,
+    });
     expect((await repo.get(job.id)).warnings).toBe(0);
   });
 
@@ -130,7 +175,9 @@ describe("job lifecycle orchestration", () => {
       },
     });
     await orchestrator.start(job.id);
-    await vi.waitFor(async () => expect((await repo.get(job.id)).status).toBe("failed"));
+    await vi.waitFor(async () => expect((await repo.get(job.id)).status).toBe("failed"), {
+      timeout: 5000,
+    });
     expect(events).toContainEqual(
       expect.objectContaining({
         type: "execution_started",

@@ -23,7 +23,7 @@ describe("provider response validation", () => {
       validateProviderResponse({ segments: [{ id: "a", draft: "ok" }] as never }, [
         { id: "a", text: "source" },
       ]),
-    ).toThrow("Provider response segments must contain string id and text fields");
+    ).toThrow("Provider response segments must contain non-empty string id and text fields");
   });
 
   it("rejects truncated responses", () => {

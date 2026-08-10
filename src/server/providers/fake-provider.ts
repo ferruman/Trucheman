@@ -20,10 +20,19 @@ export class FakeProvider implements LanguageModelProvider {
   async complete(request: ProviderRequest): Promise<ProviderResponse> {
     this.requests.push(structuredClone(request));
     return {
-      segments: request.segments.map((segment) => ({
-        id: segment.id,
-        text: this.transform(inputText(segment), request.mode),
-      })),
+      segments: request.segments.map((segment) => {
+        const text = this.transform(inputText(segment), request.mode);
+        if (request.mode !== "audit") return { id: segment.id, text };
+        const issues = (() => {
+          try {
+            const parsed = JSON.parse(text);
+            return Array.isArray(parsed?.issues) ? parsed.issues : [];
+          } catch {
+            return [];
+          }
+        })();
+        return { id: segment.id, text, issues };
+      }),
       finishReason: "stop",
       usage: {
         promptTokens: request.segments.reduce(

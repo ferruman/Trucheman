@@ -4,7 +4,7 @@ import { join, posix } from "node:path";
 import { extractEpub } from "./extract.js";
 import { parseContainer, parsePackage } from "./package-parser.js";
 import { resolveEpubPath } from "./validate.js";
-import { parseXml } from "./xml-dom.js";
+import { localName, parseXml } from "./xml-dom.js";
 
 type AuditDocument = {
   id: string;
@@ -12,6 +12,45 @@ type AuditDocument = {
   lang?: string;
   xmlLang?: string;
 };
+
+const stemWordPattern = /[\p{L}\p{M}]{4,}/gu;
+
+/**
+ * Adjacent words sharing a stem — "В пустыне пустыня", "Из земли Земля". Repairing a
+ * fragmented heading one span at a time produced exactly this shape.
+ */
+export function duplicatedFragments(text: string): string[] {
+  const words = [...text.toLocaleLowerCase().matchAll(stemWordPattern)];
+  const found: string[] = [];
+  for (let index = 1; index < words.length; index++) {
+    const previous = words[index - 1];
+    const current = words[index];
+    const between = text.slice((previous.index ?? 0) + previous[0].length, current.index ?? 0);
+    if (/[\p{L}\p{N}]/u.test(between)) continue;
+    let common = 0;
+    while (
+      common < Math.min(previous[0].length, current[0].length) &&
+      previous[0][common] === current[0][common]
+    ) {
+      common++;
+    }
+    if (common >= 4) found.push(`${previous[0]} ${current[0]}`);
+  }
+  return [...new Set(found)];
+}
+
+/**
+ * A table-of-contents label is a single short phrase: any repeated stem in it is
+ * corruption, even when the repeats are not adjacent ("… ночи Эпилог Ночи").
+ */
+export function repeatedStems(text: string): string[] {
+  const stems = new Map<string, string[]>();
+  for (const match of text.toLocaleLowerCase().matchAll(stemWordPattern)) {
+    const stem = match[0].slice(0, 5);
+    stems.set(stem, [...(stems.get(stem) ?? []), match[0]]);
+  }
+  return [...stems.values()].filter((words) => words.length > 1).map((words) => words.join(" "));
+}
 
 const capitalizedWordPattern = /(?<![\p{L}\p{N}])[А-ЯЁ][а-яё]{2,}/gu;
 const russianStopWords = new Set([
@@ -31,7 +70,7 @@ const russianStopWords = new Set([
   "Все",
 ]);
 
-function distance(left: string, right: string) {
+export function distance(left: string, right: string) {
   const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
   for (let leftIndex = 1; leftIndex <= left.length; leftIndex++) {
     const current = [leftIndex];
@@ -47,7 +86,7 @@ function distance(left: string, right: string) {
   return previous[right.length];
 }
 
-function nameClusters(text: string) {
+export function nameClusters(text: string) {
   const counts = new Map<string, number>();
   for (const match of text.matchAll(capitalizedWordPattern)) {
     const word = match[0];
@@ -91,6 +130,7 @@ export function analyzeEpubConsistency(
   documents: AuditDocument[],
   packageLanguage: string | undefined,
   expectedLanguage = "ru",
+  tocLabels: string[] = [],
 ) {
   const text = documents.map((document) => document.text).join("\n");
   const quoteDocuments = documents.map((document) => ({
@@ -151,6 +191,18 @@ export function analyzeEpubConsistency(
     warnings.push("Possible ё drift: a 4000-character Russian window contains no ё");
   const clusters = nameClusters(text);
   if (clusters.length) warnings.push(`${clusters.length} possible capitalized-name cluster(s)`);
+  const emptyDocuments = documents.filter((document) => !document.text.trim()).map((d) => d.id);
+  for (const id of emptyDocuments) warnings.push(`${id}: translated document is empty`);
+  const duplicates = documents.flatMap((document) =>
+    duplicatedFragments(document.text).map((fragment) => ({ id: document.id, fragment })),
+  );
+  for (const duplicate of duplicates)
+    warnings.push(`${duplicate.id}: duplicated fragment "${duplicate.fragment}"`);
+  const toc = tocLabels.map((label) => ({ label, duplicates: repeatedStems(label) }));
+  for (const entry of toc.filter((item) => item.duplicates.length))
+    warnings.push(`Table of contents entry is corrupted: "${entry.label}"`);
+  const emptyTocLabels = tocLabels.filter((label) => !label.trim()).length;
+  if (emptyTocLabels) warnings.push(`${emptyTocLabels} empty table-of-contents label(s)`);
   if (hyphenStreet.length && wordStreet.length)
     warnings.push("Mixed Russian street-name conventions (-стрит and улица + name)");
   if (
@@ -171,6 +223,9 @@ export function analyzeEpubConsistency(
       quotes: quoteDocuments,
       yo: { documents: yoDocuments, windows: yoWindows },
       capitalizedNameClusters: clusters,
+      duplicatedFragments: duplicates,
+      emptyDocuments,
+      tableOfContents: toc,
       streetSuffixes: { hyphenStreet, wordStreet },
       coordinates: coordinateMatches,
       language: { packageLanguage, documents: languageDocuments },
@@ -184,7 +239,21 @@ export async function auditExtractedEpub(root: string, expectedLanguage = "ru") 
   const packageFile = resolveEpubPath(root, packagePath);
   const pkg = parsePackage(await readFile(packageFile, "utf8"), packagePath);
   const documents: AuditDocument[] = [];
+  const tocLabels: string[] = [];
   for (const [id, item] of pkg.manifest) {
+    if (/x-dtbncx/i.test(item.mediaType)) {
+      // The NCX navMap is the authoritative source for table-of-contents labels.
+      const ncx = parseXml(
+        await readFile(resolveEpubPath(root, item.href, posix.dirname(packagePath))),
+      );
+      const collect = (node: any) => {
+        if (node.nodeType === 1 && localName(node) === "navLabel")
+          tocLabels.push((node.textContent ?? "").replace(/\s+/g, " ").trim());
+        for (let child = node.firstChild; child; child = child.nextSibling) collect(child);
+      };
+      collect(ncx.documentElement);
+      continue;
+    }
     if (!/xhtml|html/i.test(item.mediaType)) continue;
     const path = resolveEpubPath(root, item.href, posix.dirname(packagePath));
     const dom = parseXml(await readFile(path));
@@ -197,7 +266,7 @@ export async function auditExtractedEpub(root: string, expectedLanguage = "ru") 
       xmlLang: html.getAttribute("xml:lang") ?? undefined,
     });
   }
-  return analyzeEpubConsistency(documents, pkg.language, expectedLanguage);
+  return analyzeEpubConsistency(documents, pkg.language, expectedLanguage, tocLabels);
 }
 
 export async function auditEpubArchive(archivePath: string, expectedLanguage = "ru") {

@@ -94,7 +94,7 @@ describe("provider prompt contract", () => {
     expect(prompt).toContain("translate its meaning and rhetorical function");
     expect(prompt).toContain("Would a skilled native-language literary writer plausibly phrase");
     expect(prompt).toContain('Every element must contain exactly two keys: "id" and "text"');
-    expect(prompt).toContain('"text" must always be a JSON string');
+    expect(prompt).toContain('"text" must always be a non-empty JSON string');
     expect(prompt).toContain(
       '{"segments":[{"id":"s0001","text":"First result."},{"id":"s0002","text":"Second result."}]}',
     );
@@ -152,7 +152,10 @@ describe("provider prompt contract", () => {
 
     expect(auditPrompt).toContain("do not rewrite it");
     expect(auditPrompt).toContain("Do not flag a passage merely because another stylistic wording");
-    expect(auditPayload.promptVersion).toBe("selective-quality-v1");
+    expect(auditPayload.promptVersion).toBe("selective-quality-v2");
+    expect(auditPayload.responseContract.segmentKeys).toEqual(["id", "issues"]);
+    // The critic must never be asked to escape a JSON document inside a string again.
+    expect(auditPrompt).toContain("never JSON encoded inside a string");
     expect(auditPayload.segments[0]).toEqual(auditSegment);
     expect(repairPrompt).toContain("Fix every listed issue");
     expect(repairPrompt).toContain("Do not rewrite passages merely to make them different");
@@ -211,5 +214,13 @@ describe("provider prompt contract", () => {
         { id: "s1", text: "Hello" },
       ]),
     ).toThrow("IDs do not exactly match");
+  });
+
+  it("reports the exact invalid response field", () => {
+    expect(() =>
+      validateProviderResponse({ segments: [{ id: "s1", text: "" }] }, [
+        { id: "s1", text: "Hello" },
+      ]),
+    ).toThrow("segments.0.text");
   });
 });

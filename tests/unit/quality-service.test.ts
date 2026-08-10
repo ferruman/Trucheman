@@ -4,6 +4,7 @@ import {
   buildQualityAuditSegments,
   buildRepairSegments,
   parseQualityFindings,
+  reviewRepair,
 } from "../../src/server/jobs/quality-service.js";
 
 describe("selective literary quality service", () => {
@@ -72,16 +73,81 @@ describe("selective literary quality service", () => {
     });
     expect(
       applySelectiveRepairs(edited, [{ id: "s1", text: "Когда знания сложатся воедино" }]),
-    ).toEqual([
-      { id: "s1", text: "Когда знания сложатся воедино" },
-      { id: "s2", text: "И так хорошо" },
+    ).toEqual({
+      segments: [
+        { id: "s1", text: "Когда знания сложатся воедино" },
+        { id: "s2", text: "И так хорошо" },
+      ],
+      rejected: [],
+    });
+  });
+
+  it("rejects a repair that duplicates a fragment of the block it repaired", () => {
+    // The production regression: repairing the fragmented heading "In / the / Desert".
+    const result = applySelectiveRepairs(
+      [{ id: "h1", text: "В пустыне" }],
+      [{ id: "h1", text: "В пустыне пустыня" }],
+    );
+
+    expect(result.segments).toEqual([{ id: "h1", text: "В пустыне" }]);
+    expect(result.rejected).toEqual([
+      { id: "h1", reason: "repair duplicates an adjacent fragment" },
     ]);
   });
 
-  it("rejects malformed critic output instead of treating it as a clean audit", () => {
-    const inputs = buildQualityAuditSegments(original, initial, edited);
-    expect(() => parseQualityFindings(inputs, [{ id: "s1", text: "not json" }])).toThrow(
-      "malformed JSON",
+  it("rejects empty, source-language, quote-breaking, and structure-changing repairs", () => {
+    const cases = [
+      { edited: "Хороший текст", repaired: "   ", reason: "empty repair" },
+      {
+        edited: "Из страны дальних солнц",
+        repaired: "Из земли Земля из the Farther Suns",
+        reason: "repair duplicates an adjacent fragment",
+      },
+      {
+        edited: "Он сказал так",
+        repaired: "Он сказал the word",
+        reason: "repair introduces source-language residue",
+      },
+      {
+        edited: "Он сказал «да» тихо",
+        repaired: "Он сказал «да тихо",
+        reason: "repair unbalances guillemets",
+      },
+      {
+        edited: "Ночные пташки",
+        repaired: "Ночные пташки, которые летают в темноте над безмолвным городом каждую ночь",
+        reason: "repair changes the block structure",
+      },
+    ];
+
+    for (const { edited: text, repaired, reason } of cases) {
+      expect(reviewRepair(text, repaired), `${text} → ${repaired}`).toBe(reason);
+      expect(applySelectiveRepairs([{ id: "s", text }], [{ id: "s", text: repaired }])).toEqual({
+        segments: [{ id: "s", text }],
+        rejected: [{ id: "s", reason }],
+      });
+    }
+  });
+
+  it("accepts a genuine repair and never changes segment ids or count", () => {
+    const result = applySelectiveRepairs(edited, [
+      { id: "s1", text: "Когда знания сложатся воедино" },
+      { id: "unknown", text: "не должен появиться" },
+    ]);
+
+    expect(reviewRepair("Соединение разрознённых знаний", "Когда знания сложатся воедино")).toBe(
+      undefined,
     );
+    expect(result.segments.map((segment) => segment.id)).toEqual(["s1", "s2"]);
+    expect(result.rejected).toEqual([]);
+  });
+
+  it("quarantines malformed critic output without sending it to repair", () => {
+    const inputs = buildQualityAuditSegments(original, initial, edited);
+    const findings = parseQualityFindings(inputs, [{ id: "s1", text: "not json" }]);
+    expect(findings).toEqual([
+      { id: "s1", issues: [], rejectedIssues: 0, auditError: "malformed_json" },
+    ]);
+    expect(buildRepairSegments(inputs, findings)).toEqual([]);
   });
 });
