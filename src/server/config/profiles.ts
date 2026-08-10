@@ -9,6 +9,8 @@ export type ResolvedProfiles = {
   useExternal: boolean;
   /** Opt-in second critic pass over repaired blocks. Off unless explicitly enabled. */
   postRepairAudit: boolean;
+  /** Batches translated at once. The ceiling is the provider's rate limit, not ours. */
+  concurrency: number;
   translation: ProviderProfile;
   editing: ProviderProfile;
   critic: ProviderProfile;
@@ -25,6 +27,17 @@ function thinkingMode(
     throw new Error(`${variable} must be enabled or disabled`);
   }
   return configured;
+}
+
+const DEFAULT_CONCURRENCY = 4;
+const MAX_CONCURRENCY = 16;
+
+function batchConcurrency(value: string | undefined): number {
+  if (value === undefined || value.trim() === "") return DEFAULT_CONCURRENCY;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_CONCURRENCY)
+    throw new Error(`BOOK_TRANSLATOR_CONCURRENCY must be an integer from 1 to ${MAX_CONCURRENCY}`);
+  return parsed;
 }
 
 export function defaultEditingPromptVersion(model: string): ProviderProfile["promptVersion"] {
@@ -64,6 +77,7 @@ export function resolveProfiles(
   return {
     useExternal,
     postRepairAudit: env.BOOK_TRANSLATOR_POST_REPAIR_AUDIT === "1",
+    concurrency: batchConcurrency(secrets.concurrency ?? env.BOOK_TRANSLATOR_CONCURRENCY),
     translation,
     editing: {
       name: useExternal ? "deepseek-editing" : "deterministic-local",

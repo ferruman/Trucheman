@@ -16,6 +16,7 @@ export type SecretStore = Readonly<{
   consistencyModel?: string;
   consistencyThinking?: string;
   editingPromptVersion?: string;
+  concurrency?: string;
 }>;
 export function loadSecrets(path?: string): SecretStore {
   let text = "";
@@ -51,5 +52,6 @@ export function loadSecrets(path?: string): SecretStore {
     consistencyModel: values.BOOK_TRANSLATOR_CONSISTENCY_MODEL || undefined,
     consistencyThinking: values.BOOK_TRANSLATOR_CONSISTENCY_THINKING || undefined,
     editingPromptVersion: values.BOOK_TRANSLATOR_EDITING_PROMPT_VERSION || undefined,
+    concurrency: values.BOOK_TRANSLATOR_CONCURRENCY || undefined,
   });
 }

@@ -562,42 +562,50 @@ export class JobOrchestrator {
       await this.emit(id, "execution_started", "Preparing translation workspace", {
         stage: running.stage,
       });
+      // Each patch is a read-modify-write of the whole job. Batches run concurrently, so
+      // without this chain two interleaved patches can drop the later progress count.
+      let pending: Promise<void> = Promise.resolve();
+      const applyPatch = async (patch: Partial<PersistedJob>) => {
+        if (controller.signal.aborted) return;
+        const current = await this.repo.get(id);
+        if (current.status !== "running") return;
+        const next = {
+          ...current,
+          ...patch,
+          status: "running" as const,
+          updatedAt: new Date().toISOString(),
+        };
+        await this.repo.save(next);
+        if (patch.stage && patch.stage !== current.stage)
+          await this.emit(id, "stage_changed", `Stage: ${patch.stage}`, { stage: patch.stage });
+        if (
+          patch.progress &&
+          (patch.progress.translated !== current.progress.translated ||
+            patch.progress.edited !== current.progress.edited)
+        ) {
+          const phase = patch.stage ?? current.stage;
+          const completed = phase === "editing" ? patch.progress.edited : patch.progress.translated;
+          await this.emit(
+            id,
+            "progress",
+            `${phase} progress: ${completed}/${patch.progress.total}`,
+            {
+              stage: phase,
+              completed,
+              total: patch.progress.total,
+              failed: patch.progress.failed,
+            },
+          );
+        }
+      };
       const outcome = await this.runBook(
         jobRoot(this.repo.dataDir, id),
         running,
-        async (patch) => {
-          if (controller.signal.aborted) return;
-          const current = await this.repo.get(id);
-          if (current.status !== "running") return;
-          const next = {
-            ...current,
-            ...patch,
-            status: "running" as const,
-            updatedAt: new Date().toISOString(),
-          };
-          await this.repo.save(next);
-          if (patch.stage && patch.stage !== current.stage)
-            await this.emit(id, "stage_changed", `Stage: ${patch.stage}`, { stage: patch.stage });
-          if (
-            patch.progress &&
-            (patch.progress.translated !== current.progress.translated ||
-              patch.progress.edited !== current.progress.edited)
-          ) {
-            const phase = patch.stage ?? current.stage;
-            const completed =
-              phase === "editing" ? patch.progress.edited : patch.progress.translated;
-            await this.emit(
-              id,
-              "progress",
-              `${phase} progress: ${completed}/${patch.progress.total}`,
-              {
-                stage: phase,
-                completed,
-                total: patch.progress.total,
-                failed: patch.progress.failed,
-              },
-            );
-          }
+        (patch) => {
+          const applied = pending.then(() => applyPatch(patch));
+          // A failed patch is the caller's to handle; the chain itself keeps going.
+          pending = applied.catch(() => {});
+          return applied;
         },
         controller.signal,
         recoverCompatibleCheckpoints,

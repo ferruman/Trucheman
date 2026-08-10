@@ -44,6 +44,13 @@ export type RunnerOptions = {
    * carry a high-severity issue. Off by default: it is a second paid critic pass.
    */
   postRepairAudit?: boolean;
+  /**
+   * Batches in flight at once. Batches are independent — no context crosses them and the
+   * consistency pass runs after all of them — so this is pure wall-clock, bounded by the
+   * provider's rate limit rather than by anything here. Defaults to one: callers that want
+   * the speed opt in, so a plain run stays in book order.
+   */
+  concurrency?: number;
   recoverCompatibleCheckpoints?: boolean;
   onStage?: (stage: RunnerStage, batch: Batch) => Promise<void> | void;
   onProgress?: (stage: RunnerStage, batch: Batch, cached: boolean) => Promise<void> | void;
@@ -185,10 +192,12 @@ export async function runTwoPass(
   const repairsByBatch = checkpointBatchMap(repairJournal);
   const drafts = new Map<string, ProviderSegment[]>(),
     edits = new Map<string, ProviderSegment[]>();
+  // Both are indexed by batch position: a parallel run finishes out of order, and the quality
+  // report has to read in book order regardless of who finished first.
   const qualityFindings: Array<{ batchId: string; findings: QualityFinding[] }> = [];
-  const rejectedRepairs: Array<RepairRejection & { batchId: string }> = [];
+  const rejectedRepairsByBatch: Array<Array<RepairRejection & { batchId: string }>> = [];
   const cachedCheckpoints = { translation: 0, editing: 0, audit: 0, repair: 0 };
-  for (const batch of batches) {
+  const runBatch = async (batch: Batch, index: number) => {
     throwIfAborted(options.signal);
     const request = batch.segments.map((s) => ({ id: s.id, text: s.text }));
     const expectedDraftKey = checkpointKey(
@@ -314,7 +323,7 @@ export async function runTwoPass(
           profile: criticProfile.name,
         });
       }
-      qualityFindings.push({ batchId: batch.id, findings });
+      qualityFindings[index] = { batchId: batch.id, findings };
       if (savedAudit) cachedCheckpoints.audit++;
       await options.onProgress?.("audit", batch, Boolean(savedAudit));
       const repairSegments = buildRepairSegments(auditSegments, findings);
@@ -359,8 +368,10 @@ export async function runTwoPass(
         const beforeRepair = editedSegments;
         const reviewed = applySelectiveRepairs(editedSegments, repairs);
         editedSegments = reviewed.segments;
-        for (const rejection of reviewed.rejected)
-          rejectedRepairs.push({ batchId: batch.id, ...rejection });
+        rejectedRepairsByBatch[index] = reviewed.rejected.map((rejection) => ({
+          batchId: batch.id,
+          ...rejection,
+        }));
         if (savedRepair) cachedCheckpoints.repair++;
         await options.onProgress?.("repair", batch, Boolean(savedRepair));
         if (options.postRepairAudit) {
@@ -377,7 +388,26 @@ export async function runTwoPass(
       }
     }
     edits.set(batch.id, editedSegments);
-  }
+  };
+  const queue = batches.entries();
+  let failed = false;
+  await Promise.all(
+    Array.from({ length: Math.max(1, Math.trunc(options.concurrency ?? 1)) }, async () => {
+      // A shared iterator is the work queue: whoever finishes a batch takes the next one.
+      for (const [index, batch] of queue) {
+        // One failed batch fails the run, so the other workers must stop claiming new ones
+        // instead of paying for the rest of the book.
+        if (failed) return;
+        try {
+          await runBatch(batch, index);
+        } catch (error) {
+          failed = true;
+          throw error;
+        }
+      }
+    }),
+  );
+  const rejectedRepairs = rejectedRepairsByBatch.flat();
   if (options.qualityMode === "high") {
     const allFindings = qualityFindings.flatMap(({ batchId, findings }) =>
       findings.map((finding) => ({ batchId, ...finding })),

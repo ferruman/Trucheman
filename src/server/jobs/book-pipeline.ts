@@ -124,6 +124,7 @@ export async function runPreparedBook(
   const {
     useExternal: resolvedUseExternal,
     postRepairAudit,
+    concurrency,
     translation: translationProfile,
     editing: editingProfile,
     critic: criticProfile,
@@ -177,6 +178,7 @@ export async function runPreparedBook(
     glossary,
     qualityMode: job.qualityMode,
     postRepairAudit: job.qualityMode === "high" && postRepairAudit,
+    concurrency,
     signal,
     recoverCompatibleCheckpoints,
     onStage: async (stage, batch) => {

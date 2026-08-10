@@ -56,6 +56,19 @@ describe("settings API boundary", () => {
     expect(resolveProfiles({ BOOK_TRANSLATOR_POST_REPAIR_AUDIT: "1" }).postRepairAudit).toBe(true);
   });
 
+  it("rejects a batch concurrency a run could not honour instead of silently defaulting", () => {
+    expect(resolveProfiles({}, {}).concurrency).toBe(4);
+    expect(resolveProfiles({ BOOK_TRANSLATOR_CONCURRENCY: "8" }, {}).concurrency).toBe(8);
+    // The .env file wins over the ambient environment, like every other setting here.
+    expect(
+      resolveProfiles({ BOOK_TRANSLATOR_CONCURRENCY: "8" }, { concurrency: "2" }).concurrency,
+    ).toBe(2);
+    for (const value of ["0", "-1", "2.5", "many", "99"])
+      expect(() => resolveProfiles({ BOOK_TRANSLATOR_CONCURRENCY: value }, {})).toThrow(
+        /BOOK_TRANSLATOR_CONCURRENCY/,
+      );
+  });
+
   it("selects the evaluated editor prompt for Terra without changing other model defaults", () => {
     expect(defaultEditingPromptVersion("gpt-5.6-terra")).toBe("literary-v3.2.1");
     expect(defaultEditingPromptVersion("openai/gpt-5.6-terra")).toBe("literary-v3.2.1");

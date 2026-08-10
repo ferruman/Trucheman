@@ -175,6 +175,88 @@ describe("two-pass pipeline", () => {
     },
   );
 
+  it("runs batches concurrently without tearing the journals", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-concurrent-`);
+    const profile = { name: "fake", endpoint: "local", model: "fake" };
+    // Long text: a torn append is only possible once a record no longer lands in one write.
+    const filler = "Sentence text. ".repeat(4000);
+    const batches = Array.from({ length: 12 }, (_, index) => ({
+      id: `document-1-batch-${index + 1}`,
+      documentId: "document-1",
+      segments: [{ ...segment, id: `document-1:${index}`, text: `${index} ${filler}` }],
+    }));
+    let inFlight = 0,
+      peak = 0;
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        peak = Math.max(peak, ++inFlight);
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          return {
+            segments: request.segments.map((item) => ({ id: item.id, text: `перевод ${item.id}` })),
+            finishReason: "stop",
+          };
+        } finally {
+          inFlight--;
+        }
+      },
+    };
+
+    const result = await runTwoPass(batches, provider, {
+      root,
+      translationProfile: profile,
+      editingProfile: profile,
+      concurrency: 4,
+      ...languages,
+    });
+
+    expect(peak).toBeGreaterThan(1);
+    expect(result.edits.size).toBe(batches.length);
+    // readJournal stops at the first unparseable line, so a torn record shows up as a short read.
+    for (const journal of ["drafts", "edits"]) {
+      const lines = (await readFile(`${root}/${journal}.ndjson`, "utf8"))
+        .split("\n")
+        .filter(Boolean);
+      expect(lines.map((line) => JSON.parse(line).batchId).sort()).toEqual(
+        batches.map((batch) => batch.id).sort(),
+      );
+    }
+  });
+
+  it("stops claiming batches once one of them fails", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-concurrent-failure-`);
+    const profile = { name: "fake", endpoint: "local", model: "fake" };
+    const batches = Array.from({ length: 40 }, (_, index) => ({
+      id: `document-1-batch-${index + 1}`,
+      documentId: "document-1",
+      segments: [{ ...segment, id: `document-1:${index}`, text: `Sentence ${index}.` }],
+    }));
+    let calls = 0;
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        if (++calls === 5) throw new ProviderError("configuration", "Key rejected");
+        return {
+          segments: request.segments.map((item) => ({ id: item.id, text: "перевод" })),
+          finishReason: "stop",
+        };
+      },
+    };
+
+    await expect(
+      runTwoPass(batches, provider, {
+        root,
+        translationProfile: profile,
+        editingProfile: profile,
+        concurrency: 4,
+        ...languages,
+      }),
+    ).rejects.toThrow("Key rejected");
+
+    // The workers already in flight finish their batch; nobody picks up the remaining 30-odd.
+    expect(calls).toBeLessThan(batches.length);
+  });
+
   it("reverts a repair the optional second audit still calls broken", async () => {
     const root = await mkdtemp(`${tmpdir()}/book-post-repair-audit-`);
     const audits: number[] = [];
