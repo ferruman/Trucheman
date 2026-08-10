@@ -13,6 +13,7 @@ import {
 import { parseXml, serializeXml } from "../epub/xml-dom.js";
 import { buildEpub } from "../epub/build.js";
 import { auditEpubArchive } from "../epub/consistency-audit.js";
+import { epubCheckErrors, runOptionalEpubCheck } from "../epub/epubcheck.js";
 import { resolveEpubPath, validateEpubArchive } from "../epub/validate.js";
 import { updateContentLanguage, updatePackageLanguage } from "../epub/localization.js";
 import type { LanguageModelProvider } from "../providers/provider.js";
@@ -303,6 +304,14 @@ export async function runPreparedBook(
     const outputAudit = await auditEpubArchive(temporary, targetLanguage.tag);
     await atomicJson(join(root, "output-consistency-audit.json"), outputAudit);
     report.warnings.push(...outputAudit.warnings);
+    // Conformance gate, when EPUBCheck is installed. It reports, it does not reject: a book
+    // whose source was already non-conformant would otherwise be untranslatable here.
+    // A minute is enough for a novel; a hang must not hold the job at 99%.
+    const epubCheck = await runOptionalEpubCheck(temporary, 120000);
+    if (!epubCheck.ok) {
+      await writeFile(join(root, "epubcheck.txt"), epubCheck.output);
+      report.warnings.push(...epubCheckErrors(epubCheck.output));
+    }
     await rename(temporary, output);
     await syncParentDirectory(output);
     // The book is built, but a failed consistency pass means it shipped unresolved name

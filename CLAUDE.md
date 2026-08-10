@@ -61,7 +61,7 @@ Local-first EPUB translator. Express + React (Vite), everything on the local fil
 4. Style profile + entity registry passes (external providers only). The style profile (`style-profile-service.ts`) is one cached preflight call over passages sampled across the book; its block is appended to the job instructions, so it reaches every stage and every checkpoint key. The registry is merged with the user glossary, user entries winning.
 5. `runTwoPass` (`job-runner.ts`) — per batch: translate, then edit, appending to `drafts.ndjson` / `edits.ndjson`.
 6. Consistency: mechanical normalization (`ё`, «ёлочки» — Russian targets only), evidence report, model-driven conflict resolution where **the model returns decisions and code applies the replacements**, then `consistency-report.json`.
-7. Reinsert edited text, rewrite language tags in content + package, build to a `.tmp`, `fsync`, validate, audit, and only then `rename` into `output.epub`.
+7. Reinsert edited text, rewrite language tags in content + package, build to a `.tmp`, `fsync`, validate, audit, run EPUBCheck when it is installed (report-only: errors become job warnings and `epubcheck.txt`, never a failure), and only then `rename` into `output.epub`.
 
 A text node larger than the batch budget is split across batches, and the chunks carry `<segment id>#<n>` ids so they stay distinct through the journals; `mergeChunkedSegments` rejoins them before step 6. Reusing the bare id there collapsed the pieces in the id-keyed reinsertion map and silently dropped everything but the last chunk, so keep chunk ids distinct if you touch `batcher.ts`.
 
