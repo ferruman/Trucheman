@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DeepSeekProvider } from "../../src/server/providers/deepseek.js";
+import { DeepSeekProvider, retryAfterMs } from "../../src/server/providers/deepseek.js";
 import { ProviderError } from "../../src/server/providers/provider.js";
 
 const languages = {
@@ -350,5 +350,56 @@ describe("DeepSeek provider", () => {
     });
 
     expect(response.segments).toEqual([{ id: "document-1:0", text: "Привет" }]);
+  });
+
+  it("reads Retry-After as seconds or a date and ignores what it cannot honour", () => {
+    const now = Date.parse("2026-08-10T12:00:00Z");
+    expect(retryAfterMs("2", now)).toBe(2000);
+    expect(retryAfterMs("2026-08-10T12:00:30Z", now)).toBe(30_000);
+    expect(retryAfterMs(null, now)).toBeUndefined();
+    expect(retryAfterMs("0", now)).toBeUndefined();
+    expect(retryAfterMs("soon", now)).toBeUndefined();
+    // Past dates and pauses longer than the cap fall back to the caller's own backoff.
+    expect(retryAfterMs("2026-08-10T11:59:00Z", now)).toBeUndefined();
+    expect(retryAfterMs("3600", now)).toBeUndefined();
+  });
+
+  it("holds every concurrent request back for the Retry-After a 429 asked for", async () => {
+    const calls: number[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        calls.push(Date.now());
+        if (calls.length === 1)
+          return new Response("rate limited", { status: 429, headers: { "retry-after": "1" } });
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: { content: '{"segments":[{"id":"s0001","text":"Привет"}]}' },
+                finish_reason: "stop",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }),
+    );
+
+    // One provider instance serves every worker, so the cooldown is shared.
+    const provider = new DeepSeekProvider();
+    const request = {
+      profile: { name: "x", endpoint: "https://provider.test", model: "x", apiKey: "secret" },
+      mode: "translation" as const,
+      ...languages,
+      segments: [{ id: "document-1:0", text: "Hello" }],
+    };
+
+    await expect(provider.complete(request)).rejects.toMatchObject({ kind: "temporary" });
+    // A second worker that never saw the 429 still waits it out.
+    await provider.complete(request);
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1] - calls[0]).toBeGreaterThanOrEqual(900);
   });
 });

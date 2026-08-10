@@ -21,7 +21,7 @@ import { DeepSeekProvider } from "../providers/deepseek.js";
 import { resolveProfiles } from "../config/profiles.js";
 import { targetLanguageProfile } from "../config/target-language.js";
 import { LANGUAGES } from "../../shared/languages.js";
-import { runTwoPass } from "./job-runner.js";
+import { runTwoPass, type RunnerStage } from "./job-runner.js";
 import { UsageTrackingProvider } from "./usage-service.js";
 import type { PersistedJob } from "../domain/job.js";
 import { atomicJson, syncParentDirectory } from "../storage/atomic-file.js";
@@ -32,6 +32,7 @@ import {
   type ConsistencyDocument,
   type GlossaryEntry,
 } from "./consistency-service.js";
+import { formatStyleProfile, resolveStyleProfile } from "./style-profile-service.js";
 
 export type PreparedDocument = {
   id: string;
@@ -135,10 +136,33 @@ export async function runPreparedBook(
     overrides?.provider ?? (resolvedUseExternal ? new DeepSeekProvider() : new FakeProvider()),
     root,
   );
-  const instructions = job.instructions.trim();
   const sourceLanguage = providerLanguage(job.sourceLanguage),
     targetLanguage = providerLanguage(job.targetLanguage);
+  const sourceDocuments = prepared.documents.map((document) => ({
+    id: document.id,
+    sourceSegments: document.units,
+    editedSegments: [],
+  }));
   const consistencyErrors: string[] = [];
+  let styleBlock = "";
+  if (useExternal) {
+    try {
+      const styleProfile = await resolveStyleProfile(
+        provider,
+        consistencyProfile,
+        sourceLanguage,
+        targetLanguage,
+        sourceDocuments,
+        root,
+        signal,
+      );
+      styleBlock = styleProfile ? formatStyleProfile(styleProfile) : "";
+    } catch (error) {
+      // Advisory: a book without a style profile still translates. Pausing must still pause.
+      if (signal?.aborted) throw error;
+    }
+  }
+  const instructions = [job.instructions.trim(), styleBlock].filter(Boolean).join("\n\n");
   let generatedGlossary: GlossaryEntry[] = [];
   if (useExternal) {
     try {
@@ -147,11 +171,7 @@ export async function runPreparedBook(
         consistencyProfile,
         sourceLanguage,
         targetLanguage,
-        prepared.documents.map((document) => ({
-          id: document.id,
-          sourceSegments: document.units,
-          editedSegments: [],
-        })),
+        sourceDocuments,
         root,
         signal,
       );
@@ -167,6 +187,22 @@ export async function runPreparedBook(
   const glossary = mergeGlossaries(job.glossary, generatedGlossary);
   let translated = job.progress.translated,
     edited = job.progress.edited;
+  // Concurrent batches would otherwise make the reported stage and chapter flicker between
+  // whichever worker called last. Report the oldest batch still open instead: that is the one
+  // the book is actually waiting on, and it only ever moves forward.
+  const batchOrder = new Map(batches.map((batch, index) => [batch.id, index]));
+  const active = new Map<string, RunnerStage>();
+  const frontier = () => {
+    let oldest: string | undefined;
+    for (const id of active.keys())
+      if (oldest === undefined || batchOrder.get(id)! < batchOrder.get(oldest)!) oldest = id;
+    return oldest === undefined
+      ? {}
+      : {
+          stage: active.get(oldest),
+          currentDocument: documentTitles.get(batches[batchOrder.get(oldest)!].documentId),
+        };
+  };
   const result = await runTwoPass(batches, provider, {
     root,
     translationProfile,
@@ -182,22 +218,22 @@ export async function runPreparedBook(
     signal,
     recoverCompatibleCheckpoints,
     onStage: async (stage, batch) => {
-      await update({
-        stage,
-        status: "running",
-        currentDocument: documentTitles.get(batch.documentId),
-      });
+      active.set(batch.id, stage);
+      await update({ status: "running", ...frontier() });
     },
     onProgress: async (stage, batch, cached) => {
+      active.set(batch.id, stage);
       if (cached) return;
       if (stage === "translation") translated++;
       else if (stage === "editing") edited++;
       await update({
-        stage,
         status: "running",
-        currentDocument: documentTitles.get(batch.documentId),
+        ...frontier(),
         progress: { ...job.progress, translated, edited, total: batches.length },
       });
+    },
+    onBatchDone: (batch) => {
+      active.delete(batch.id);
     },
   });
   if (result.qualityAuditErrors) {

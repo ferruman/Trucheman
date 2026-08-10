@@ -54,6 +54,8 @@ export type RunnerOptions = {
   recoverCompatibleCheckpoints?: boolean;
   onStage?: (stage: RunnerStage, batch: Batch) => Promise<void> | void;
   onProgress?: (stage: RunnerStage, batch: Batch, cached: boolean) => Promise<void> | void;
+  /** Every stage of this batch is done. Concurrent callers need it to know what is still open. */
+  onBatchDone?: (batch: Batch) => Promise<void> | void;
   signal?: AbortSignal;
 };
 type Checkpoint = { batchId: string; segments: ProviderSegment[]; checkpointKey?: string };
@@ -388,6 +390,7 @@ export async function runTwoPass(
       }
     }
     edits.set(batch.id, editedSegments);
+    await options.onBatchDone?.(batch);
   };
   const queue = batches.entries();
   let failed = false;

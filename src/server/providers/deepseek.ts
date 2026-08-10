@@ -7,6 +7,7 @@ import {
   type ProviderResponse,
 } from "./provider.js";
 import { validateProviderResponse } from "./response-validator.js";
+import { abortableDelay } from "./retry-policy.js";
 
 function withTransportIds(request: ProviderRequest): ProviderRequest {
   return {
@@ -200,11 +201,34 @@ function auditResponse(
   };
 }
 
+/**
+ * `Retry-After` as milliseconds: the header is either delta-seconds or an HTTP date.
+ * A pause longer than the cap is treated as no pause — the caller's bounded backoff and
+ * its checkpoints are a better answer than parking a worker for an hour.
+ */
+export function retryAfterMs(header: string | null, now = Date.now()): number | undefined {
+  if (!header) return undefined;
+  const seconds = Number(header.trim());
+  const ms = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - now;
+  return Number.isFinite(ms) && ms > 0 && ms <= MAX_RETRY_AFTER_MS ? Math.ceil(ms) : undefined;
+}
+
+const MAX_RETRY_AFTER_MS = 60_000;
+
 export class DeepSeekProvider implements LanguageModelProvider {
+  /**
+   * Batches run concurrently against one provider instance, so a 429 has to hold every
+   * worker back, not just the one that got it. Otherwise the others keep spending the
+   * rate limit the server just asked us to stop using.
+   */
+  private cooldownUntil = 0;
+
   async complete(request: ProviderRequest, signal?: AbortSignal): Promise<ProviderResponse> {
     if (!request.profile.apiKey) {
       throw new ProviderError("configuration", "Provider credential is not configured");
     }
+    const cooldown = this.cooldownUntil - Date.now();
+    if (cooldown > 0) await abortableDelay(cooldown, signal);
 
     const transportRequest = withTransportIds(request);
     // The job-level signal outlives every batch, so a per-request listener on it would
@@ -240,6 +264,8 @@ export class DeepSeekProvider implements LanguageModelProvider {
             res.status,
           );
         }
+        const pause = retryAfterMs(res.headers.get("retry-after"));
+        if (pause) this.cooldownUntil = Math.max(this.cooldownUntil, Date.now() + pause);
         throw new ProviderError(
           "temporary",
           `Provider temporarily unavailable (${res.status})`,

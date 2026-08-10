@@ -122,6 +122,7 @@ export function profilesView(profiles: ResolvedProfiles = resolveProfiles()) {
   return {
     provider: profiles.useExternal ? "external" : "deterministic",
     postRepairAudit: profiles.postRepairAudit,
+    concurrency: profiles.concurrency,
     translation: view(profiles.translation),
     editing: view(profiles.editing),
     critic: view(profiles.critic),

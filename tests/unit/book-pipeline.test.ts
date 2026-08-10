@@ -7,6 +7,8 @@ import { providerLanguage, runPreparedBook } from "../../src/server/jobs/book-pi
 import { buildFixtureEpub } from "../fixtures/build-epubs.js";
 import { extractEpub } from "../../src/server/epub/extract.js";
 import { parseXml } from "../../src/server/epub/xml-dom.js";
+import { FakeProvider } from "../../src/server/providers/fake-provider.js";
+import type { LanguageModelProvider } from "../../src/server/providers/provider.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -52,6 +54,57 @@ describe("book pipeline instructions", () => {
     });
     expect(await readFile(join(root, "drafts.ndjson"), "utf8")).toBe(firstDrafts);
     expect(await readFile(join(root, "edits.ndjson"), "utf8")).toBe(firstEdits);
+  });
+
+  it("reports the oldest open batch so concurrent workers cannot rewind the progress", async () => {
+    vi.stubEnv("BOOK_TRANSLATOR_PROVIDER", "deterministic");
+    vi.stubEnv("BOOK_TRANSLATOR_CONCURRENCY", "4");
+    const root = await mkdtemp(`${tmpdir()}/book-pipeline-frontier-`);
+    roots.push(root);
+    await buildFixtureEpub(join(root, "source.epub"));
+    const now = new Date().toISOString();
+    const job: PersistedJob = {
+      version: 1,
+      id: "12345678-1234-4234-8234-123456789012",
+      title: "Book",
+      sourceLanguage: "en",
+      targetLanguage: "ru",
+      status: "ready",
+      stage: "translation",
+      progress: { translated: 0, edited: 0, total: 3, failed: 0 },
+      createdAt: now,
+      updatedAt: now,
+      warnings: 0,
+      documents: [],
+      instructions: "",
+      glossary: [],
+      qualityMode: "standard",
+    };
+    const fake = new FakeProvider();
+    // Uneven latency so the workers finish out of the order they started in.
+    const provider: LanguageModelProvider = {
+      async complete(request, signal) {
+        await new Promise((resolve) => setTimeout(resolve, 5 + Math.random() * 25));
+        return fake.complete(request, signal);
+      },
+    };
+    const reported: string[] = [];
+
+    await runPreparedBook(
+      root,
+      job,
+      async (patch) => {
+        if (patch.currentDocument) reported.push(patch.currentDocument);
+      },
+      undefined,
+      false,
+      { provider },
+    );
+
+    expect(new Set(reported).size).toBeGreaterThan(1);
+    // A document is never reported again after a later one: the run only moves forward.
+    const firstSeen = reported.map((title) => reported.indexOf(title));
+    expect(firstSeen).toEqual([...firstSeen].sort((a, b) => a - b));
   });
 
   it("localizes EPUB metadata and both EPUB 3 and EPUB 2 navigation", async () => {

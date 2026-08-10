@@ -10,6 +10,7 @@ describe("settings API boundary", () => {
     const view = profilesView({
       useExternal: true,
       postRepairAudit: false,
+      concurrency: 4,
       translation: {
         name: "deepseek-translation",
         endpoint: "https://example.test/chat",
@@ -58,6 +59,9 @@ describe("settings API boundary", () => {
 
   it("rejects a batch concurrency a run could not honour instead of silently defaulting", () => {
     expect(resolveProfiles({}, {}).concurrency).toBe(4);
+    expect(
+      profilesView(resolveProfiles({ BOOK_TRANSLATOR_CONCURRENCY: "6" }, {})).concurrency,
+    ).toBe(6);
     expect(resolveProfiles({ BOOK_TRANSLATOR_CONCURRENCY: "8" }, {}).concurrency).toBe(8);
     // The .env file wins over the ambient environment, like every other setting here.
     expect(
