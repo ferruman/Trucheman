@@ -139,6 +139,10 @@ For an entity_registry task, return a JSON string with this shape in the segment
 For a resolve_conflicts task, return a JSON string with this shape in the segment text field:
 {"decisions":[{"source":"exact source entity","canonical":"chosen exact target form","variants":["exact variant to replace"]}]}
 
+For a book_style task, return a JSON string with this shape in the segment text field:
+{"genre":"...","narrativeVoice":"...","tone":"...","register":"...","notes":["short binding instruction for the translator"]}
+Derive it only from the supplied source passages, and describe how the book must sound in the target language. Keep every value short, concrete, and actionable. Never summarise the plot, and never name a passage.
+
 Choose a stable target-language rendering. Respect explicit glossary targets over inferred choices.
 
 List every inflected form of a wrong rendering separately in "variants", exactly as it is spelled in the evidence. Code replaces these strings literally, so a form that is not listed is not fixed. Never list an inflected form of the canonical rendering as a variant.

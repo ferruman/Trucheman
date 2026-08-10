@@ -185,11 +185,11 @@ function clipped(value: string, max = 320) {
   return normalized.length <= max ? normalized : `${normalized.slice(0, max - 1)}…`;
 }
 
-function stableHash(value: unknown) {
+export function stableHash(value: unknown) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-async function readCache<T>(
+export async function readCache<T>(
   path: string,
   key: string,
   schema: z.ZodType<T>,
@@ -203,7 +203,7 @@ async function readCache<T>(
   }
 }
 
-async function writeCache(path: string, key: string, value: unknown) {
+export async function writeCache(path: string, key: string, value: unknown) {
   await atomicJson(path, { key, value });
 }
 
@@ -513,7 +513,7 @@ export function buildConsistencyReport(
   };
 }
 
-async function completeJsonTask(
+export async function completeJsonTask(
   provider: LanguageModelProvider,
   profile: ProviderProfile,
   sourceLanguage: ProviderLanguage,

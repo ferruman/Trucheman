@@ -58,7 +58,7 @@ Local-first EPUB translator. Express + React (Vite), everything on the local fil
 1. **Always re-extracts** the source EPUB into `staging/`. Assembly mutates staged documents in place, so reusing a previous staging directory would re-insert translations into already-translated text.
 2. Chooses provider: `DeepSeekProvider` only when `BOOK_TRANSLATOR_PROVIDER !== "deterministic"` **and** both translation and editing API keys exist; otherwise `FakeProvider` (deterministic `[translated] …` prefix), which is what tests and e2e run against.
 3. Resolves provider profiles through `config/profiles.ts` — translation, editing, consistency, each with its own endpoint/model/thinking/prompt version, consistency falling back to the translation profile's key/endpoint/model. `resolveProfiles()` is the single source of truth: the pipeline runs on it and `GET /api/settings` reports it, so the UI can never show configuration a run would not use.
-4. Entity registry pass (external providers only) → merged with the user glossary, user entries winning.
+4. Style profile + entity registry passes (external providers only). The style profile (`style-profile-service.ts`) is one cached preflight call over passages sampled across the book; its block is appended to the job instructions, so it reaches every stage and every checkpoint key. The registry is merged with the user glossary, user entries winning.
 5. `runTwoPass` (`job-runner.ts`) — per batch: translate, then edit, appending to `drafts.ndjson` / `edits.ndjson`.
 6. Consistency: mechanical normalization (`ё`, «ёлочки» — Russian targets only), evidence report, model-driven conflict resolution where **the model returns decisions and code applies the replacements**, then `consistency-report.json`.
 7. Reinsert edited text, rewrite language tags in content + package, build to a `.tmp`, `fsync`, validate, audit, and only then `rename` into `output.epub`.
@@ -69,7 +69,7 @@ Resumability comes from `checkpointKey` in `job-runner.ts`: a SHA-256 over promp
 
 ### Storage layout
 
-Everything for a job lives in `<dataDir>/jobs/<uuid>/`: `job.json`, `source.epub`, `staging/`, `drafts.ndjson`, `edits.ndjson`, `prepared.json`, `consistency-report.json`, `entity-registry.json`, `consistency-resolution.json`, `output.epub`. The only global file is `<dataDir>/events.ndjson` — one append-only log for every job, never pruned, so anything that scans it per event is quadratic in the life of the install (`EventRepository` keeps the last id in memory for exactly this reason).
+Everything for a job lives in `<dataDir>/jobs/<uuid>/`: `job.json`, `source.epub`, `staging/`, `drafts.ndjson`, `edits.ndjson`, `prepared.json`, `consistency-report.json`, `entity-registry.json`, `consistency-resolution.json`, `style-profile.json`, `output.epub`. The only global file is `<dataDir>/events.ndjson` — one append-only log for every job, never pruned, so anything that scans it per event is quadratic in the life of the install (`EventRepository` keeps the last id in memory for exactly this reason).
 
 Durability rules, don't bypass them: state writes go through `atomic-file.ts` (temp file → fsync → rename → fsync parent dir); journals append via `ndjson-journal.ts` with `fsync` per line, and `readJournal` **stops at the first unparseable line** so a torn tail truncates rather than corrupts. Every filesystem path derived from user input goes through `safeJobPath`/`jobRoot` (`storage/job-paths.ts`) or `resolveEpubPath` (`epub/validate.ts`).
 
