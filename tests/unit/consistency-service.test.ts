@@ -14,6 +14,7 @@ import {
   resolveEntityRegistry,
   type ConsistencyDocument,
 } from "../../src/server/jobs/consistency-service.js";
+import { targetLanguageProfile } from "../../src/server/config/target-language.js";
 import type { LanguageModelProvider } from "../../src/server/providers/provider.js";
 
 const roots: string[] = [];
@@ -416,7 +417,7 @@ describe("book-wide consistency", () => {
       { id: "g1", source: "Kyra", target: "Кайра", category: "person", enabled: true },
     ];
 
-    const result = alignGlossaryVariants(values, glossary, true);
+    const result = alignGlossaryVariants(values, glossary, targetLanguageProfile("ru").nameEndings);
     const text = values[0].editedSegments.map((segment) => segment.text).join(" ");
 
     expect(text).toContain("Кайры");

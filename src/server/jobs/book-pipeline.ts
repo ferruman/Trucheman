@@ -19,6 +19,7 @@ import type { LanguageModelProvider } from "../providers/provider.js";
 import { FakeProvider } from "../providers/fake-provider.js";
 import { DeepSeekProvider } from "../providers/deepseek.js";
 import { resolveProfiles } from "../config/profiles.js";
+import { targetLanguageProfile } from "../config/target-language.js";
 import { LANGUAGES } from "../../shared/languages.js";
 import { runTwoPass } from "./job-runner.js";
 import { UsageTrackingProvider } from "./usage-service.js";
@@ -206,8 +207,9 @@ export async function runPreparedBook(
       document.batches.flatMap((batch) => result.edits.get(batch.id) ?? []),
     ),
   }));
+  const targetRules = targetLanguageProfile(targetLanguage.tag);
   const mechanicalApplied =
-    targetLanguage.tag.toLocaleLowerCase().split("-")[0] === "ru"
+    targetRules.mechanics === "russian"
       ? normalizeRussianConsistencyMechanics(consistencyDocuments)
       : 0;
   const resolverReport = buildConsistencyReport(
@@ -245,7 +247,7 @@ export async function runPreparedBook(
   const fallback = alignGlossaryVariants(
     consistencyDocuments,
     glossary.filter(isGlossaryEntry),
-    targetLanguage.tag.toLocaleLowerCase().split("-")[0] === "ru",
+    targetRules.nameEndings,
   );
   const navigationLabels = alignNavigationLabels(
     consistencyDocuments,

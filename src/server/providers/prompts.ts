@@ -1,3 +1,4 @@
+import { targetLanguageProfile } from "../config/target-language.js";
 import type { ProviderInputSegment, ProviderRequest } from "./provider.js";
 
 export const PROMPT_VERSION = "literary-v3.1";
@@ -63,15 +64,6 @@ const V321_SILENT_AUDIT = `Before editing each segment, perform this silent audi
 5. Compare the revision with the original once more and restore any meaning, nuance, ambiguity, or stylistic effect lost during rewriting.`;
 
 const V321_EDITING_OUTPUT = `Do not output the audit, labels, alternatives, explanations, or reasoning. Output only the final edited wording in the string field text.`;
-
-const TARGET_LANGUAGE_RULES: Record<string, string> = {
-  ru: `Russian rules:
-- Use ё consistently where standard spelling requires it.
-- Use «ёлочки» with nested „лапки“.
-- Transliterate personal and ship names unless an established canonical form or explicit glossary entry requires otherwise.
-- Never mix translation and transliteration strategies for the same entity.
-- Render English street names consistently as a transliterated name plus -стрит (for example, Thomas Street → Томас-стрит) unless an established canonical form requires otherwise.`,
-};
 
 const MODE_RULES: Record<ProviderRequest["mode"], string> = {
   translation: `Translate each segment from sourceLanguage into targetLanguage.
@@ -183,14 +175,9 @@ function modeRules(
   );
 }
 
-function baseLanguageTag(tag: string) {
-  return tag.toLocaleLowerCase().split("-")[0];
-}
-
 function targetLanguageRules(targetLanguage: ProviderRequest["targetLanguage"] | undefined) {
   if (!targetLanguage) return "";
-  const baseTag = baseLanguageTag(targetLanguage.tag);
-  const rules = TARGET_LANGUAGE_RULES[baseTag];
+  const rules = targetLanguageProfile(targetLanguage.tag).promptRules;
   return rules ? `\n\nTarget-language rules for ${targetLanguage.name}:\n${rules}` : "";
 }
 
@@ -263,13 +250,7 @@ export function buildPromptInput(
 ): string {
   const promptVersion = promptVersionForMode(request.mode, request.promptVersion);
   const ids = request.segments.map((segment) => segment.id);
-  const targetStyle =
-    baseLanguageTag(request.targetLanguage.tag) === "ru"
-      ? {
-          yo: "Use ё consistently where standard Russian spelling requires it.",
-          quotes: "Use «ёлочки» and nested „лапки“ consistently.",
-        }
-      : undefined;
+  const targetStyle = targetLanguageProfile(request.targetLanguage.tag).promptStyle;
   return JSON.stringify({
     promptVersion,
     promptInputVersion: PROMPT_INPUT_VERSION,

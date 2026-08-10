@@ -668,31 +668,9 @@ function isInflection(left: string, right: string) {
   return common >= Math.min(left.length, right.length) - 2;
 }
 
-/**
- * Singular case endings for Russian personal and place names. Deliberately excludes the
- * plural genitive "-ов"/"-ей": including them turns Киров into Кайров.
- */
-const russianNameEndings = [
-  "ою",
-  "ею",
-  "ой",
-  "ей",
-  "ом",
-  "ем",
-  "ём",
-  "а",
-  "я",
-  "е",
-  "и",
-  "ы",
-  "у",
-  "ю",
-  "",
-];
-
-function russianNameStem(word: string): string {
+function nameStem(word: string, endings: string[]): string {
   const lower = word.toLocaleLowerCase();
-  for (const ending of russianNameEndings) {
+  for (const ending of endings) {
     if (ending && lower.endsWith(ending) && word.length - ending.length >= 3)
       return word.slice(0, word.length - ending.length);
   }
@@ -702,13 +680,14 @@ function russianNameStem(word: string): string {
 /**
  * Deterministic fallback for when the resolver model is unavailable or times out. Anchored
  * on the glossary: only forms that are near-identical to a canonical target and differ in
- * their stem are replaced, so Кира collapses into Кайра while Кирилл is left alone. With
- * `inflected`, the stem substitution also carries to declined forms — Киры → Кайры.
+ * their stem are replaced, so Кира collapses into Кайра while Кирилл is left alone. Given
+ * the target language's case endings, the stem substitution also carries to declined
+ * forms — Киры → Кайры.
  */
 export function alignGlossaryVariants(
   documents: ConsistencyDocument[],
   glossary: GlossaryEntry[],
-  inflected = false,
+  nameEndings: string[] = [],
 ): { applied: number; replacements: Array<{ variant: string; canonical: string }> } {
   const canonicalTargets = glossary
     .filter((entry) => entry.enabled && entry.target.trim().length >= 4)
@@ -731,17 +710,18 @@ export function alignGlossaryVariants(
     );
     if (canonical) replacements.set(word, canonical);
   }
-  if (inflected) {
+  if (nameEndings.length) {
     // Кира → Кайра also means Киры → Кайры. Carry the stem substitution to any observed
     // form that shares the variant's stem and ends in a singular case ending.
-    const canonicalStems = new Set(canonicalTargets.map(russianNameStem));
+    const stem = (word: string) => nameStem(word, nameEndings);
+    const canonicalStems = new Set(canonicalTargets.map(stem));
     for (const [variant, canonical] of [...replacements]) {
-      const variantStem = russianNameStem(variant);
-      const canonicalStem = russianNameStem(canonical);
+      const variantStem = stem(variant);
+      const canonicalStem = stem(canonical);
       if (variantStem === variant || canonicalStems.has(variantStem)) continue;
       for (const word of words) {
         if (replacements.has(word) || canonicalSet.has(word)) continue;
-        if (russianNameStem(word) !== variantStem) continue;
+        if (stem(word) !== variantStem) continue;
         replacements.set(word, canonicalStem + word.slice(variantStem.length));
       }
     }
