@@ -28,7 +28,11 @@ export async function buildFragmentedFixtureEpub(path: string) {
       .join(" ");
   return writeZip(path, {
     "META-INF/container.xml": `<?xml version="1.0"?><container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>`,
-    "OEBPS/content.opf": `<package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Fragmented</dc:title><dc:language>en</dc:language></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/></manifest><spine toc="ncx"><itemref idref="chapter"/></spine></package>`,
+    "OEBPS/content.opf": `<package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Fragmented</dc:title><dc:language>en</dc:language></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/><item id="nav" href="toc.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/></manifest><spine toc="ncx"><itemref idref="chapter"/></spine></package>`,
+    // The nav document fragments its entry inside a single <a>, like the real book.
+    "OEBPS/toc.xhtml": `<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en" lang="en"><body><nav epub:type="toc"><ol><li><a href="chapter.xhtml">${spans(
+      "Part 2. In the Desert",
+    )}</a></li></ol></nav></body></html>`,
     "OEBPS/chapter.xhtml": `<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en"><body><h1>${spans(
       "In the Desert",
     )}</h1><h1>${spans("From the Land of the Farther Suns")}</h1><h1>${spans(

@@ -31,6 +31,21 @@ describe("text segments", () => {
     expect([...absorbed.values()]).toEqual([units[0].id, units[0].id]);
   });
 
+  it("merges a fragmented entry wrapped in a single link", () => {
+    const d = parseXml(
+      `<html xmlns="http://www.w3.org/1999/xhtml"><body><ol><li><a href="c.xhtml"><span>Part</span> <span>5</span> <span>Little</span> <span>Birds</span></a></li><li><a href="d.xhtml">Epilogue</a> — <em>note</em></li></ol></body></html>`,
+    );
+    const { units } = mergeLogicalBlocks(extractTextSegments(d, "doc"));
+
+    // The link wraps the whole entry, so nothing distinguishes its four spans.
+    expect(units.map((unit) => unit.text)).toEqual([
+      "Part 5 Little Birds",
+      "Epilogue",
+      " — ",
+      "note",
+    ]);
+  });
+
   it("never merges across a line break or a nested block", () => {
     const d = parseXml(
       `<html xmlns="http://www.w3.org/1999/xhtml"><body><p><span>First</span><br/><span>Second</span></p><div>Lead<p>Inner</p>Tail</div></body></html>`,

@@ -30,7 +30,14 @@ export function validateProviderResponse(
   if (response.finishReason && response.finishReason !== "stop") {
     throw new Error("Provider response was truncated");
   }
-  return { ...response, segments: parsed.segments };
+  return {
+    ...response,
+    // The schema strips unknown keys; structured audit issues must survive it.
+    segments: parsed.segments.map((segment, index) => {
+      const issues = response.segments[index]?.issues;
+      return issues ? { ...segment, issues } : segment;
+    }),
+  };
 }
 
 function comparisonText(segment: ProviderInputSegment): string {

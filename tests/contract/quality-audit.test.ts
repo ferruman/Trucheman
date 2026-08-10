@@ -124,6 +124,40 @@ describe("quality audit contract", () => {
     expect(buildRepairSegments(segments, result.findings)).toEqual([]);
   });
 
+  it("carries structured issues through validation without a stringified round trip", async () => {
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        // No `text` at all: `issues` is the contract for an audit response.
+        return {
+          segments: request.segments.map((segment) => ({
+            id: segment.id,
+            text: "",
+            issues: [{ ...issue, span: "Привет" }],
+          })),
+          finishReason: "stop",
+        };
+      },
+    };
+    const segments = buildQualityAuditSegments(
+      [{ id: "s1", text: "Hello" }],
+      [{ id: "s1", text: "Привет" }],
+      [{ id: "s1", text: "Привет" }],
+    );
+
+    const result = await auditBatch(
+      provider,
+      { name: "critic", endpoint: "local", model: "critic" },
+      segments,
+      {
+        sourceLanguage: { tag: "en", name: "English" },
+        targetLanguage: { tag: "ru", name: "Russian" },
+      },
+    );
+
+    expect(result.result.segments[0].issues).toEqual([issue]);
+    expect(result.findings).toEqual([{ id: "s1", issues: [issue], rejectedIssues: 0 }]);
+  });
+
   it("prefers structured issues over a legacy stringified journal entry", () => {
     const inputs = buildQualityAuditSegments(
       [{ id: "s1", text: "Hello" }],

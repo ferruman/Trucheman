@@ -11,6 +11,25 @@ import { ProviderError } from "../providers/provider.js";
 import { qualityWarnings, validateProviderResponse } from "../providers/response-validator.js";
 import { abortableDelay, retryDecision } from "../providers/retry-policy.js";
 
+/**
+ * For audit responses `issues` is the contract and `text` is only a journal-friendly
+ * serialization, so derive it here rather than making every provider remember to.
+ */
+function canonicalAuditText(
+  response: ProviderResponse,
+  mode: ProviderRequest["mode"],
+): ProviderResponse {
+  if (mode !== "audit") return response;
+  return {
+    ...response,
+    segments: response.segments.map((segment) =>
+      segment && !segment.text && segment.issues
+        ? { ...segment, text: JSON.stringify({ issues: segment.issues }) }
+        : segment,
+    ),
+  };
+}
+
 export async function processBatch(
   provider: LanguageModelProvider,
   profile: ProviderProfile,
@@ -40,7 +59,7 @@ export async function processBatch(
           },
           signal,
         );
-        return validateProviderResponse(result, chunk);
+        return validateProviderResponse(canonicalAuditText(result, mode), chunk);
       } catch (error) {
         if (error instanceof ProviderError && error.partialResponse && chunk.length > 1) {
           const partial = error.partialResponse;

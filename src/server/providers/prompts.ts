@@ -149,6 +149,8 @@ For a resolve_conflicts task, return a JSON string with this shape in the segmen
 
 Choose a stable target-language rendering. Respect explicit glossary targets over inferred choices.
 
+List every inflected form of a wrong rendering separately in "variants", exactly as it is spelled in the evidence. Code replaces these strings literally, so a form that is not listed is not fixed. Never list an inflected form of the canonical rendering as a variant.
+
 Only list entities or variants supported by the supplied evidence. Never invent occurrences, and never include the canonical form itself among variants.`,
 };
 

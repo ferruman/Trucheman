@@ -606,6 +606,51 @@ function replaceVariants(documents: ConsistencyDocument[], replacements: Map<str
   return applied;
 }
 
+/**
+ * A chapter title is written three times in an EPUB — the NCX navLabel, the nav document
+ * link, and the heading itself — and each was translated in its own batch, so the three
+ * drifted apart. One source string gets one translation, and where the NCX has a label it
+ * wins: navMap is the authority for table-of-contents wording.
+ */
+export function alignNavigationLabels(
+  documents: ConsistencyDocument[],
+  roles: Map<string, "ncx" | "nav" | null>,
+  maxLength = 120,
+): { applied: number; labels: Array<{ source: string; canonical: string }> } {
+  type Occurrence = { document: ConsistencyDocument; id: string; role: "ncx" | "nav" | null };
+  const groups = new Map<string, Occurrence[]>();
+  for (const document of documents) {
+    const role = roles.get(document.id) ?? null;
+    for (const source of document.sourceSegments) {
+      const key = source.text.replace(/\s+/gu, " ").trim();
+      if (!key || key.length > maxLength || !/[\p{L}]/u.test(key)) continue;
+      groups.set(key, [...(groups.get(key) ?? []), { document, id: source.id, role }]);
+    }
+  }
+  const labels: Array<{ source: string; canonical: string }> = [];
+  let applied = 0;
+  for (const [source, occurrences] of groups) {
+    if (occurrences.length < 2 || !occurrences.some((entry) => entry.role)) continue;
+    const authority =
+      occurrences.find((entry) => entry.role === "ncx") ??
+      occurrences.find((entry) => entry.role === "nav")!;
+    const edited = (entry: Occurrence) =>
+      entry.document.editedSegments.find((segment) => segment.id === entry.id);
+    const canonical = edited(authority)?.text.trim();
+    if (!canonical) continue;
+    let changed = false;
+    for (const occurrence of occurrences) {
+      const segment = edited(occurrence);
+      if (!segment || segment.text.trim() === canonical) continue;
+      segment.text = segment.text.replace(segment.text.trim(), canonical);
+      applied++;
+      changed = true;
+    }
+    if (changed) labels.push({ source, canonical });
+  }
+  return { applied, labels };
+}
+
 const capitalizedTargetWord = /(?<![\p{L}\p{N}])\p{Lu}[\p{L}\p{M}'’-]{2,}/gu;
 
 /**
@@ -624,13 +669,46 @@ function isInflection(left: string, right: string) {
 }
 
 /**
+ * Singular case endings for Russian personal and place names. Deliberately excludes the
+ * plural genitive "-ов"/"-ей": including them turns Киров into Кайров.
+ */
+const russianNameEndings = [
+  "ою",
+  "ею",
+  "ой",
+  "ей",
+  "ом",
+  "ем",
+  "ём",
+  "а",
+  "я",
+  "е",
+  "и",
+  "ы",
+  "у",
+  "ю",
+  "",
+];
+
+function russianNameStem(word: string): string {
+  const lower = word.toLocaleLowerCase();
+  for (const ending of russianNameEndings) {
+    if (ending && lower.endsWith(ending) && word.length - ending.length >= 3)
+      return word.slice(0, word.length - ending.length);
+  }
+  return word;
+}
+
+/**
  * Deterministic fallback for when the resolver model is unavailable or times out. Anchored
  * on the glossary: only forms that are near-identical to a canonical target and differ in
- * their stem are replaced, so Кира collapses into Кайра while Киры is left alone.
+ * their stem are replaced, so Кира collapses into Кайра while Кирилл is left alone. With
+ * `inflected`, the stem substitution also carries to declined forms — Киры → Кайры.
  */
 export function alignGlossaryVariants(
   documents: ConsistencyDocument[],
   glossary: GlossaryEntry[],
+  inflected = false,
 ): { applied: number; replacements: Array<{ variant: string; canonical: string }> } {
   const canonicalTargets = glossary
     .filter((entry) => entry.enabled && entry.target.trim().length >= 4)
@@ -652,6 +730,21 @@ export function alignGlossaryVariants(
         !isInflection(target, word),
     );
     if (canonical) replacements.set(word, canonical);
+  }
+  if (inflected) {
+    // Кира → Кайра also means Киры → Кайры. Carry the stem substitution to any observed
+    // form that shares the variant's stem and ends in a singular case ending.
+    const canonicalStems = new Set(canonicalTargets.map(russianNameStem));
+    for (const [variant, canonical] of [...replacements]) {
+      const variantStem = russianNameStem(variant);
+      const canonicalStem = russianNameStem(canonical);
+      if (variantStem === variant || canonicalStems.has(variantStem)) continue;
+      for (const word of words) {
+        if (replacements.has(word) || canonicalSet.has(word)) continue;
+        if (russianNameStem(word) !== variantStem) continue;
+        replacements.set(word, canonicalStem + word.slice(variantStem.length));
+      }
+    }
   }
   return {
     applied: replaceVariants(documents, replacements),

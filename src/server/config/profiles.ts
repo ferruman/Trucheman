@@ -7,6 +7,8 @@ const TERRA_MODEL = "gpt-5.6-terra";
 
 export type ResolvedProfiles = {
   useExternal: boolean;
+  /** Opt-in second critic pass over repaired blocks. Off unless explicitly enabled. */
+  postRepairAudit: boolean;
   translation: ProviderProfile;
   editing: ProviderProfile;
   critic: ProviderProfile;
@@ -61,6 +63,7 @@ export function resolveProfiles(
   };
   return {
     useExternal,
+    postRepairAudit: env.BOOK_TRANSLATOR_POST_REPAIR_AUDIT === "1",
     translation,
     editing: {
       name: useExternal ? "deepseek-editing" : "deterministic-local",
@@ -104,6 +107,7 @@ export function profilesView(profiles: ResolvedProfiles = resolveProfiles()) {
   });
   return {
     provider: profiles.useExternal ? "external" : "deterministic",
+    postRepairAudit: profiles.postRepairAudit,
     translation: view(profiles.translation),
     editing: view(profiles.editing),
     critic: view(profiles.critic),

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   alignGlossaryVariants,
+  alignNavigationLabels,
   applyConsistencyDecisions,
   buildConsistencyReport,
   extractEntityEvidence,
@@ -396,7 +397,80 @@ describe("book-wide consistency", () => {
     const text = values[0].editedSegments.map((segment) => segment.text).join(" ");
     expect(text).not.toContain("Кира");
     expect(text).not.toContain("Летисия");
-    // Inflected forms are a different word, not a variant, and must survive untouched.
+    // Without the Russian ending rules, inflected forms stay untouched.
     expect(text).toContain("Киры");
+  });
+
+  it("carries a name substitution to its declined forms without touching lookalikes", () => {
+    const values: ConsistencyDocument[] = [
+      {
+        id: "inflected",
+        sourceSegments: [],
+        editedSegments: [
+          { id: "inflected:0", text: "Кайра ждала. Кира ушла. У Киры был план." },
+          { id: "inflected:1", text: "Он рассказал Кире о Кирилле и о городе Кирове." },
+        ],
+      },
+    ];
+    const glossary = [
+      { id: "g1", source: "Kyra", target: "Кайра", category: "person", enabled: true },
+    ];
+
+    const result = alignGlossaryVariants(values, glossary, true);
+    const text = values[0].editedSegments.map((segment) => segment.text).join(" ");
+
+    expect(text).toContain("Кайры");
+    expect(text).toContain("Кайре");
+    expect(text).not.toMatch(/Кир[аыеу]\b/u);
+    // A different name and a place that merely share the prefix must survive.
+    expect(text).toContain("Кирилле");
+    expect(text).toContain("Кирове");
+    expect(result.replacements.map((entry) => entry.variant).sort()).toEqual([
+      "Кира",
+      "Кире",
+      "Киры",
+    ]);
+  });
+
+  it("makes the NCX navMap the authority for a table-of-contents label", () => {
+    const values: ConsistencyDocument[] = [
+      {
+        id: "ncx",
+        sourceSegments: [sourceSegment("ncx:0", "Part 2. In the Desert")],
+        editedSegments: [{ id: "ncx:0", text: "Часть 2. В пустыне" }],
+      },
+      {
+        id: "nav",
+        sourceSegments: [sourceSegment("nav:0", "Part 2. In the Desert")],
+        editedSegments: [{ id: "nav:0", text: "Глава вторая. Среди песков" }],
+      },
+      {
+        id: "chapter",
+        sourceSegments: [
+          sourceSegment("chapter:0", " Part 2.  In the Desert "),
+          sourceSegment("chapter:1", "The wind never stopped."),
+        ],
+        editedSegments: [
+          { id: "chapter:0", text: " В пустыне " },
+          { id: "chapter:1", text: "Ветер не стихал." },
+        ],
+      },
+    ];
+
+    const result = alignNavigationLabels(
+      values,
+      new Map([
+        ["ncx", "ncx"],
+        ["nav", "nav"],
+        ["chapter", null],
+      ]),
+    );
+
+    expect(result.applied).toBe(2);
+    expect(values[1].editedSegments[0].text).toBe("Часть 2. В пустыне");
+    // Surrounding whitespace of the original text node is preserved.
+    expect(values[2].editedSegments[0].text).toBe(" Часть 2. В пустыне ");
+    // Prose that never appears in a navigation document is left alone.
+    expect(values[2].editedSegments[1].text).toBe("Ветер не стихал.");
   });
 });

@@ -26,6 +26,7 @@ import type { PersistedJob } from "../domain/job.js";
 import { syncParentDirectory } from "../storage/atomic-file.js";
 import {
   alignGlossaryVariants,
+  alignNavigationLabels,
   applyConsistencyDecisions,
   buildConsistencyReport,
   isGlossaryEntry,
@@ -49,6 +50,8 @@ export type PreparedDocument = {
   /** Segment id → the unit id that absorbed its text; these reinsert as empty. */
   absorbed: Record<string, string>;
   batches: Batch[];
+  /** Navigation role, if any. The NCX navMap is the authority for TOC labels. */
+  navigation: "ncx" | "nav" | null;
 };
 export type PreparedBook = { staging: string; packageFile: string; documents: PreparedDocument[] };
 
@@ -83,6 +86,7 @@ export async function prepareBook(root: string): Promise<PreparedBook> {
     const documentId = `document-${index + 1}`;
     const segments = extractTextSegments(parseXml(await readFile(path)), documentId);
     const { units, absorbed } = mergeLogicalBlocks(segments);
+    const ncx = /x-dtbncx/i.test(item.mediaType);
     documents.push({
       id: documentId,
       path,
@@ -91,6 +95,12 @@ export async function prepareBook(root: string): Promise<PreparedBook> {
       units,
       absorbed: Object.fromEntries(absorbed),
       batches: makeBatches(units),
+      navigation:
+        ncx || Boolean(item.properties?.split(/\s+/).includes("nav"))
+          ? ncx
+            ? "ncx"
+            : "nav"
+          : null,
     });
   }
   if (!documents.length)
@@ -116,6 +126,7 @@ export async function runPreparedBook(
   const batches = prepared.documents.flatMap((document) => document.batches);
   const {
     useExternal: resolvedUseExternal,
+    postRepairAudit,
     translation: translationProfile,
     editing: editingProfile,
     critic: criticProfile,
@@ -165,6 +176,7 @@ export async function runPreparedBook(
     instructions,
     glossary,
     qualityMode: job.qualityMode,
+    postRepairAudit: job.qualityMode === "high" && postRepairAudit,
     signal,
     recoverCompatibleCheckpoints,
     onStage: async (stage) => {
@@ -230,7 +242,15 @@ export async function runPreparedBook(
       consistencyErrors.push(`Consistency chunk ${failure.chunk} failed: ${failure.error}`);
   }
   // Whatever the resolver could not decide, align deterministically from the glossary.
-  const fallback = alignGlossaryVariants(consistencyDocuments, glossary.filter(isGlossaryEntry));
+  const fallback = alignGlossaryVariants(
+    consistencyDocuments,
+    glossary.filter(isGlossaryEntry),
+    targetLanguage.tag.toLocaleLowerCase().split("-")[0] === "ru",
+  );
+  const navigationLabels = alignNavigationLabels(
+    consistencyDocuments,
+    new Map(prepared.documents.map((document) => [document.id, document.navigation])),
+  );
   const consistencyReport = buildConsistencyReport(
     consistencyDocuments,
     glossary.filter(isGlossaryEntry),
@@ -247,6 +267,7 @@ export async function runPreparedBook(
         applied,
         mechanicalApplied,
         glossaryAlignment: fallback,
+        navigationLabels,
         errors: consistencyErrors,
       },
       null,

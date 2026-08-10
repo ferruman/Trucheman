@@ -175,6 +175,66 @@ describe("two-pass pipeline", () => {
     },
   );
 
+  it("reverts a repair the optional second audit still calls broken", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-post-repair-audit-`);
+    const audits: number[] = [];
+    let auditRound = 0;
+    const issue = (span: string, severity: "medium" | "high") => ({
+      span,
+      type: "unnatural_language" as const,
+      severity,
+      reason: "reason",
+    });
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        if (request.mode === "audit") {
+          auditRound++;
+          audits.push(request.segments.length);
+          return {
+            segments: request.segments.map((item) => ({
+              id: item.id,
+              text: "",
+              // First pass flags the block; the second pass says the repair is still wrong.
+              issues: [issue(auditRound === 1 ? "Черновик" : "Починено", "high")],
+            })),
+            finishReason: "stop",
+          };
+        }
+        return {
+          segments: request.segments.map((item) => ({
+            id: item.id,
+            text: request.mode === "repair" ? "Починено" : "Черновик",
+          })),
+          finishReason: "stop",
+        };
+      },
+    };
+    const profile = { name: "fake", endpoint: "local", model: "fake" };
+    const batches = [{ id: "chapter-1-batch-1", documentId: "chapter-1", segments: [segment] }];
+    const options = {
+      root,
+      translationProfile: profile,
+      editingProfile: profile,
+      qualityMode: "high" as const,
+      ...languages,
+    };
+
+    const without = await runTwoPass(batches, provider, options);
+    expect(without.edits.get("chapter-1-batch-1")?.[0].text).toBe("Починено");
+    expect(audits).toEqual([1]); // the second pass never ran
+
+    auditRound = 0;
+    audits.length = 0;
+    const withAudit = await runTwoPass(batches, provider, {
+      ...options,
+      root: await mkdtemp(`${tmpdir()}/book-post-repair-audit-on-`),
+      postRepairAudit: true,
+    });
+
+    expect(audits).toEqual([1, 1]); // only the block the repair changed is re-audited
+    expect(withAudit.edits.get("chapter-1-batch-1")?.[0].text).toBe("Черновик");
+  });
+
   it("invalidates only the editing checkpoint when its prompt version changes", async () => {
     const root = await mkdtemp(`${tmpdir()}/book-prompt-checkpoint-`);
     const provider = new FakeProvider();

@@ -9,6 +9,7 @@ describe("settings API boundary", () => {
   it("reports endpoint and model but never the credential itself", () => {
     const view = profilesView({
       useExternal: true,
+      postRepairAudit: false,
       translation: {
         name: "deepseek-translation",
         endpoint: "https://example.test/chat",
@@ -47,6 +48,12 @@ describe("settings API boundary", () => {
     const profiles = resolveProfiles({ BOOK_TRANSLATOR_PROVIDER: "deterministic" });
     expect(profiles.useExternal).toBe(false);
     expect(profilesView(profiles).provider).toBe("deterministic");
+  });
+
+  it("keeps the second critic pass off unless it is explicitly enabled", () => {
+    expect(resolveProfiles({}).postRepairAudit).toBe(false);
+    expect(resolveProfiles({ BOOK_TRANSLATOR_POST_REPAIR_AUDIT: "0" }).postRepairAudit).toBe(false);
+    expect(resolveProfiles({ BOOK_TRANSLATOR_POST_REPAIR_AUDIT: "1" }).postRepairAudit).toBe(true);
   });
 
   it("selects the evaluated editor prompt for Terra without changing other model defaults", () => {

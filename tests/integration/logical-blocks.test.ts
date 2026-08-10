@@ -57,6 +57,11 @@ describe("fragmented EPUB logical blocks", () => {
     expect(Object.keys(document.absorbed)).toHaveLength(
       document.segments.length - document.units.length,
     );
+
+    // A table-of-contents entry fragmented inside one <a> also rejoins.
+    const nav = prepared.documents.find((candidate) => candidate.navigation === "nav");
+    expect(nav?.units.map((unit) => unit.text)).toEqual(["Part 2. In the Desert"]);
+    expect(prepared.documents.find((candidate) => candidate.navigation === "ncx")).toBeDefined();
   });
 
   it("reinserts a translated heading once, without duplicated fragments", async () => {
@@ -134,5 +139,50 @@ describe("fragmented EPUB logical blocks", () => {
     expect(audit.checks.tableOfContents).toHaveLength(1);
     expect(audit.checks.tableOfContents[0].duplicates).toEqual([]);
     expect(audit.checks.language.packageLanguage).toBe("ru");
+  });
+
+  it("makes the NCX label win over a divergent nav rendering", async () => {
+    const root = await fragmentedJobRoot();
+    // Same source label, deliberately different renderings: nav is document-2, NCX is
+    // document-3, and only the NCX rendering may reach the built book.
+    const byDocument: Record<string, string> = {
+      "document-2": "Глава вторая. Среди песков",
+      "document-3": "Часть 2. В пустыне",
+    };
+    const provider = {
+      async complete(request: {
+        segments: Array<{ id: string; text?: string; original?: string; draft?: string }>;
+      }) {
+        return {
+          segments: request.segments.map((segment) => {
+            const input = segment.text ?? segment.draft ?? segment.original ?? "";
+            const rendering = byDocument[segment.id.split(":")[0]];
+            return {
+              id: segment.id,
+              text: input.includes("In the Desert") && rendering ? rendering : input,
+            };
+          }),
+          finishReason: "stop",
+        };
+      },
+    };
+
+    await runPreparedBook(root, job, async () => {}, undefined, false, {
+      provider,
+      useExternal: false,
+    });
+    const report = JSON.parse(await readFile(join(root, "consistency-report.json"), "utf8"));
+
+    expect(report.navigationLabels.labels).toEqual([
+      { source: "Part 2. In the Desert", canonical: "Часть 2. В пустыне" },
+    ]);
+
+    const extracted = await mkdtemp(join(tmpdir(), "book-nav-out-"));
+    roots.push(extracted);
+    await extractEpub(join(root, "output.epub"), extracted);
+    const nav = await readFile(join(extracted, "OEBPS/toc.xhtml"), "utf8");
+
+    expect(nav).toContain("Часть 2. В пустыне");
+    expect(nav).not.toContain("Среди песков");
   });
 });

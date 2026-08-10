@@ -10,8 +10,13 @@ export type TextSegment = {
   trailing: string;
   /** Index of the nearest enclosing logical block; text nodes sharing it are one sentence. */
   block?: number;
-  /** False when semantic inline markup (a, em, strong, …) wraps the node inside its block. */
-  plain?: boolean;
+  /**
+   * The chain of semantic inline elements wrapping this node inside its block ("" when
+   * none, "a" inside a link, "a>em" inside emphasis inside a link). Two nodes may merge
+   * only when this matches: that keeps `<em>` in mid-paragraph a boundary while letting a
+   * table-of-contents entry typeset as `<a><span>Part</span> <span>5</span></a>` rejoin.
+   */
+  format?: string;
 };
 const excluded = new Set(["script", "style", "pre", "code", "math", "svg"]);
 /**
@@ -93,7 +98,7 @@ function splitWhitespace(text: string) {
 export function extractTextSegments(doc: Document, documentId: string): TextSegment[] {
   const out: TextSegment[] = [];
   let block = 0;
-  const walk = (node: Node, locator: number[], blocked = false, plain = true) => {
+  const walk = (node: Node, locator: number[], blocked = false, format = "") => {
     if (node.nodeType === 1) {
       const element = node as any;
       const name = localName(node).toLowerCase();
@@ -105,10 +110,14 @@ export function extractTextSegments(doc: Document, documentId: string): TextSegm
       }
       const isBlock = blockElements.has(name);
       if (isBlock) block++;
-      const childPlain = isBlock ? true : plain && !semanticInline.has(name);
+      const childFormat = isBlock
+        ? ""
+        : semanticInline.has(name)
+          ? `${format}${format ? ">" : ""}${name}`
+          : format;
       let i = 0;
       for (let c = node.firstChild; c; c = c.nextSibling, i++)
-        walk(c, [...locator, i], blocked, childPlain);
+        walk(c, [...locator, i], blocked, childFormat);
       // Text following a nested block belongs to a new logical block, not the one inside.
       if (isBlock) block++;
       return;
@@ -126,7 +135,7 @@ export function extractTextSegments(doc: Document, documentId: string): TextSegm
       leading: parts.leading,
       trailing: parts.trailing,
       block,
-      plain,
+      format,
     });
   };
   if (doc.documentElement) walk(doc.documentElement, []);
@@ -148,10 +157,11 @@ function joinBlockText(parts: string[]): string {
 }
 
 /**
- * Merge consecutive text nodes of the same logical block into one translation unit.
- * Only runs of segments with no semantic inline markup are merged, so `<em>`/`<a>`
- * boundaries survive untouched; the fragmented `<span>` typesetting that produced
- * one-word segments collapses back into the sentence the author wrote.
+ * Merge consecutive text nodes that share a logical block and an inline formatting
+ * context into one translation unit. Emphasis in mid-paragraph still splits the block,
+ * because its boundary carries meaning; the fragmented `<span>` typesetting that produced
+ * one-word segments collapses back into the sentence the author wrote, including inside a
+ * table-of-contents `<a>` that wraps the whole entry.
  */
 export function mergeLogicalBlocks(segments: TextSegment[]): LogicalBlocks {
   const units: TextSegment[] = [];
@@ -160,11 +170,11 @@ export function mergeLogicalBlocks(segments: TextSegment[]): LogicalBlocks {
   while (index < segments.length) {
     const first = segments[index];
     let end = index + 1;
-    if (first.block !== undefined && first.plain !== false) {
+    if (first.block !== undefined) {
       while (
         end < segments.length &&
         segments[end].block === first.block &&
-        segments[end].plain !== false
+        segments[end].format === first.format
       ) {
         end++;
       }
