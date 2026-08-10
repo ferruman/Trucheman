@@ -28,10 +28,13 @@ export async function runOptionalEpubCheck(path: string, timeout = 30000) {
     const failure = error as { code?: string; stdout?: string; stderr?: string };
     if (failure.code === "ENOENT")
       return { available: false, ok: true, output: "EPUBCheck is not installed." };
+    // EPUBCheck writes its findings to stderr and only the summary to stdout.
     return {
       available: true,
       ok: false,
-      output: String(failure.stdout ?? failure.stderr ?? "EPUBCheck failed").slice(-4000),
+      output:
+        [failure.stderr, failure.stdout].filter(Boolean).join("\n").slice(-4000) ||
+        "EPUBCheck failed",
     };
   }
 }

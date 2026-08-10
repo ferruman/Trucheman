@@ -50,6 +50,21 @@ export function ResultPage({ id, results, error, busy, onRetry, onRebuild }: Pro
             </div>
             {results.quality && (
               <div>
+                <dt>Automatic checks</dt>
+                <dd>
+                  {results.quality.scanDefectSegments === 0
+                    ? "No suspicious segments"
+                    : `${results.quality.scanDefectSegments} suspicious segment(s): ${Object.entries(
+                        results.quality.scanDefectsByKind,
+                      )
+                        .filter(([, value]) => value > 0)
+                        .map(([kind, value]) => `${value} ${kind.replace(/_/g, " ")}`)
+                        .join(", ")}`}
+                </dd>
+              </div>
+            )}
+            {results.quality && results.quality.auditedSegments > 0 && (
+              <div>
                 <dt>Audit failures</dt>
                 <dd>
                   {results.quality.auditErrorSegments === 0
@@ -58,7 +73,7 @@ export function ResultPage({ id, results, error, busy, onRetry, onRebuild }: Pro
                 </dd>
               </div>
             )}
-            {results.quality && (
+            {results.quality && results.quality.auditedSegments > 0 && (
               <div>
                 <dt>Repairs rejected as unsafe</dt>
                 <dd>{results.quality.rejectedRepairs}</dd>

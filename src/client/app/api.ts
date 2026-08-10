@@ -9,6 +9,9 @@ export type JobResults = {
     auditErrorSegments: number;
     auditErrorsByKind: { malformed_json: number; invalid_issues: number };
     rejectedRepairs: number;
+    /** Deterministic per-segment findings; produced in both quality modes. */
+    scanDefectSegments: number;
+    scanDefectsByKind: Record<string, number>;
   } | null;
   consistency: {
     entities: number;

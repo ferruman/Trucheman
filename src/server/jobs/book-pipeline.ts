@@ -237,8 +237,12 @@ export async function runPreparedBook(
       active.delete(batch.id);
     },
   });
-  if (result.qualityAuditErrors) {
-    await update({ warnings: job.warnings + result.qualityAuditErrors });
+  // One warning per defective segment, not per defect: a block with three findings is still
+  // one thing to look at.
+  const runWarnings =
+    result.qualityAuditErrors + new Set(result.scanDefects.map((defect) => defect.id)).size;
+  if (runWarnings) {
+    await update({ warnings: job.warnings + runWarnings });
   }
   const consistencyDocuments: ConsistencyDocument[] = prepared.documents.map((document) => ({
     id: document.id,
@@ -270,7 +274,7 @@ export async function runPreparedBook(
     consistencyReport.errors.length +
     consistencyReport.ignoredGlossaryEntries.length;
   if (warningCount) {
-    await update({ warnings: job.warnings + result.qualityAuditErrors + warningCount });
+    await update({ warnings: job.warnings + runWarnings + warningCount });
   }
   for (const document of prepared.documents) {
     const editedDocument = consistencyDocuments.find((candidate) => candidate.id === document.id);

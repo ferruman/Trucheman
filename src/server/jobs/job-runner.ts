@@ -27,6 +27,17 @@ import {
   type QualityFinding,
   type RepairRejection,
 } from "./quality-service.js";
+import { scanSegments, type SegmentDefect, type SegmentDefectKind } from "./segment-scan.js";
+
+const SEGMENT_DEFECT_KINDS: SegmentDefectKind[] = [
+  "empty",
+  "untranslated",
+  "length_ratio",
+  "missing_numbers",
+  "source_residue",
+];
+/** The report is a diagnostic, not a journal; a broken run must not write a 100k-entry file. */
+const MAX_REPORTED_DEFECTS = 500;
 
 export type RunnerStage = "translation" | "editing" | "audit" | "repair";
 export type RunnerOptions = {
@@ -198,6 +209,7 @@ export async function runTwoPass(
   // report has to read in book order regardless of who finished first.
   const qualityFindings: Array<{ batchId: string; findings: QualityFinding[] }> = [];
   const rejectedRepairsByBatch: Array<Array<RepairRejection & { batchId: string }>> = [];
+  const scanDefectsByBatch: Array<Array<SegmentDefect & { batchId: string }>> = [];
   const cachedCheckpoints = { translation: 0, editing: 0, audit: 0, repair: 0 };
   const runBatch = async (batch: Batch, index: number) => {
     throwIfAborted(options.signal);
@@ -390,6 +402,10 @@ export async function runTwoPass(
       }
     }
     edits.set(batch.id, editedSegments);
+    scanDefectsByBatch[index] = scanSegments(request, editedSegments).map((defect) => ({
+      batchId: batch.id,
+      ...defect,
+    }));
     await options.onBatchDone?.(batch);
   };
   const queue = batches.entries();
@@ -411,15 +427,28 @@ export async function runTwoPass(
     }),
   );
   const rejectedRepairs = rejectedRepairsByBatch.flat();
-  if (options.qualityMode === "high") {
+  const scanDefects = scanDefectsByBatch.flat();
+  {
     const allFindings = qualityFindings.flatMap(({ batchId, findings }) =>
       findings.map((finding) => ({ batchId, ...finding })),
     );
+    // Written in both quality modes: the deterministic scan is the only per-segment quality
+    // signal a standard run produces, and it costs nothing.
     await writeFile(
       `${options.root}/quality-report.json`,
       JSON.stringify(
         {
-          version: 2,
+          version: 3,
+          scan: {
+            defectSegments: new Set(scanDefects.map((defect) => defect.id)).size,
+            defectsByKind: Object.fromEntries(
+              SEGMENT_DEFECT_KINDS.map((kind) => [
+                kind,
+                scanDefects.filter((defect) => defect.kind === kind).length,
+              ]),
+            ),
+            defects: scanDefects.slice(0, MAX_REPORTED_DEFECTS),
+          },
           auditedSegments: allFindings.length,
           flaggedSegments: allFindings.filter((finding) => finding.issues.length).length,
           repairedSegments:
@@ -444,6 +473,7 @@ export async function runTwoPass(
     edits,
     cachedCheckpoints,
     rejectedRepairs,
+    scanDefects,
     qualityAuditErrors: qualityFindings.reduce(
       (total, batch) =>
         total + batch.findings.filter((finding) => finding.auditError !== undefined).length,

@@ -1,10 +1,26 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 import { epubCheckErrors, runOptionalEpubCheck } from "../../src/server/epub/epubcheck.js";
+import { buildFixtureEpub } from "../fixtures/build-epubs.js";
+
+const workspace = await mkdtemp(join(tmpdir(), "epubcheck-"));
+afterAll(() => rm(workspace, { recursive: true, force: true }));
+
 describe("optional EPUBCheck", () => {
-  it("does not block when the tool is absent", async () => {
-    const result = await runOptionalEpubCheck("missing.epub");
-    expect(result.available).toBe(false);
-    expect(result.ok).toBe(true);
+  // Passes whether or not epubcheck is installed: absent means available: false, ok: true.
+  it("surfaces the findings, which EPUBCheck writes to stderr", async () => {
+    const path = join(workspace, "fixture.epub");
+    await buildFixtureEpub(path);
+    const result = await runOptionalEpubCheck(path);
+    if (!result.available) {
+      expect(result.ok).toBe(true);
+      return;
+    }
+    // The fixture's container.xml omits the rootfile media type, so this is RSC-003.
+    expect(result.ok).toBe(false);
+    expect(epubCheckErrors(result.output).join("\n")).toContain("RSC-003");
   });
 
   it("reports only errors, capped", () => {
