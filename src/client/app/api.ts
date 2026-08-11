@@ -1,5 +1,13 @@
 import type { InvalidationStage, JobView } from "../../shared/domain/job";
 
+export type StyleProfile = {
+  genre?: string;
+  narrativeVoice?: string;
+  tone?: string;
+  register?: string;
+  notes?: string[];
+};
+
 export type JobResults = {
   validation: unknown | null;
   statistics: unknown | null;
@@ -102,6 +110,13 @@ export const jobActions = {
     request<{ ok: boolean }>(`/jobs/${id}/invalidate`, {
       method: "POST",
       body: JSON.stringify({ from }),
+    }),
+  styleProfile: (id: string) =>
+    request<{ profile: StyleProfile | null }>(`/jobs/${id}/style-profile`),
+  saveStyleProfile: (id: string, profile: StyleProfile) =>
+    request<{ profile: StyleProfile }>(`/jobs/${id}/style-profile`, {
+      method: "PUT",
+      body: JSON.stringify(profile),
     }),
   results: (id: string) => request<JobResults>(`/jobs/${id}/results`),
   rebuild: (id: string) => request<AcceptedResponse>(`/jobs/${id}/rebuild`, { method: "POST" }),

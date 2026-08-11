@@ -3,6 +3,7 @@ import type { InvalidationStage, JobView } from "../../../shared/domain/job";
 import { api, jobActions, type JobResults } from "../../app/api";
 import { subscribeToJobEvents, type JobEvent } from "../../app/job-events";
 import { InvalidationDialog } from "./InvalidationDialog";
+import { StyleProfilePanel } from "./StyleProfilePanel";
 import { DeleteJobDialog } from "./DeleteJobDialog";
 import { JobControls } from "./JobControls";
 import { ProgressPanel } from "./ProgressPanel";
@@ -184,6 +185,7 @@ export function JobPage({ id }: { id: string }) {
               onRebuild={() => void act("rebuild", () => jobActions.rebuild(id))}
             />
           )}
+          <StyleProfilePanel id={id} onSaved={() => void refresh()} />
           {!built(job) && (
             <section className="operation-panel" aria-labelledby="operation-heading">
               <div className="panel-heading">

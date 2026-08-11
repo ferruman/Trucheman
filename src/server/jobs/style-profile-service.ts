@@ -20,7 +20,7 @@ const MIN_PASSAGE = 200;
 const MAX_PASSAGE = 1200;
 const SAMPLE_COUNT = 12;
 
-const styleProfileSchema = z
+export const styleProfileSchema = z
   .object({
     genre: z.string().optional(),
     narrativeVoice: z.string().optional(),

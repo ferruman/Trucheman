@@ -29,6 +29,17 @@ const configSchema = z
     qualityMode: z.enum(["standard", "high"]).optional(),
   })
   .strict();
+/** Every field reaches every prompt of every batch, so each one is bounded. */
+const styleField = z.string().trim().max(600);
+const editableStyleProfileSchema = z
+  .object({
+    genre: styleField.optional(),
+    narrativeVoice: styleField.optional(),
+    tone: styleField.optional(),
+    register: styleField.optional(),
+    notes: z.array(styleField).max(8).optional(),
+  })
+  .strict();
 function parseBody<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
   if (!result.success)
@@ -135,6 +146,21 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
       res.status(204).end();
     } catch (error) {
       console.error("EPUB upload failed", error instanceof Error ? error.message : "unknown error");
+      problemResponse(res, error, req);
+    }
+  });
+  router.get("/:id/style-profile", async (req, res) => {
+    try {
+      res.json({ profile: await orchestrator.styleProfile(req.params.id) });
+    } catch (error) {
+      problemResponse(res, error, req);
+    }
+  });
+  router.put("/:id/style-profile", async (req, res) => {
+    try {
+      const profile = parseBody(editableStyleProfileSchema, req.body);
+      res.json({ profile: await orchestrator.saveStyleProfile(req.params.id, profile) });
+    } catch (error) {
       problemResponse(res, error, req);
     }
   });

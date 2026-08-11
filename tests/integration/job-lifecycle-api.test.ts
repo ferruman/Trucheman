@@ -157,6 +157,42 @@ describe("job lifecycle orchestration", () => {
     for (const name of settled) await expect(access(`${root}/${name}`)).rejects.toThrow();
   });
 
+  it("keeps an edited style profile under the key the next run looks up", async () => {
+    const { repo, job } = await fixture();
+    const root = jobRoot(repo.dataDir, job.id);
+    await mkdir(root, { recursive: true });
+    await writeFile(
+      `${root}/drafts.ndjson`,
+      `${JSON.stringify({ batchId: "b1", segments: [] })}\n`,
+    );
+    await writeFile(`${root}/entity-registry.json`, "{}");
+    const orchestrator = orchestratorFor(repo);
+
+    // Nothing to edit before a run has produced one: a profile written under a made-up cache
+    // key would be re-asked and overwritten by the next run.
+    await expect(orchestrator.saveStyleProfile(job.id, { genre: "noir" })).rejects.toThrow(
+      /nothing to edit/i,
+    );
+
+    await writeFile(
+      `${root}/style-profile.json`,
+      JSON.stringify({ key: "cache-key", value: { genre: "romance" } }),
+    );
+    expect(await orchestrator.styleProfile(job.id)).toEqual({ genre: "romance" });
+
+    expect(
+      await orchestrator.saveStyleProfile(job.id, { genre: "noir", notes: ["clipped"] }),
+    ).toEqual({ genre: "noir", notes: ["clipped"] });
+    expect(JSON.parse(await readFile(`${root}/style-profile.json`, "utf8"))).toEqual({
+      key: "cache-key",
+      value: { genre: "noir", notes: ["clipped"] },
+    });
+    // The block reaches every stage, so the completed work no longer matches the profile.
+    await expect(access(`${root}/drafts.ndjson`)).rejects.toThrow();
+    await expect(access(`${root}/entity-registry.json`)).rejects.toThrow();
+    expect((await repo.get(job.id)).status).toBe("created");
+  });
+
   it("stops recovering positional checkpoints when the source EPUB changed", async () => {
     const { repo, job } = await fixture("paused");
     const root = jobRoot(repo.dataDir, job.id);
