@@ -79,4 +79,32 @@ describe("EPUB consistency audit", () => {
       duplicates: [],
     });
   });
+
+  it("keeps a real duplicated name without reporting ordinary Russian word pairs", () => {
+    const report = analyzeEpubConsistency(
+      [
+        {
+          id: "chapter",
+          lang: "ru",
+          xmlLang: "ru",
+          text: [
+            // Corruption: the ship name was written twice.
+            "Я видел «Алерт», «Алерт» теперь проданный.",
+            // Ordinary prose that a shared four-letter prefix used to flag.
+            "В конце концов он решил провести проверку.",
+            "Голова головоногого была наклонена вперёд.",
+            // Deliberate repetition, marked as such by its punctuation.
+            "Сохранились остатки … остатки древней эпохи.",
+            "Бой тамтамов слышался далеко-далеко впереди.",
+          ].join(" "),
+        },
+      ],
+      "ru",
+      "ru",
+      [],
+    );
+    const duplicates = report.warnings.filter((warning) => warning.includes("duplicated fragment"));
+
+    expect(duplicates).toEqual(['chapter: duplicated fragment "алерт алерт"']);
+  });
 });

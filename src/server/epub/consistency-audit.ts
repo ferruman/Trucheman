@@ -19,6 +19,16 @@ const stemWordPattern = /[\p{L}\p{M}]{4,}/gu;
  * Adjacent words sharing a stem — "В пустыне пустыня", "Из земли Земля". Repairing a
  * fragmented heading one span at a time produced exactly this shape.
  */
+/**
+ * Separators that mark deliberate repetition rather than corruption: «далеко-далеко»,
+ * «остатки … остатки», «поверхностей — поверхностей» are all the author's, and the source
+ * is not available here to prove it, so the punctuation has to speak for them.
+ */
+const rhetoricalSeparator = /[-–—…]|\.\.\./u;
+
+/** Two words are the same word only if they differ in an ending, not in most of the stem. */
+const MIN_STEM_SHARE = 0.8;
+
 export function duplicatedFragments(text: string): string[] {
   const words = [...text.toLocaleLowerCase().matchAll(stemWordPattern)];
   const found: string[] = [];
@@ -26,7 +36,7 @@ export function duplicatedFragments(text: string): string[] {
     const previous = words[index - 1];
     const current = words[index];
     const between = text.slice((previous.index ?? 0) + previous[0].length, current.index ?? 0);
-    if (/[\p{L}\p{N}]/u.test(between)) continue;
+    if (/[\p{L}\p{N}]/u.test(between) || rhetoricalSeparator.test(between)) continue;
     let common = 0;
     while (
       common < Math.min(previous[0].length, current[0].length) &&
@@ -34,7 +44,10 @@ export function duplicatedFragments(text: string): string[] {
     ) {
       common++;
     }
-    if (common >= 4) found.push(`${previous[0]} ${current[0]}`);
+    // A shared four-letter prefix alone matched «в конце концов» and «провести проверку»;
+    // requiring the shared part to dominate the longer word keeps «В пустыне пустыня».
+    if (common >= 4 && common / Math.max(previous[0].length, current[0].length) >= MIN_STEM_SHARE)
+      found.push(`${previous[0]} ${current[0]}`);
   }
   return [...new Set(found)];
 }
