@@ -6,6 +6,7 @@ import type {
   ProviderResponse,
 } from "../providers/provider.js";
 import { ProviderError } from "../providers/provider.js";
+import { redact } from "../domain/redaction.js";
 import { atomicJson } from "../storage/atomic-file.js";
 import { appendJournal, readJournal } from "../storage/ndjson-journal.js";
 
@@ -15,6 +16,12 @@ export type UsageOutcome = "ok" | "invalid_response" | "timeout" | "configuratio
 
 export type UsageRecord = {
   outcome?: UsageOutcome;
+  /**
+   * Why the call was rejected, for anything but `ok`. A retry that succeeds throws the reason
+   * away, so without this the only record of 39 invalid translation responses across seven
+   * books was the count — and a count cannot tell truncation from a broken contract.
+   */
+  detail?: string;
   version: 1;
   recordedAt: string;
   callId: string;
@@ -69,6 +76,7 @@ function usageRecord(
   request: ProviderRequest,
   response: ProviderResponse,
   outcome: UsageOutcome = "ok",
+  detail?: string,
 ): UsageRecord {
   const promptTokens = token(response.usage?.promptTokens);
   const cachedPromptTokens = token(response.usage?.cachedPromptTokens);
@@ -80,6 +88,9 @@ function usageRecord(
   return {
     version: 1,
     outcome,
+    // The message names the batch's own text often enough — a rejected span, a returned
+    // field list — that it goes through the same redaction as anything else leaving a run.
+    detail: detail ? redact(detail).slice(0, 300) : undefined,
     recordedAt: new Date().toISOString(),
     callId: randomUUID(),
     requestId: response.requestId,
@@ -184,8 +195,9 @@ async function recordUsage(
   request: ProviderRequest,
   response: ProviderResponse,
   outcome: UsageOutcome = "ok",
+  detail?: string,
 ) {
-  await appendJournal(join(root, "usage.ndjson"), usageRecord(request, response, outcome));
+  await appendJournal(join(root, "usage.ndjson"), usageRecord(request, response, outcome, detail));
   const report = await readUsageReport(root);
   await atomicJson(join(root, "usage-report.json"), report);
 }
@@ -221,6 +233,7 @@ export class UsageTrackingProvider implements LanguageModelProvider {
             request,
             { segments: [], usage: error.usage, requestId: error.requestId },
             outcome,
+            error.message,
           ),
         );
         await this.writes;

@@ -190,6 +190,9 @@ describe("model usage tracking", () => {
         invalidResponses: 1,
       },
     });
+    // A retry that succeeds discards the reason, so the journal is the only place it survives.
+    const journal = JSON.parse(await readFile(join(root, "usage.ndjson"), "utf8"));
+    expect(journal).toMatchObject({ outcome: "invalid_response", detail: "Malformed response" });
   });
 
   it("separates timeouts and invalid responses per stage", async () => {
