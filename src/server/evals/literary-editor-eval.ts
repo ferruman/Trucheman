@@ -26,6 +26,12 @@ export const literaryEditorCorpusSchema = z
   .object({
     version: z.number().int().positive(),
     description: z.string().min(1),
+    /**
+     * The acceptance rule, declared with the corpus it applies to: a run whose pass rate falls
+     * below it is a regression and fails. It belongs here rather than in a flag nobody passes,
+     * and it is versioned with the cases that produced the number.
+     */
+    minPassRate: z.number().min(0).max(1).optional(),
     cases: z.array(literaryEditorCaseSchema).min(1),
   })
   .strict();

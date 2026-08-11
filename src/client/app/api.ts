@@ -12,6 +12,8 @@ export type JobResults = {
     /** Deterministic per-segment findings; produced in both quality modes. */
     scanDefectSegments: number;
     scanDefectsByKind: Record<string, number>;
+    /** Batches the last run replayed from a checkpoint instead of paying for again. */
+    cachedCheckpoints: { translation: number; editing: number; audit: number; repair: number };
   } | null;
   consistency: {
     entities: number;

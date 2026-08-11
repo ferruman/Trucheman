@@ -64,6 +64,8 @@ export type JobResults = {
     /** Deterministic per-segment findings; produced in both quality modes. */
     scanDefectSegments: number;
     scanDefectsByKind: Record<string, number>;
+    /** Batches the last run replayed from a checkpoint instead of paying for again. */
+    cachedCheckpoints: { translation: number; editing: number; audit: number; repair: number };
   } | null;
   consistency: {
     entities: number;
@@ -481,6 +483,12 @@ export class JobOrchestrator {
           : 0,
         scanDefectSegments: count(quality.scan?.defectSegments),
         scanDefectsByKind: quality.scan?.defectsByKind ?? {},
+        cachedCheckpoints: {
+          translation: count(quality.cachedCheckpoints?.translation),
+          editing: count(quality.cachedCheckpoints?.editing),
+          audit: count(quality.cachedCheckpoints?.audit),
+          repair: count(quality.cachedCheckpoints?.repair),
+        },
       },
       consistency: consistency && {
         entities: count(consistency.entityStats?.kept),

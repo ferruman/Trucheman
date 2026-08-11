@@ -131,6 +131,15 @@ async function main() {
   if (!Number.isInteger(offset) || offset < 0) {
     throw new Error("--offset must be a non-negative integer");
   }
+  const minPassRateValue = argument("--min-pass-rate");
+  const minPassRateOverride =
+    minPassRateValue === undefined ? undefined : Number.parseFloat(minPassRateValue);
+  if (
+    minPassRateOverride !== undefined &&
+    (!Number.isFinite(minPassRateOverride) || minPassRateOverride < 0 || minPassRateOverride > 1)
+  ) {
+    throw new Error("--min-pass-rate must be a number from 0 to 1");
+  }
 
   const corpus = literaryEditorCorpusSchema.parse(JSON.parse(await readFile(corpusPath, "utf8")));
   const cases = corpus.cases.slice(offset, limit ? offset + limit : undefined);
@@ -222,6 +231,10 @@ async function main() {
         ]),
       )
     : summarize(singleResults);
+  // The acceptance rule is only meaningful over the whole frozen set: a --limit run samples a
+  // few cases, so its pass rate says nothing about a regression and must not fail the build.
+  const wholeCorpus = offset === 0 && cases.length === corpus.cases.length;
+  const minPassRate = minPassRateOverride ?? corpus.minPassRate;
   const report = {
     schemaVersion: compare ? 2 : 1,
     createdAt: new Date().toISOString(),
@@ -236,6 +249,10 @@ async function main() {
       model: profile.model,
       temperature: profile.temperature,
       thinking: profile.thinking,
+    },
+    acceptance: {
+      minPassRate: minPassRate ?? null,
+      enforced: minPassRate !== undefined && wholeCorpus,
     },
     summary,
     results,
@@ -256,6 +273,23 @@ async function main() {
     ? Object.values(summary).reduce((total, value) => total + value.errors, 0)
     : summary.errors;
   if (errorCount > 0) process.exitCode = 1;
+  if (minPassRate === undefined) return;
+  if (!wholeCorpus) {
+    process.stdout.write("Partial corpus selection: the acceptance rule was not enforced\n");
+    return;
+  }
+  const summaries: Array<[string, ReturnType<typeof summarize>]> = compare
+    ? Object.entries(summary as Record<string, ReturnType<typeof summarize>>)
+    : [[promptVersions[0], summary as ReturnType<typeof summarize>]];
+  for (const [label, value] of summaries) {
+    process.stdout.write(
+      `${label}: pass rate ${(value.passRate * 100).toFixed(1)}% (floor ${(minPassRate * 100).toFixed(1)}%)\n`,
+    );
+    if (value.passRate < minPassRate) {
+      process.stdout.write(`REGRESSION ${label}: below the corpus acceptance rule\n`);
+      process.exitCode = 1;
+    }
+  }
 }
 
 await main();

@@ -63,6 +63,19 @@ export function ResultPage({ id, results, error, busy, onRetry, onRebuild }: Pro
                 </dd>
               </div>
             )}
+            {results.quality && (
+              <div>
+                <dt>Reused from checkpoints</dt>
+                <dd>
+                  {Object.values(results.quality.cachedCheckpoints).some((value) => value > 0)
+                    ? `${Object.entries(results.quality.cachedCheckpoints)
+                        .filter(([, value]) => value > 0)
+                        .map(([stage, value]) => `${value} ${stage}`)
+                        .join(", ")} batch(es) replayed without a provider call`
+                    : "Nothing — every stage ran against the provider"}
+                </dd>
+              </div>
+            )}
             {results.quality && results.quality.auditedSegments > 0 && (
               <div>
                 <dt>Audit failures</dt>
