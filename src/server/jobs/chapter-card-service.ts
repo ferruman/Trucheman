@@ -13,7 +13,7 @@ import {
 } from "./consistency-service.js";
 
 /** Bump only when the sampling or the card shape changes: this re-asks the model. */
-const CHAPTER_CARD_VERSION = 1;
+const CHAPTER_CARD_VERSION = 2;
 const CHAPTER_CARD_CACHE_KEY = `chapter-cards-v${CHAPTER_CARD_VERSION}`;
 /**
  * A chapter is read whole — the point of the card is the facts a single batch cannot see —
@@ -31,12 +31,21 @@ const chapterCardSchema = z
           name: z.string(),
           gender: z.string().optional(),
           number: z.string().optional(),
+          /** A phrase from the chapter that establishes the fact; checked against the source. */
+          evidence: z.string().optional(),
         }),
       )
       .max(20)
       .optional(),
     address: z
-      .array(z.object({ from: z.string(), to: z.string(), register: z.string() }))
+      .array(
+        z.object({
+          from: z.string(),
+          to: z.string(),
+          register: z.string(),
+          evidence: z.string().optional(),
+        }),
+      )
       .max(20)
       .optional(),
     terms: z
@@ -54,6 +63,41 @@ function chapterText(document: ConsistencyDocument) {
     .filter(Boolean)
     .join("\n")
     .slice(0, CARD_BUDGET);
+}
+
+/** Quotes, dashes and spacing vary between what the model returns and the source it read. */
+function comparable(text: string) {
+  return text
+    .toLocaleLowerCase()
+    .replace(/[«»""''`]/gu, '"')
+    .replace(/[‑–—]/gu, "-")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+/**
+ * Drop every fact the chapter does not actually support. A card is binding for every block of
+ * its chapter, so an invented character or a remembered-not-read address register is repeated
+ * across the whole chapter with the authority of an established fact. The critic cannot catch
+ * it either: it judges one block, and the block is consistent with the card it was given.
+ *
+ * The same shape as the critic's spans — a claim is kept only when its quote occurs verbatim
+ * in what the model was shown.
+ */
+export function verifyChapterCard(card: ChapterCard, chapter: string) {
+  const haystack = comparable(chapter);
+  const supported = (evidence: string | undefined) =>
+    Boolean(evidence?.trim()) && haystack.includes(comparable(evidence!));
+  const characters = (card.characters ?? []).filter((character) => supported(character.evidence));
+  const address = (card.address ?? []).filter((pair) => supported(pair.evidence));
+  // A recurring term is its own evidence: it has to be in the chapter to recur in it.
+  const terms = (card.terms ?? []).filter((term) => supported(term.source));
+  const dropped =
+    (card.characters?.length ?? 0) -
+    characters.length +
+    ((card.address?.length ?? 0) - address.length) +
+    ((card.terms?.length ?? 0) - terms.length);
+  return { card: { characters, address, terms }, dropped };
 }
 
 /**
@@ -108,6 +152,8 @@ export async function resolveChapterCards(
   root: string,
   signal?: AbortSignal,
   concurrency = 1,
+  /** Preflight runs for minutes with no batch to report. Say which chapter it is on. */
+  onProgress?: (done: number, total: number) => Promise<void> | void,
 ): Promise<{ cards: Map<string, ChapterCard>; failed: number }> {
   const path = `${root}/chapter-cards.json`;
   const cacheSchema = z.record(z.string(), chapterCardSchema);
@@ -122,24 +168,34 @@ export async function resolveChapterCards(
   let failed = 0;
   // One call per chapter would otherwise be a serial wait in front of the whole book, on a
   // novel long enough to have cards worth asking for. Same pool as the translation run.
-  const queue = chapters.filter((chapter) => !cache[chapter.key]).values();
+  const pending = chapters.filter((chapter) => !cache[chapter.key]);
+  const queue = pending.values();
+  let done = 0;
   await Promise.all(
     Array.from({ length: Math.max(1, Math.trunc(concurrency)) }, async () => {
       for (const chapter of queue) {
         if (signal?.aborted)
           throw signal.reason instanceof Error ? signal.reason : new Error("Job paused");
         try {
-          cache[chapter.key] = chapterCardSchema.parse(
-            await completeJsonTask(
-              provider,
-              profile,
-              sourceLanguage,
-              targetLanguage,
-              `chapter-card-${chapter.id}`,
-              { task: "chapter_card", chapter: chapter.text },
-              signal,
+          const verified = verifyChapterCard(
+            chapterCardSchema.parse(
+              await completeJsonTask(
+                provider,
+                profile,
+                sourceLanguage,
+                targetLanguage,
+                `chapter-card-${chapter.id}`,
+                { task: "chapter_card", chapter: chapter.text },
+                signal,
+              ),
             ),
+            chapter.text,
           );
+          if (verified.dropped)
+            console.error(
+              `Chapter card for ${chapter.id}: dropped ${verified.dropped} fact(s) the chapter does not support`,
+            );
+          cache[chapter.key] = verified.card;
           // Written per chapter: a run interrupted halfway keeps the chapters it paid for.
           await writeCache(path, CHAPTER_CARD_CACHE_KEY, cache);
         } catch (error) {
@@ -153,6 +209,7 @@ export async function resolveChapterCards(
           );
           failed++;
         }
+        await onProgress?.(++done, pending.length);
       }
     }),
   );

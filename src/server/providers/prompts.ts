@@ -147,8 +147,9 @@ For a resolve_conflicts task, return a JSON string with this shape in the segmen
 {"decisions":[{"source":"exact source entity","canonical":"chosen exact target form","variants":["exact variant to replace"]}]}
 
 For a chapter_card task, return a JSON string with this shape in the segment text field:
-{"characters":[{"name":"as written in the chapter","gender":"male|female|other|unknown","number":"singular|plural"}],"address":[{"from":"character","to":"character","register":"formal|informal, with the evidence in one clause"}],"terms":[{"source":"recurring plain noun phrase","note":"what it refers to"}]}
+{"characters":[{"name":"as written in the chapter","gender":"male|female|other|unknown","number":"singular|plural","evidence":"short phrase copied verbatim from the chapter"}],"address":[{"from":"character","to":"character","register":"formal|informal","evidence":"short phrase copied verbatim from the chapter"}],"terms":[{"source":"recurring plain noun phrase","note":"what it refers to"}]}
 Record only what the chapter's own text establishes, and only facts a translator of a single isolated paragraph could not recover: grammatical gender and number of the characters, how each pair addresses the other, and recurring non-name noun phrases that must stay identical. Never summarise events, and never list a character the chapter does not name.
+Every evidence value and every recurring term must be copied character for character from the supplied chapter. Code discards any fact whose evidence it cannot find there, so an approximated or remembered quote loses the fact.
 
 For a book_style task, return a JSON string with this shape in the segment text field:
 {"genre":"...","narrativeVoice":"...","tone":"...","register":"...","notes":["short binding instruction for the translator"]}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatChapterCard,
   resolveChapterCards,
+  verifyChapterCard,
 } from "../../src/server/jobs/chapter-card-service.js";
 import type { ConsistencyDocument } from "../../src/server/jobs/consistency-service.js";
 import type {
@@ -96,11 +97,47 @@ describe("formatChapterCard", () => {
   });
 });
 
+describe("verifyChapterCard", () => {
+  const chapter = "Марья Ивановна ждала у окна. «Вы уверены?» — спросил он про «серую башню».";
+
+  it("keeps a fact whose quote is in the chapter and drops one that is not", () => {
+    const verified = verifyChapterCard(
+      {
+        characters: [
+          { name: "Марья", gender: "female", evidence: "Марья Ивановна ждала" },
+          { name: "Пётр", gender: "male", evidence: "Пётр вошёл в комнату" },
+        ],
+        address: [{ from: "он", to: "Марья", register: "formal", evidence: '"Вы уверены?"' }],
+        terms: [{ source: "серую башню" }, { source: "хрустальный мост" }],
+      },
+      chapter,
+    );
+    expect(verified.card.characters.map((character) => character.name)).toEqual(["Марья"]);
+    // Quotes and dashes differ between what the model returns and what it read.
+    expect(verified.card.address).toHaveLength(1);
+    expect(verified.card.terms.map((term) => term.source)).toEqual(["серую башню"]);
+    expect(verified.dropped).toBe(2);
+  });
+
+  it("drops a fact with no evidence at all rather than trusting it", () => {
+    expect(
+      verifyChapterCard({ characters: [{ name: "Марья", gender: "female" }] }, chapter),
+    ).toMatchObject({ card: { characters: [] }, dropped: 1 });
+  });
+});
+
 describe("resolveChapterCards", () => {
   it("skips short documents, caches per chapter, and asks once", async () => {
     const root = await mkdtemp(join(tmpdir(), "chapter-cards-"));
     try {
-      const provider = new StubProvider({ characters: [{ name: "Kyra", gender: "female" }] });
+      const provider = new StubProvider({
+        characters: [
+          { name: "Kyra", gender: "female", evidence: "She waited." },
+          // The chapter never mentions him: a card is binding for every block of the chapter,
+          // so an invented character would be asserted across all of them.
+          { name: "Aldous", gender: "male", evidence: "Aldous drew his sword." },
+        ],
+      });
       const documents = [
         document("document-1", "Title page"),
         document("document-2", "She waited. ".repeat(400)),
@@ -123,7 +160,7 @@ describe("resolveChapterCards", () => {
 
       const again = await resolve();
       expect(provider.requests).toHaveLength(1);
-      expect(again.cards.get("document-2")?.characters?.[0].name).toBe("Kyra");
+      expect(again.cards.get("document-2")?.characters?.map((c) => c.name)).toEqual(["Kyra"]);
       expect(JSON.parse(await readFile(join(root, "chapter-cards.json"), "utf8")).key).toContain(
         "chapter-cards-v",
       );
