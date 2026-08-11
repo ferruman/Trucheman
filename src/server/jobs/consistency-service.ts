@@ -764,28 +764,44 @@ function words(value: string) {
   return value.split(/\s+/u).filter(Boolean);
 }
 
-function containsWholeWord(haystack: string, needle: string) {
-  return new RegExp(boundedPattern(needle), "u").test(haystack);
+/**
+ * The stem and the ending `nameStem` took off it, so two forms compare part by part. Marks
+ * around the word are punctuation, not grammar: «Эмма» and Эмма are one word in one case,
+ * and adding the marks is the entire point of that decision.
+ */
+function splitEnding(word: string, endings: string[]): [stem: string, ending: string] {
+  const bare = word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+  const stem = nameStem(bare, endings);
+  return [stem.toLocaleLowerCase(), bare.slice(stem.length).toLocaleLowerCase()];
 }
 
 /**
- * A decision may re-spell a name; it may not rename one. The resolver routinely returns the
- * canonical's own declensions as variants, and single-word renderings as variants of the
- * full name, so applying its output literally collapsed Летиции into Летиция and truncated
- * Кира Дэймон to Кира.
+ * A decision may re-spell a name; it may not rename one, and it may not re-inflect one.
+ * The resolver offers the canonical's own declensions, its adjectives, its abbreviations and
+ * its longer titles as variants, and applying those literally collapsed Летиции into Летиция,
+ * truncated Кира Дэймон to Кира, and shipped «Гренландия дьявольской таблички» for
+ * «гренландской дьявольской таблички» and «Кап. Коллинз» for «капитан Коллинз».
+ *
+ * A variant is a respelling only when it has the canonical's shape: the same number of words,
+ * each word carrying the same ending, each stem near enough to be the same word misspelt.
+ * Everything else is a different grammatical form — and inflected forms of a variant that was
+ * accepted are the stem substitution's job below, which declines them instead of flattening
+ * them.
  */
 export function isSafeVariant(variant: string, canonical: string, nameEndings: string[] = []) {
-  if (variant === canonical || variant.length < 2) return false;
-  const stem = (value: string) => nameStem(value, nameEndings).toLocaleLowerCase();
-  if (
-    words(variant).length === 1 &&
-    words(canonical).length === 1 &&
-    stem(variant) === stem(canonical)
-  )
-    return false;
-  // A first name and a full name refer differently; swapping one for the other is a rename.
-  if ((words(variant).length === 1) !== (words(canonical).length === 1)) return false;
-  return !containsWholeWord(variant, canonical) && !containsWholeWord(canonical, variant);
+  if (variant.length < 2) return false;
+  // Case alone is not a respelling: a heading's КУЛЬТ КТУЛХУ is not the prose's Культ Ктулху.
+  if (variant.toLocaleLowerCase() === canonical.toLocaleLowerCase()) return false;
+  const variantWords = words(variant),
+    canonicalWords = words(canonical);
+  if (variantWords.length !== canonicalWords.length) return false;
+  return variantWords.every((word, index) => {
+    const [variantStem, variantEnding] = splitEnding(word, nameEndings);
+    const [canonicalStem, canonicalEnding] = splitEnding(canonicalWords[index]!, nameEndings);
+    // Кир/Кайр is two edits apart — the same threshold the evidence search uses. капитан and
+    // кап. are four, which is the distance between a word and its abbreviation, not a typo.
+    return variantEnding === canonicalEnding && distance(variantStem, canonicalStem) <= 2;
+  });
 }
 
 /**

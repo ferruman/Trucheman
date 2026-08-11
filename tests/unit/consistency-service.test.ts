@@ -285,6 +285,59 @@ describe("book-wide consistency", () => {
     expect(text).toContain("«Не сейчас, Кай»");
   });
 
+  it("never lets resolver decisions re-inflect an entity", () => {
+    // Every decision here is one the resolver returned for job be8d6406, and every one of
+    // them reached the shipped EPUB: «Гренландия дьявольской таблички», «Кап. Коллинз»,
+    // «данных о КУЛЬТ КТУЛХУ», «разрешение от Архивный фонд».
+    const values: ConsistencyDocument[] = [
+      {
+        id: "inflect",
+        sourceSegments: [
+          sourceSegment("inflect:0", "the Greenland tablet. Capt. Collins refused."),
+          sourceSegment(
+            "inflect:1",
+            "data on the Cthulhu Cult, permission from the Archive Foundation",
+          ),
+          sourceSegment("inflect:2", "the schooner Emma sailed"),
+        ],
+        editedSegments: [
+          { id: "inflect:0", text: "гренландской таблички. Капитан Коллинз отказался." },
+          {
+            id: "inflect:1",
+            text: "данных о Культе Ктулху, разрешение от Литературного архивного фонда",
+          },
+          { id: "inflect:2", text: "шхуна Эмма отплыла" },
+        ],
+      },
+    ];
+
+    applyConsistencyDecisions(
+      values,
+      [
+        { source: "Greenland", canonical: "Гренландия", variants: ["гренландской"] },
+        { source: "Capt", canonical: "Кап.", variants: ["Капитан"] },
+        { source: "CTHULHU CULT", canonical: "КУЛЬТ КТУЛХУ", variants: ["Культе Ктулху"] },
+        {
+          source: "Archive Foundation",
+          canonical: "Архивный фонд",
+          variants: ["Литературного архивного фонда"],
+        },
+        { source: "Emma", canonical: "«Эмма»", variants: ["Эмма"] },
+      ],
+      targetLanguageProfile("ru").nameEndings,
+    );
+    const text = values[0].editedSegments.map((segment) => segment.text).join(" ");
+
+    // An adjective is not a declension of its noun, and a word is not its abbreviation.
+    expect(text).toContain("гренландской таблички");
+    expect(text).toContain("Капитан Коллинз");
+    // A phrase in the prepositional case is not the heading it was taken from.
+    expect(text).toContain("данных о Культе Ктулху");
+    expect(text).toContain("от Литературного архивного фонда");
+    // Adding the marks around a title is still a respelling, and still applies.
+    expect(text).toContain("шхуна «Эмма» отплыла");
+  });
+
   it("carries an accepted decision to declined forms and leaves the canonical's own alone", () => {
     const values: ConsistencyDocument[] = [
       {
