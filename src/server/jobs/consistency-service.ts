@@ -128,6 +128,9 @@ const sourceStopWords = new Set(
     .filter(Boolean),
 );
 const lowercaseWordPattern = /(?<![\p{L}\p{N}])\p{Ll}[\p{L}\p{M}'’-]{2,}/gu;
+/** How far the capitalized spelling must outrun the lowercase one to be a name after all. */
+const NAME_OVER_NOUN = 4;
+const MIN_NAME_MENTIONS = 5;
 /** Lowercase words that stay inside a name: Little Chapel of the Stars. */
 const nameConnectors = new Set(["of", "the", "de", "del", "la", "le", "van", "von", "der", "du"]);
 const tokenPattern = /[\p{L}\p{N}\p{M}'’-]+/gu;
@@ -232,12 +235,38 @@ export function extractEntityEvidence(documents: ConsistencyDocument[]): {
   entities: EntityEvidence[];
   stats: EntityEvidenceStats;
 } {
-  // A word that also occurs lowercase somewhere in the book is a common word, not a name.
-  const lowercaseWords = new Set<string>();
+  // A word that also occurs lowercase somewhere in the book is usually a common word rather
+  // than a name — but some books name their central figure with one. Count both spellings so
+  // `namedRatherThanCommon` can tell the two apart.
+  const lowercaseWords = new Map<string, number>();
+  const capitalizedMidSentence = new Map<string, number>();
   for (const document of documents)
-    for (const segment of document.sourceSegments)
-      for (const match of segment.text.matchAll(lowercaseWordPattern))
-        lowercaseWords.add(match[0].toLocaleLowerCase());
+    for (const segment of document.sourceSegments) {
+      for (const match of segment.text.matchAll(lowercaseWordPattern)) {
+        const key = match[0].toLocaleLowerCase();
+        lowercaseWords.set(key, (lowercaseWords.get(key) ?? 0) + 1);
+      }
+      for (const match of segment.text.matchAll(sourceNamePattern)) {
+        const preceding = segment.text.slice(0, match.index).trimEnd().at(-1);
+        if (!preceding || /[.!?]/u.test(preceding)) continue;
+        const key = match[0].toLocaleLowerCase();
+        capitalizedMidSentence.set(key, (capitalizedMidSentence.get(key) ?? 0) + 1);
+      }
+    }
+  /**
+   * A word the book also writes lowercase is a common word — unless the book keeps
+   * capitalizing it mid-sentence anyway, which is what a name spelt like a common noun looks
+   * like. "The Crow" ran 326 mid-sentence capitals against 3 lowercase birds, "Johnny Church"
+   * 117 against 2, "Erik Hearse" 43 against 2; all three were dropped as common words, so the
+   * book's central figures had no canonical rendering and every stage guessed one. The
+   * margin has to be wide: at 1:1 the list fills with truth, devil and mission.
+   */
+  const namedRatherThanCommon = (key: string) => {
+    const common = lowercaseWords.get(key) ?? 0;
+    if (!common) return true;
+    const named = capitalizedMidSentence.get(key) ?? 0;
+    return named >= MIN_NAME_MENTIONS && named >= common * NAME_OVER_NOUN;
+  };
   const stats: EntityEvidenceStats = {
     candidates: 0,
     stopWords: 0,
@@ -282,7 +311,9 @@ export function extractEntityEvidence(documents: ConsistencyDocument[]): {
         // cited the possessive against correct text and repair capitalized ordinary crows.
         const source = value
           .replace(/[.-]+$/u, "")
-          .replace(/['’](s|re|ve|ll|d|m|t)$/iu, "")
+          // Not n’t: that apostrophe belongs to the verb, and stripping it leaves "Didn",
+          // "Shouldn" and "Couldn" — stems no filter downstream recognizes as words.
+          .replace(/['’](s|re|ve|ll|d|m)$/iu, "")
           .replace(/[.-]+$/u, "")
           .trim()
           .replace(/\s+/gu, " ");
@@ -293,7 +324,7 @@ export function extractEntityEvidence(documents: ConsistencyDocument[]): {
           continue;
         }
         // Multi-word matches (place patterns) never appear as a single lowercase token.
-        if (!key.includes(" ") && lowercaseWords.has(key)) {
+        if (!key.includes(" ") && !namedRatherThanCommon(key)) {
           if (!found.has(key)) stats.commonWords++;
           continue;
         }

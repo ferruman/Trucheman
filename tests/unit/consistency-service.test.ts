@@ -668,6 +668,7 @@ describe("book-wide consistency", () => {
           sourceSegment("clitics:0", "Kyra feared Corvus. She had seen Corvus’s."),
           sourceSegment("clitics:1", "Corvus’s. Kyra ran. I’m sure they’ve gone."),
           sourceSegment("clitics:2", "Corvus waited, and I’m certain they’ve waited too."),
+          sourceSegment("clitics:3", "Didn’t she run? Shouldn’t she? Didn’t Corvus wait?"),
         ],
         editedSegments: [],
       },
@@ -679,6 +680,36 @@ describe("book-wide consistency", () => {
     expect(sources).not.toContain("Corvus’s");
     expect(sources).not.toContain("I’m");
     expect(sources).not.toContain("They’ve");
+    // n’t belongs to the verb: stripping it leaves "Didn", which no filter recognizes.
+    expect(sources).not.toContain("Didn");
+    expect(sources).not.toContain("Shouldn");
+  });
+
+  it("keeps a name the book also spells as a common noun", () => {
+    // "The Crow" ran 326 mid-sentence capitals against 3 lowercase birds and was still
+    // dropped as a common word, so the book's central figure had no canonical rendering and
+    // every stage guessed one — the audit ended up citing a possessive against correct text.
+    const named = (times: number, text: string) =>
+      Array.from({ length: times }, (_, index) => sourceSegment(`crow:${text}${index}`, text));
+    const values: ConsistencyDocument[] = [
+      {
+        id: "crow",
+        sourceSegments: [
+          ...named(8, "Kyra felt the Crow watching her from the wire."),
+          ...named(1, "A crow settled on the wire and said nothing."),
+          // Capitalized often enough to clear the floor, nowhere near often enough to clear
+          // the margin: an ordinary noun that a few sentences happen to dress up.
+          ...named(6, "Kyra saw the Truth in it and looked away."),
+          ...named(12, "The truth was thin, and the truth was cold."),
+        ],
+        editedSegments: [],
+      },
+    ];
+
+    const sources = extractRepeatedSourceEntities(values).map((entity) => entity.source);
+
+    expect(sources).toContain("Crow");
+    expect(sources).not.toContain("Truth");
   });
 
   it("resolves consistency in chunks and keeps decisions when one chunk fails", async () => {
