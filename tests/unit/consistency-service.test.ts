@@ -338,6 +338,40 @@ describe("book-wide consistency", () => {
     expect(text).toContain("шхуна «Эмма» отплыла");
   });
 
+  it("never lets a decision drop the marks around a variant", () => {
+    // Every decision here is one the resolver returned for job 4c3bcb2a, and every one of them
+    // reached the shipped EPUB: fifteen lines of dialogue lost their opening guillemet, a car
+    // was unquoted, and навахо-гобелену became one word.
+    const values: ConsistencyDocument[] = [
+      {
+        id: "marks",
+        sourceSegments: [
+          sourceSegment("marks:0", "“Uh-uh, this is sweet,” Kyra agreed. “Real sweet.”"),
+          sourceSegment("marks:1", "He drove the Durango past the Navajo rug."),
+        ],
+        editedSegments: [
+          { id: "marks:0", text: "«Ага, мило», — согласилась Кира. «Очень мило»." },
+          { id: "marks:1", text: "Он проехал на «Дуранго» мимо навахо-гобелену." },
+        ],
+      },
+    ];
+
+    applyConsistencyDecisions(
+      values,
+      [
+        { source: "Uh-uh", canonical: "Ага", variants: ["«Ага", "Ага,", "Ага."] },
+        { source: "Durango", canonical: "Дуранго", variants: ["«Дуранго»"] },
+        { source: "Navajo", canonical: "навахо", variants: ["навахо-"] },
+      ],
+      targetLanguageProfile("ru").nameEndings,
+    );
+    const text = values[0].editedSegments.map((segment) => segment.text).join(" ");
+
+    expect(text).toContain("«Ага, мило»");
+    expect(text).toContain("на «Дуранго» мимо");
+    expect(text).toContain("навахо-гобелену");
+  });
+
   it("carries an accepted decision to declined forms and leaves the canonical's own alone", () => {
     const values: ConsistencyDocument[] = [
       {

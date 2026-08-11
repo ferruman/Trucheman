@@ -801,6 +801,23 @@ function words(value: string) {
 }
 
 /**
+ * `splitEnding` drops the marks around a word before it compares two forms, but
+ * `replaceVariants` writes the variant out literally. Gaining marks is the whole point of a
+ * decision like Эмма → «Эмма». Losing them is never one: «Ага → Ага stripped the opening
+ * guillemet off fifteen lines of dialogue, «Дуранго» → Дуранго unquoted a car, and навахо- →
+ * навахо welded навахо-гобелену into one word. So a variant may carry no marks of its own, or
+ * exactly the canonical's — never marks the canonical does not have.
+ */
+function keepsMarks(variantWord: string, canonicalWord: string) {
+  const leading = /^[^\p{L}\p{N}]*/u;
+  const trailing = /[^\p{L}\p{N}]*$/u;
+  return [leading, trailing].every((side) => {
+    const variantMarks = side.exec(variantWord)![0];
+    return variantMarks === "" || variantMarks === side.exec(canonicalWord)![0];
+  });
+}
+
+/**
  * The stem and the ending `nameStem` took off it, so two forms compare part by part. Marks
  * around the word are punctuation, not grammar: «Эмма» and Эмма are one word in one case,
  * and adding the marks is the entire point of that decision.
@@ -832,8 +849,12 @@ export function isSafeVariant(variant: string, canonical: string, nameEndings: s
     canonicalWords = words(canonical);
   if (variantWords.length !== canonicalWords.length) return false;
   return variantWords.every((word, index) => {
+    const canonicalWord = canonicalWords[index]!;
+    // A variant that carries marks the canonical drops is a quoting or hyphenation difference,
+    // and applying it deletes punctuation the decision never reasoned about.
+    if (!keepsMarks(word, canonicalWord)) return false;
     const [variantStem, variantEnding] = splitEnding(word, nameEndings);
-    const [canonicalStem, canonicalEnding] = splitEnding(canonicalWords[index]!, nameEndings);
+    const [canonicalStem, canonicalEnding] = splitEnding(canonicalWord, nameEndings);
     // Кир/Кайр is two edits apart — the same threshold the evidence search uses. капитан and
     // кап. are four, which is the distance between a word and its abbreviation, not a typo.
     return variantEnding === canonicalEnding && distance(variantStem, canonicalStem) <= 2;
