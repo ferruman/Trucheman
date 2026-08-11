@@ -138,6 +138,12 @@ export async function resolveChapterCards(
         } catch (error) {
           if (signal?.aborted) throw error;
           // One unusable chapter is one chapter without context, not a book without cards.
+          // The reason has to be said out loud: counted-and-discarded is how a chapter card
+          // pass that produced nothing for a whole book still looked like one warning.
+          console.error(
+            `Chapter card for ${chapter.id} failed:`,
+            error instanceof Error ? error.message : "unknown error",
+          );
           failed++;
         }
       }
