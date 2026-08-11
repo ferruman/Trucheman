@@ -142,6 +142,52 @@ function throwIfAborted(signal?: AbortSignal) {
 }
 
 /**
+ * A block that came back byte-identical to its source was never translated at all, and the
+ * critic is the wrong instrument to notice: it is asked to judge a translation, so it reads
+ * the untouched English as the translation and finds it excellent. The scan sees it for
+ * free, so it joins the critic's findings instead of only reaching the report.
+ *
+ * Only this one defect kind is routed here. `source_residue` fires on «Project Gutenberg»,
+ * which the licence requires to stay English, and `length_ratio`/`missing_numbers` are
+ * heuristics — paying a rewrite to "fix" correct text is worse than reporting it.
+ */
+function untranslatedFindings(
+  request: ProviderSegment[],
+  edited: ProviderSegment[],
+  targetTag: string | undefined,
+): QualityFinding[] {
+  const editedById = new Map(edited.map((segment) => [segment.id, segment.text]));
+  return scanSegments(request, edited, targetTag)
+    .filter((defect) => defect.kind === "untranslated")
+    .map((defect) => ({
+      id: defect.id,
+      rejectedIssues: 0,
+      issues: [
+        {
+          span: (editedById.get(defect.id) ?? "").slice(0, 2000),
+          type: "source_language_interference" as const,
+          severity: "high" as const,
+          reason: "The block is identical to the original: it was never translated.",
+        },
+      ],
+    }));
+}
+
+/** Critic findings plus the scan's, merged per block so one id never asks for two repairs. */
+function mergeFindings(audited: QualityFinding[], scanned: QualityFinding[]): QualityFinding[] {
+  if (!scanned.length) return audited;
+  const byId = new Map(audited.map((finding) => [finding.id, finding]));
+  for (const finding of scanned) {
+    const existing = byId.get(finding.id);
+    byId.set(
+      finding.id,
+      existing ? { ...existing, issues: [...existing.issues, ...finding.issues] } : finding,
+    );
+  }
+  return [...byId.values()];
+}
+
+/**
  * Second critic pass over the blocks a repair changed. A block that still carries a
  * high-severity issue falls back to its pre-repair edited text, which the first audit
  * already judged acceptable enough to keep.
@@ -337,6 +383,10 @@ export async function runTwoPass(
           profile: criticProfile.name,
         });
       }
+      findings = mergeFindings(
+        findings,
+        untranslatedFindings(request, editedSegments, options.targetLanguage.tag),
+      );
       qualityFindings[index] = { batchId: batch.id, findings };
       if (savedAudit) cachedCheckpoints.audit++;
       await options.onProgress?.("audit", batch, Boolean(savedAudit));
@@ -402,7 +452,11 @@ export async function runTwoPass(
       }
     }
     edits.set(batch.id, editedSegments);
-    scanDefectsByBatch[index] = scanSegments(request, editedSegments).map((defect) => ({
+    scanDefectsByBatch[index] = scanSegments(
+      request,
+      editedSegments,
+      options.targetLanguage.tag,
+    ).map((defect) => ({
       batchId: batch.id,
       ...defect,
     }));

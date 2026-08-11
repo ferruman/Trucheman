@@ -28,6 +28,53 @@ function numbers(text: string) {
   return (text.match(/\d+/gu) ?? []).filter((value) => value.length <= 6);
 }
 
+// ponytail: Russian only, 1–39 — the dates and small counts prose actually spells out.
+// Any other language or larger value keeps reporting, which is the safe direction.
+const RU_UNITS = [
+  "",
+  "перв|одн",
+  "втор|дв[уе]",
+  "трет|тр[её]",
+  "чётверт|четв[её]р",
+  "пят",
+  "шест",
+  "седьм|сем",
+  "восьм|восем",
+  "девят",
+];
+const RU_TEENS = [
+  "десят",
+  "одиннадцат",
+  "двенадцат",
+  "тринадцат",
+  "четырнадцат",
+  "пятнадцат",
+  "шестнадцат",
+  "семнадцат",
+  "восемнадцат",
+  "девятнадцат",
+];
+
+/**
+ * Stems that must all appear for `value` to count as written out in words. "12" reads as
+ * «двенадцатого», "22" as «двадцать второго» — reporting those as dropped numbers buried
+ * the one date that really had been lost.
+ */
+function spelledOutStems(value: string): string[] {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > 39) return [];
+  if (n < 10) return [RU_UNITS[n]];
+  if (n < 20) return [RU_TEENS[n - 10]];
+  const tens = n < 30 ? "двадцат" : "тридцат";
+  return n % 10 === 0 ? [tens] : [tens, RU_UNITS[n % 10]];
+}
+
+function isSpelledOut(value: string, translation: string, targetTag: string | undefined) {
+  if (!targetTag?.toLocaleLowerCase().startsWith("ru")) return false;
+  const stems = spelledOutStems(value);
+  return stems.length > 0 && stems.every((stem) => new RegExp(stem, "iu").test(translation));
+}
+
 /** Latin against Cyrillic is the only script split the supported languages can produce. */
 function dominantScript(text: string) {
   const latin = text.match(/\p{Script=Latin}/gu)?.length ?? 0;
@@ -55,7 +102,12 @@ function sourceResidue(source: string, translation: string): string[] {
   return [...carried];
 }
 
-export function scanSegment(source: string, translation: string, id: string): SegmentDefect[] {
+export function scanSegment(
+  source: string,
+  translation: string,
+  id: string,
+  targetTag?: string,
+): SegmentDefect[] {
   const original = normalized(source),
     result = normalized(translation);
   if (!original) return [];
@@ -83,7 +135,7 @@ export function scanSegment(source: string, translation: string, id: string): Se
     present = numbers(result);
   const missing = expected.filter((value) => {
     const index = present.indexOf(value);
-    if (index < 0) return true;
+    if (index < 0) return !isSpelledOut(value, result, targetTag);
     present.splice(index, 1);
     return false;
   });
@@ -106,11 +158,12 @@ export function scanSegment(source: string, translation: string, id: string): Se
 export function scanSegments(
   source: ProviderInputSegment[],
   translated: ProviderSegment[],
+  targetTag?: string,
 ): SegmentDefect[] {
   const translatedById = new Map(translated.map((segment) => [segment.id, segment.text]));
   return source.flatMap((segment) =>
     "text" in segment && typeof segment.text === "string"
-      ? scanSegment(segment.text, translatedById.get(segment.id) ?? "", segment.id)
+      ? scanSegment(segment.text, translatedById.get(segment.id) ?? "", segment.id, targetTag)
       : [],
   );
 }

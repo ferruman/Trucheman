@@ -34,6 +34,25 @@ describe("scanSegment", () => {
     expect(kinds("He waited 12 years.", "Он ждал 12 лет.")).toEqual([]);
   });
 
+  it("accepts a Russian number written out in words instead of digits", () => {
+    // «до спасения двенадцатого числа» is a translation of "till his rescue on the 12th",
+    // not a dropped number; reporting it buried the one date that had really been lost.
+    expect(
+      scanSegment("till his rescue on the 12th", "до спасения двенадцатого числа", "s1", "ru"),
+    ).toEqual([]);
+    expect(
+      scanSegment("on March 22nd he wrote", "двадцать второго марта он написал", "s1", "ru"),
+    ).toEqual([]);
+    // Still reported when the number is simply gone, and when the language has no table.
+    expect(scanSegment("on March 22nd he wrote", "марта он написал", "s1", "ru")[0]?.kind).toBe(
+      "missing_numbers",
+    );
+    expect(
+      scanSegment("till his rescue on the 12th", "до спасения двенадцатого числа", "s1", "pl")[0]
+        ?.kind,
+    ).toBe("missing_numbers");
+  });
+
   it("reports source words carried into a different script, and not names in the same script", () => {
     const defects = scanSegment(
       "The harbour was quiet that evening.",
