@@ -21,6 +21,8 @@ export const persistedJobSchema = z.object({
   /** Title of the document the run is working on; the per-document array it replaced was
    * written once at analysis and never updated again. */
   currentDocument: z.string().optional(),
+  /** SHA-256 of `source.epub` as of the last run; absent on jobs that predate it. */
+  sourceFingerprint: z.string().optional(),
   instructions: z.string().default(""),
   glossary: z.array(z.unknown()).default([]),
   qualityMode: z.enum(["standard", "high"]).default("standard"),

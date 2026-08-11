@@ -10,6 +10,11 @@ import { parseXml } from "../../src/server/epub/xml-dom.js";
 import { FakeProvider } from "../../src/server/providers/fake-provider.js";
 import type { LanguageModelProvider } from "../../src/server/providers/provider.js";
 
+// These run the whole pipeline over a real fixture EPUB. Alone they take a few seconds; sharing
+// the machine with the rest of the suite pushed them past the 5s default, so the file went red
+// at random on a full run and green in isolation.
+vi.setConfig({ testTimeout: 30000 });
+
 const roots: string[] = [];
 afterEach(async () => {
   vi.unstubAllEnvs();

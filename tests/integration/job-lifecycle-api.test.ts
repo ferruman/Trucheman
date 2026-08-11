@@ -157,6 +157,35 @@ describe("job lifecycle orchestration", () => {
     for (const name of settled) await expect(access(`${root}/${name}`)).rejects.toThrow();
   });
 
+  it("stops recovering positional checkpoints when the source EPUB changed", async () => {
+    const { repo, job } = await fixture("paused");
+    const root = jobRoot(repo.dataDir, job.id);
+    await mkdir(root, { recursive: true });
+    await writeFile(`${root}/source.epub`, "first book");
+    const recoveries: (boolean | undefined)[] = [];
+    const orchestrator = orchestratorFor(repo, {
+      runBook: async (_root, _job, _update, _signal, recover) => {
+        recoveries.push(recover);
+      },
+    });
+
+    await orchestrator.start(job.id);
+    await vi.waitFor(() => expect(recoveries).toHaveLength(1), { timeout: 5000 });
+    // The first run has no stored fingerprint to compare against, so recovery stays available.
+    expect(recoveries[0]).toBe(true);
+    expect((await repo.get(job.id)).sourceFingerprint).toEqual(expect.any(String));
+
+    await orchestrator.drain();
+    await repo.save({ ...(await repo.get(job.id)), status: "paused" });
+    await writeFile(`${root}/source.epub`, "a different book");
+    await orchestrator.start(job.id);
+
+    await vi.waitFor(() => expect(recoveries).toHaveLength(2), { timeout: 5000 });
+    // Batch and segment ids are positional: reusing them here would hand the new text a
+    // translation of the old book.
+    expect(recoveries[1]).toBe(false);
+  });
+
   it("discards only the stages at or below the invalidation floor", async () => {
     const { repo, job } = await fixture();
     const root = jobRoot(repo.dataDir, job.id);

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { access, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { PersistedJob } from "../domain/job.js";
@@ -243,10 +243,21 @@ export class JobOrchestrator {
           "Analyze the uploaded EPUB before starting",
           409,
         );
-      const recoverCompatibleCheckpoints = ["paused", "failed", "needs_attention"].includes(
-        job.status,
-      );
       const root = jobRoot(this.repo.dataDir, id);
+      const fingerprint = await this.sourceFingerprint(root);
+      // A keyed checkpoint is content-addressed and safe on its own. The by-batch-id recovery
+      // below is not: it matches on positional ids, so a source replaced under a paused job
+      // would hand the new text a translation of the old one.
+      const sameSource =
+        job.sourceFingerprint === undefined || job.sourceFingerprint === fingerprint;
+      const recoverCompatibleCheckpoints =
+        ["paused", "failed", "needs_attention"].includes(job.status) && sameSource;
+      if (!sameSource)
+        await this.emit(
+          id,
+          "source_changed",
+          "The source EPUB changed since the last run; checkpoints are reused only where the text still matches",
+        );
       const resumedProgress = recoverCompatibleCheckpoints
         ? await this.checkpointProgress(root, job)
         : { ...job.progress, translated: 0, edited: 0, failed: 0 };
@@ -256,6 +267,7 @@ export class JobOrchestrator {
         status: "running",
         stage: recoverCompatibleCheckpoints ? job.stage : "translation",
         progress: resumedProgress,
+        sourceFingerprint: fingerprint ?? job.sourceFingerprint,
         updatedAt: new Date().toISOString(),
       };
       let release!: () => void;
@@ -635,6 +647,17 @@ export class JobOrchestrator {
         });
       }
       throw error;
+    }
+  }
+
+  /** Undefined when there is no source yet: a job that has never had one cannot have changed. */
+  private async sourceFingerprint(root: string) {
+    try {
+      return createHash("sha256")
+        .update(await readFile(join(root, "source.epub")))
+        .digest("hex");
+    } catch {
+      return undefined;
     }
   }
 
