@@ -72,6 +72,14 @@ export function mergeGlossaries(userEntries: unknown[], generatedEntries: Glossa
   ];
 }
 
+/**
+ * The prompt asks for `{"<key>": [...]}` and models occasionally drop the wrapper and answer
+ * with the bare array. Accept both; anything else still fails the chunk, because an answer we
+ * cannot read must not be cached as "asked and answered".
+ */
+const unwrapped = (value: unknown, key: string) =>
+  Array.isArray(value) ? { [key]: value } : value;
+
 const registrySchema = z.object({
   entries: z.array(
     z.object({
@@ -589,18 +597,19 @@ async function completeEntityTask<Item, Answer extends { source: string }>(
   for (const [index, group] of groups.entries()) {
     if (options.signal?.aborted)
       throw options.signal.reason instanceof Error ? options.signal.reason : new Error("Aborted");
+    // Kept outside the try so a schema failure can report the shape that caused it.
+    let received: unknown;
     try {
-      const answers = options.parse(
-        await completeJsonTask(
-          provider,
-          profile,
-          sourceLanguage,
-          targetLanguage,
-          `${options.id}-${index + 1}`,
-          options.payload(group.map((entry) => entry.item)),
-          options.signal,
-        ),
+      received = await completeJsonTask(
+        provider,
+        profile,
+        sourceLanguage,
+        targetLanguage,
+        `${options.id}-${index + 1}`,
+        options.payload(group.map((entry) => entry.item)),
+        options.signal,
       );
+      const answers = options.parse(received);
       // Record an answer for every entity asked about, empty ones included, so that an
       // entity the model declined to answer is not asked about again on the next run.
       for (const entry of group)
@@ -611,9 +620,14 @@ async function completeEntityTask<Item, Answer extends { source: string }>(
       resolvedChunks++;
     } catch (error) {
       if (options.signal?.aborted) throw error;
+      const message = error instanceof Error ? error.message : "unknown error";
       failedChunks.push({
         chunk: index + 1,
-        error: error instanceof Error ? error.message : "unknown error",
+        // The request itself failing is self-explanatory; a rejected answer is not.
+        error:
+          received === undefined
+            ? message
+            : `${message} (received: ${JSON.stringify(received).slice(0, 200)})`,
       });
     }
   }
@@ -650,7 +664,7 @@ export async function resolveEntityRegistry(
       items: entities,
       itemSource: (entity) => entity.source,
       chunkSize,
-      parse: (value) => registrySchema.parse(value).entries,
+      parse: (value) => registrySchema.parse(unwrapped(value, "entries")).entries,
       payload: (chunk) => ({ task: "entity_registry", entities: chunk }),
       signal,
     },
@@ -699,7 +713,7 @@ export async function resolveConsistencyConflicts(
       items: report.entityEvidence,
       itemSource: (entity) => entity.source,
       chunkSize,
-      parse: (value) => resolutionSchema.parse(value).decisions,
+      parse: (value) => resolutionSchema.parse(unwrapped(value, "decisions")).decisions,
       payload: (entityEvidence) => ({
         task: "resolve_conflicts",
         report: { ...report, entityEvidence, documents: [] },

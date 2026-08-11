@@ -370,6 +370,39 @@ describe("book-wide consistency", () => {
     expect(calls).toBe(1);
   });
 
+  it("accepts a registry answer that drops the wrapper object", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-entity-registry-bare-`);
+    roots.push(root);
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        return {
+          segments: [
+            {
+              id: request.segments[0].id,
+              // The bare array the model sometimes answers with instead of {"entries": [...]}.
+              text: JSON.stringify([
+                { source: "Vigilant", target: "«Виджилент»", category: "ship" },
+              ]),
+            },
+          ],
+        };
+      },
+    };
+    const registry = await resolveEntityRegistry(
+      provider,
+      { name: "resolver", endpoint: "local", model: "deepseek-v4-flash" },
+      { tag: "en", name: "English" },
+      { tag: "ru", name: "Russian" },
+      documents().map((document) => ({ ...document, editedSegments: [] })),
+      root,
+    );
+
+    expect(registry.failedChunks).toEqual([]);
+    expect(registry.entries).toEqual([
+      expect.objectContaining({ source: "Vigilant", target: "«Виджилент»", enabled: true }),
+    ]);
+  });
+
   it("keeps a settled canonical when new entities appear alongside it", async () => {
     const root = await mkdtemp(`${tmpdir()}/book-entity-registry-stable-`);
     roots.push(root);
