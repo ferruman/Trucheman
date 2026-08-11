@@ -81,10 +81,16 @@ describe("book pipeline instructions", () => {
       qualityMode: "standard",
     };
     const fake = new FakeProvider();
-    // Uneven latency so the workers finish out of the order they started in.
+    // Uneven but fixed latency, so the workers finish out of the order they started in and
+    // do so the same way every run. With a random delay the first batch was the last to
+    // close about one run in four; the frontier then legitimately never advanced past its
+    // document, and the test failed on a correct result.
+    const latencies = [20, 5, 30, 10, 25, 15];
+    let call = 0;
     const provider: LanguageModelProvider = {
       async complete(request, signal) {
-        await new Promise((resolve) => setTimeout(resolve, 5 + Math.random() * 25));
+        const delay = latencies[call++ % latencies.length];
+        await new Promise((resolve) => setTimeout(resolve, delay));
         return fake.complete(request, signal);
       },
     };
