@@ -93,9 +93,16 @@ describe("EPUB consistency audit", () => {
             // Ordinary prose that a shared four-letter prefix used to flag.
             "В конце концов он решил провести проверку.",
             "Голова головоногого была наклонена вперёд.",
+            // Corruption: a fragmented span rejoined, the two endings disagreeing.
+            "Лежал в земле земля была холодной.",
             // Deliberate repetition, marked as such by its punctuation.
             "Сохранились остатки … остатки древней эпохи.",
             "Бой тамтамов слышался далеко-далеко впереди.",
+            // Emphasis, which is how Russian intensifies — 53 of one run's 56 findings.
+            "Было очень очень тихо, и он сказал: «Давай, давай!»",
+            "Она молчала, молчала, а потом закричала.",
+            // Two sentences that happen to name the same person on both sides of a stop.
+            "Он не думал про обиды Лилит. Лилит знала лучше.",
           ].join(" "),
         },
       ],
@@ -105,6 +112,9 @@ describe("EPUB consistency audit", () => {
     );
     const duplicates = report.warnings.filter((warning) => warning.includes("duplicated fragment"));
 
-    expect(duplicates).toEqual(['chapter: duplicated fragment "алерт алерт"']);
+    expect(duplicates).toEqual([
+      'chapter: duplicated fragment "алерт алерт"',
+      'chapter: duplicated fragment "земле земля"',
+    ]);
   });
 });

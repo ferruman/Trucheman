@@ -16,19 +16,25 @@ type AuditDocument = {
 const stemWordPattern = /[\p{L}\p{M}]{4,}/gu;
 
 /**
- * Adjacent words sharing a stem — "В пустыне пустыня", "Из земли Земля". Repairing a
- * fragmented heading one span at a time produced exactly this shape.
- */
-/**
  * Separators that mark deliberate repetition rather than corruption: «далеко-далеко»,
  * «остатки … остатки», «поверхностей — поверхностей» are all the author's, and the source
  * is not available here to prove it, so the punctuation has to speak for them.
  */
 const rhetoricalSeparator = /[-–—…]|\.\.\./u;
 
+/**
+ * Two sentences, not one fragment: «…проблемами обиды Лилит. Лилит знала лучше» is ordinary
+ * prose that happens to name the same person on both sides of a full stop.
+ */
+const sentenceBreak = /[.!?]/u;
+
 /** Two words are the same word only if they differ in an ending, not in most of the stem. */
 const MIN_STEM_SHARE = 0.8;
 
+/**
+ * Adjacent words sharing a stem — "В пустыне пустыня", "Из земли Земля". Repairing a
+ * fragmented heading one span at a time produced exactly this shape.
+ */
 export function duplicatedFragments(text: string): string[] {
   const words = [...text.toLocaleLowerCase().matchAll(stemWordPattern)];
   const found: string[] = [];
@@ -37,6 +43,19 @@ export function duplicatedFragments(text: string): string[] {
     const current = words[index];
     const between = text.slice((previous.index ?? 0) + previous[0].length, current.index ?? 0);
     if (/[\p{L}\p{N}]/u.test(between) || rhetoricalSeparator.test(between)) continue;
+    // The same lowercase word twice is emphasis, not corruption: «очень очень», «давай
+    // давай», «тихо тихо» are how Russian intensifies — with or without a comma between —
+    // and they outnumbered the real findings 53 to 3. Corruption keeps the case it copied,
+    // so a doubled name («Алерт», «Алерт») still reports, as does the shape a fragmented
+    // reinsertion leaves behind, where the two endings disagree («земле земля»).
+    const capitalized = (word: RegExpExecArray) => /\p{Lu}/u.test(text[word.index ?? 0] ?? "");
+    if (
+      previous[0] === current[0] &&
+      (sentenceBreak.test(between) || !(capitalized(previous) && capitalized(current)))
+    )
+      continue;
+    // «друг друга» is one reciprocal pronoun that happens to be spelt as two declined words.
+    if (previous[0] === "друг") continue;
     let common = 0;
     while (
       common < Math.min(previous[0].length, current[0].length) &&
