@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { JobView } from "../../../shared/domain/job";
+import type { InvalidationStage, JobView } from "../../../shared/domain/job";
 import { api, jobActions, type JobResults } from "../../app/api";
 import { subscribeToJobEvents, type JobEvent } from "../../app/job-events";
 import { InvalidationDialog } from "./InvalidationDialog";
@@ -93,8 +93,8 @@ export function JobPage({ id }: { id: string }) {
     }
   }
 
-  async function invalidate() {
-    await act("invalidate", () => jobActions.invalidate(id, ["translations", "edits", "output"]));
+  async function invalidate(from: InvalidationStage) {
+    await act("invalidate", () => jobActions.invalidate(id, from));
     setInvalidationOpen(false);
   }
 
@@ -259,7 +259,7 @@ export function JobPage({ id }: { id: string }) {
         open={invalidationOpen}
         busy={busyAction === "invalidate"}
         onCancel={() => setInvalidationOpen(false)}
-        onConfirm={() => void invalidate()}
+        onConfirm={(from) => void invalidate(from)}
       />
       <DeleteJobDialog
         open={deletionOpen}

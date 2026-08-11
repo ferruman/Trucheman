@@ -1008,6 +1008,21 @@ dialog .actions {
   margin-top: 1.25rem;
   margin-bottom: 1.25rem;
 }
+.stage-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 1rem 1.25rem 0;
+}
+.stage-choices button {
+  display: block;
+  text-align: left;
+}
+.stage-choices small {
+  display: block;
+  margin-top: 0.25rem;
+  opacity: 0.75;
+}
 
 .sr-only,
 .visually-hidden {

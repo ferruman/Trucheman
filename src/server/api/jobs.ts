@@ -96,7 +96,7 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
       const base = changesContent
         ? await orchestrator.invalidate(job.id)
         : changesQuality && job.status !== "created"
-          ? await orchestrator.invalidateQuality(job.id)
+          ? await orchestrator.invalidate(job.id, undefined, "audit")
           : job;
       const next: PersistedJob = {
         ...base,

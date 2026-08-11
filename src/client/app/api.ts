@@ -1,4 +1,4 @@
-import type { JobView } from "../../shared/domain/job";
+import type { InvalidationStage, JobView } from "../../shared/domain/job";
 
 export type JobResults = {
   validation: unknown | null;
@@ -96,10 +96,10 @@ export const jobActions = {
   pause: (id: string) => request<{ status: string }>(`/jobs/${id}/pause`, { method: "POST" }),
   resume: (id: string) => request<{ status: string }>(`/jobs/${id}/resume`, { method: "POST" }),
   retry: (id: string) => request<AcceptedResponse>(`/jobs/${id}/retry`, { method: "POST" }),
-  invalidate: (id: string, scopes: string[]) =>
+  invalidate: (id: string, from: InvalidationStage) =>
     request<{ ok: boolean }>(`/jobs/${id}/invalidate`, {
       method: "POST",
-      body: JSON.stringify({ scopes }),
+      body: JSON.stringify({ from }),
     }),
   results: (id: string) => request<JobResults>(`/jobs/${id}/results`),
   rebuild: (id: string) => request<AcceptedResponse>(`/jobs/${id}/rebuild`, { method: "POST" }),

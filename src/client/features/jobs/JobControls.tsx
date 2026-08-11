@@ -54,9 +54,9 @@ export function JobControls({
           {busyAction === "retry" ? "Retrying…" : "Retry failed work"}
         </button>
       )}
-      {(status === "completed" || status === "failed" || status === "needs_attention") && (
+      {["completed", "failed", "needs_attention", "paused"].includes(status) && (
         <button disabled={busy} className="secondary" type="button" onClick={onInvalidate}>
-          Invalidate completed work…
+          Re-run part of the pipeline…
         </button>
       )}
       {deletable && (

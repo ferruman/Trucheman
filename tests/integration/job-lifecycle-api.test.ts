@@ -148,27 +148,33 @@ describe("job lifecycle orchestration", () => {
     for (const name of settled) await expect(access(`${root}/${name}`)).resolves.toBeUndefined();
 
     await write();
+    await orchestrator.invalidate(job.id, undefined, "editing");
+    // Re-editing keeps the drafts that already used those renderings.
+    for (const name of settled) await expect(access(`${root}/${name}`)).resolves.toBeUndefined();
+
+    await write();
     await orchestrator.invalidate(job.id);
     for (const name of settled) await expect(access(`${root}/${name}`)).rejects.toThrow();
   });
 
-  it("resets only quality work when switching quality modes", async () => {
+  it("discards only the stages at or below the invalidation floor", async () => {
     const { repo, job } = await fixture();
     const root = jobRoot(repo.dataDir, job.id);
     await mkdir(root, { recursive: true });
     const checkpoint = `${JSON.stringify({ batchId: "batch-1", segments: [] })}\n`;
-    await Promise.all(
-      ["drafts.ndjson", "edits.ndjson", "audits.ndjson", "repairs.ndjson"].map((name) =>
-        writeFile(`${root}/${name}`, checkpoint),
-      ),
-    );
-    await writeFile(`${root}/quality-report.json`, "{}");
-    await writeFile(`${root}/output.epub`, "output");
+    const seed = () =>
+      Promise.all([
+        ...["drafts.ndjson", "edits.ndjson", "audits.ndjson", "repairs.ndjson"].map((name) =>
+          writeFile(`${root}/${name}`, checkpoint),
+        ),
+        writeFile(`${root}/prepared.json`, "{}"),
+        writeFile(`${root}/quality-report.json`, "{}"),
+        writeFile(`${root}/output.epub`, "output"),
+      ]);
     const orchestrator = orchestratorFor(repo);
 
-    const next = await orchestrator.invalidateQuality(job.id);
-
-    expect(next).toMatchObject({
+    await seed();
+    expect(await orchestrator.invalidate(job.id, undefined, "audit")).toMatchObject({
       status: "ready",
       progress: { translated: 1, edited: 1, total: 1, failed: 0 },
     });
@@ -178,6 +184,22 @@ describe("job lifecycle orchestration", () => {
     await expect(access(`${root}/repairs.ndjson`)).rejects.toThrow();
     await expect(access(`${root}/quality-report.json`)).rejects.toThrow();
     await expect(access(`${root}/output.epub`)).rejects.toThrow();
+
+    await seed();
+    expect(await orchestrator.invalidate(job.id, undefined, "editing")).toMatchObject({
+      status: "ready",
+      progress: { translated: 1, edited: 0, total: 1, failed: 0 },
+    });
+    expect(await readFile(`${root}/drafts.ndjson`, "utf8")).toBe(checkpoint);
+    await expect(access(`${root}/edits.ndjson`)).rejects.toThrow();
+    await expect(access(`${root}/audits.ndjson`)).rejects.toThrow();
+
+    await seed();
+    expect(await orchestrator.invalidate(job.id)).toMatchObject({
+      status: "ready",
+      progress: { translated: 0, edited: 0, total: 1, failed: 0 },
+    });
+    await expect(access(`${root}/drafts.ndjson`)).rejects.toThrow();
   });
 
   it("does not report fatal execution errors as quality warnings", async () => {

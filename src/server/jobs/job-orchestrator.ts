@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { access, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { PersistedJob } from "../domain/job.js";
+import type { InvalidationStage } from "../../shared/domain/job.js";
 import { DomainError } from "../domain/errors.js";
 import { buildEpub } from "../epub/build.js";
 import { validateEpub, validateEpubArchive, type ValidationReport } from "../epub/validate.js";
@@ -339,20 +340,36 @@ export class JobOrchestrator {
     return this.start(id);
   }
 
-  async invalidate(id: string, batchId?: string): Promise<PersistedJob> {
+  /**
+   * Rewind the pipeline to `from` and below. A stage above it keeps its journal, so the next
+   * run replays it from the checkpoint instead of paying for it again: `editing` re-edits the
+   * drafts that are already there, `audit` keeps drafts and edits and only re-runs the critic.
+   */
+  async invalidate(
+    id: string,
+    batchId?: string,
+    from: InvalidationStage = "translation",
+  ): Promise<PersistedJob> {
     const job = await this.repo.get(id);
     this.assertMutable(id, job);
     const root = jobRoot(this.repo.dataDir, id);
-    const drafts = await this.filterJournal(join(root, "drafts.ndjson"), batchId);
-    const edits = await this.filterJournal(join(root, "edits.ndjson"), batchId);
+    const drafts =
+      from === "translation"
+        ? await this.filterJournal(join(root, "drafts.ndjson"), batchId)
+        : await this.countJournal(join(root, "drafts.ndjson"));
+    const edits =
+      from === "audit"
+        ? await this.countJournal(join(root, "edits.ndjson"))
+        : await this.filterJournal(join(root, "edits.ndjson"), batchId);
     await this.filterJournal(join(root, "audits.ndjson"), batchId);
     await this.filterJournal(join(root, "repairs.ndjson"), batchId);
     await rm(join(root, "quality-report.json"), { force: true });
     await rm(join(root, "output.epub"), { force: true });
-    if (!batchId) {
+    if (!batchId && from === "translation") {
       // Settled entity answers outlive code and model changes on purpose, so invalidating
-      // the whole job is the only way to ask for new ones. Re-deciding for a single batch
-      // would rename entities across every batch that is being kept.
+      // the whole job — every batch, from the translation down — is the only way to ask for
+      // new ones. Re-deciding for a single batch, or for a re-edit of drafts that already
+      // used those renderings, would rename entities across everything being kept.
       await rm(join(root, "entity-registry.json"), { force: true });
       await rm(join(root, "consistency-resolution.json"), { force: true });
       await rm(join(root, "consistency-report.json"), { force: true });
@@ -374,43 +391,10 @@ export class JobOrchestrator {
       updatedAt: new Date().toISOString(),
     };
     await this.repo.save(next);
-    await this.emit(
-      id,
-      "invalidated",
-      "Completed work was invalidated",
-      batchId ? { batchId } : undefined,
-    );
-    return next;
-  }
-
-  async invalidateQuality(id: string): Promise<PersistedJob> {
-    const job = await this.repo.get(id);
-    this.assertMutable(id, job);
-    const root = jobRoot(this.repo.dataDir, id);
-    const drafts = await readJournal<JournalRecord>(join(root, "drafts.ndjson"));
-    const edits = await readJournal<JournalRecord>(join(root, "edits.ndjson"));
-    await rm(join(root, "audits.ndjson"), { force: true });
-    await rm(join(root, "repairs.ndjson"), { force: true });
-    await rm(join(root, "quality-report.json"), { force: true });
-    await rm(join(root, "output.epub"), { force: true });
-    const next: PersistedJob = {
-      ...job,
-      status: "ready",
-      stage: "translation",
-      progress: {
-        translated: new Set(drafts.map((record) => record.batchId)).size,
-        edited: new Set(edits.map((record) => record.batchId)).size,
-        total: job.progress.total,
-        failed: 0,
-      },
-      updatedAt: new Date().toISOString(),
-    };
-    await this.repo.save(next);
-    await this.emit(
-      id,
-      "quality_invalidated",
-      "Quality pass was reset; drafts and edits were kept",
-    );
+    await this.emit(id, "invalidated", `Completed work was invalidated from ${from}`, {
+      from,
+      ...(batchId ? { batchId } : {}),
+    });
     return next;
   }
 
@@ -644,6 +628,12 @@ export class JobOrchestrator {
       }
       throw error;
     }
+  }
+
+  /** Batches a kept journal still covers — the progress a partial invalidation carries over. */
+  private async countJournal(path: string) {
+    const records = await readJournal<JournalRecord>(path);
+    return new Set(records.map((record) => record.batchId)).size;
   }
 
   private async filterJournal(path: string, batchId?: string) {

@@ -22,6 +22,12 @@ export const JOB_STAGES = [
   "complete",
 ] as const;
 export type JobStage = (typeof JOB_STAGES)[number];
+/**
+ * How far back invalidation rewinds the pipeline. The stages are ordered, so this is a floor:
+ * everything from it down is discarded, everything above it survives as a reusable checkpoint.
+ */
+export const INVALIDATION_STAGES = ["translation", "editing", "audit"] as const;
+export type InvalidationStage = (typeof INVALIDATION_STAGES)[number];
 export const QUALITY_MODES = ["standard", "high"] as const;
 export type QualityMode = (typeof QUALITY_MODES)[number];
 export type Progress = { translated: number; edited: number; total: number; failed: number };

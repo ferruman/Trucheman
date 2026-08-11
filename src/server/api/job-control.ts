@@ -1,13 +1,17 @@
 import { Router } from "express";
 import { z } from "zod";
 import { toJobView } from "../domain/job.js";
+import { INVALIDATION_STAGES } from "../../shared/domain/job.js";
 import { DomainError } from "../domain/errors.js";
 import type { JobRepository } from "../storage/job-repository.js";
 import type { JobOrchestrator } from "../jobs/job-orchestrator.js";
 import { problemResponse } from "./problem.js";
 
 const invalidationSchema = z
-  .object({ batchId: z.string().min(1).optional(), scopes: z.array(z.unknown()).optional() })
+  .object({
+    batchId: z.string().min(1).optional(),
+    from: z.enum(INVALIDATION_STAGES).optional(),
+  })
   .strict();
 function parseInvalidation(value: unknown) {
   const result = invalidationSchema.safeParse(value);
@@ -38,8 +42,8 @@ export function jobControlRouter(_repo: JobRepository, orchestrator: JobOrchestr
   });
   r.post("/:id/invalidate", async (req, res) => {
     try {
-      const { batchId } = parseInvalidation(req.body ?? {});
-      res.json(toJobView(await orchestrator.invalidate(req.params.id, batchId)));
+      const { batchId, from } = parseInvalidation(req.body ?? {});
+      res.json(toJobView(await orchestrator.invalidate(req.params.id, batchId, from)));
     } catch (error) {
       problemResponse(res, error, req);
     }

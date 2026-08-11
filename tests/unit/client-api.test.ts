@@ -44,13 +44,13 @@ describe("client API", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await jobActions.invalidate("job-1", ["translations", "edits", "output"]);
+    await jobActions.invalidate("job-1", "editing");
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/jobs/job-1/invalidate",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ scopes: ["translations", "edits", "output"] }),
+        body: JSON.stringify({ from: "editing" }),
       }),
     );
   });
