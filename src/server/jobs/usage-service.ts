@@ -36,6 +36,10 @@ export type UsageBreakdown = {
   endpoint: string;
   model: string;
   requests: number;
+  /** Distinct batches asked for, as opposed to HTTP attempts spent on them. */
+  logicalOperations: number;
+  /** Batches that needed more than one attempt. Zero failed batches is the goal, not zero retries. */
+  retriedOperations: number;
   requestsWithUsage: number;
   failedRequests: number;
   invalidResponses: number;
@@ -80,10 +84,11 @@ function usageRecord(
     callId: randomUUID(),
     requestId: response.requestId,
     stage: request.mode,
-    operation:
-      request.mode === "consistency" && request.segments.length === 1
-        ? request.segments[0].id
-        : undefined,
+    // Stable across retries of the same batch and distinct between batches, so counting
+    // distinct operations separates "how many batches did we ask for" from "how many HTTP
+    // attempts did that cost". Reading only the request count made 14 survived timeouts
+    // look like 14 lost batches.
+    operation: request.segments[0]?.id,
     profile: request.profile.name,
     endpoint: request.profile.endpoint,
     model: request.profile.model,
@@ -97,6 +102,8 @@ function usageRecord(
 function emptyNumbers() {
   return {
     requests: 0,
+    logicalOperations: 0,
+    retriedOperations: 0,
     requestsWithUsage: 0,
     failedRequests: 0,
     invalidResponses: 0,
@@ -110,6 +117,7 @@ function emptyNumbers() {
 
 export function buildUsageReport(records: UsageRecord[]): UsageReport {
   const groups = new Map<string, UsageBreakdown>();
+  const attemptsPerOperation = new Map<string, Map<string, number>>();
   for (const record of records) {
     const key = [record.stage, record.profile, record.endpoint, record.model].join("\u0000");
     const row = groups.get(key) ?? {
@@ -119,6 +127,12 @@ export function buildUsageReport(records: UsageRecord[]): UsageReport {
       model: record.model,
       ...emptyNumbers(),
     };
+    // A record written before operations were identified has no id to group by; counting it
+    // as its own operation degrades to "logical == requests" rather than to a silent zero.
+    const operation = record.operation ?? record.callId;
+    const counts = attemptsPerOperation.get(key) ?? new Map<string, number>();
+    counts.set(operation, (counts.get(operation) ?? 0) + 1);
+    attemptsPerOperation.set(key, counts);
     row.requests++;
     if (record.totalTokens !== null) row.requestsWithUsage++;
     if (record.outcome && record.outcome !== "ok") {
@@ -132,6 +146,12 @@ export function buildUsageReport(records: UsageRecord[]): UsageReport {
     row.totalTokens += record.totalTokens ?? 0;
     groups.set(key, row);
   }
+  for (const [key, row] of groups) {
+    const counts = attemptsPerOperation.get(key);
+    if (!counts) continue;
+    row.logicalOperations = counts.size;
+    row.retriedOperations = [...counts.values()].filter((attempts) => attempts > 1).length;
+  }
   const breakdown = [...groups.values()].sort(
     (a, b) =>
       STAGE_ORDER.indexOf(a.stage) - STAGE_ORDER.indexOf(b.stage) || a.model.localeCompare(b.model),
@@ -139,6 +159,8 @@ export function buildUsageReport(records: UsageRecord[]): UsageReport {
   const totals = breakdown.reduce(
     (sum, row) => ({
       requests: sum.requests + row.requests,
+      logicalOperations: sum.logicalOperations + row.logicalOperations,
+      retriedOperations: sum.retriedOperations + row.retriedOperations,
       requestsWithUsage: sum.requestsWithUsage + row.requestsWithUsage,
       failedRequests: sum.failedRequests + row.failedRequests,
       invalidResponses: sum.invalidResponses + row.invalidResponses,

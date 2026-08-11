@@ -56,6 +56,8 @@ describe("model usage tracking", () => {
 
     expect(report.totals).toEqual({
       requests: 3,
+      logicalOperations: 3,
+      retriedOperations: 0,
       requestsWithUsage: 3,
       failedRequests: 0,
       invalidResponses: 0,
@@ -69,6 +71,30 @@ describe("model usage tracking", () => {
       { stage: "editing", model: "editor-model", requests: 2, totalTokens: 190 },
       { stage: "audit", model: "critic-model", requests: 1, totalTokens: 85 },
     ]);
+  });
+
+  it("separates retried attempts from the batches they were spent on", () => {
+    const report = buildUsageReport([
+      record({ stage: "translation", operation: "doc:0", outcome: "timeout", totalTokens: null }),
+      record({ stage: "translation", operation: "doc:0", outcome: "timeout", totalTokens: null }),
+      record({ stage: "translation", operation: "doc:0" }),
+      record({ stage: "translation", operation: "doc:9" }),
+    ]);
+
+    // Three attempts on one batch plus one on another: two batches asked for, not four,
+    // and none of them lost. Reading `requests` alone made survived timeouts look fatal.
+    expect(report.totals).toMatchObject({
+      requests: 4,
+      logicalOperations: 2,
+      retriedOperations: 1,
+      timeouts: 2,
+    });
+  });
+
+  it("counts a record written before operations were identified as its own operation", () => {
+    const report = buildUsageReport([record(), record()]);
+
+    expect(report.totals).toMatchObject({ requests: 2, logicalOperations: 2 });
   });
 
   it("journals each successful provider call and publishes a current report", async () => {
