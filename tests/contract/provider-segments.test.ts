@@ -205,10 +205,11 @@ describe("provider prompt contract", () => {
     expect(russianPrompt).toContain("Use ё consistently");
     expect(russianPrompt).toContain("Thomas Street → Томас-стрит");
     // Dialogue punctuation was the largest Russian-specific defect class in a production
-    // run — mixed dashes and guillemets, a colon before trailing attribution, quotations
-    // left unclosed after an ellipsis — and the rules named only which glyphs to use.
+    // run. Telling a batch to pick one convention was not enough — 197 of 206 batches did,
+    // and each picked on its own, so job 4c3bcb2a shipped 586 quoted paragraphs alongside
+    // 220 dashed ones. The convention has to be named, not chosen.
     expect(russianPrompt).toContain("— Реплика, — сказал он.");
-    expect(russianPrompt).toContain("«Реплика», — сказал он.");
+    expect(russianPrompt).toContain("never with «ёлочки»");
     expect(frenchPrompt).not.toContain("Russian rules");
     expect(frenchPrompt).not.toContain("Thomas Street → Томас-стрит");
     expect(frenchPrompt).not.toContain("Use ё consistently");

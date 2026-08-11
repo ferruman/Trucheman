@@ -9,7 +9,7 @@ export const PROMPT_VERSION = "literary-v3.1";
  * `PROMPT_VERSION` and its siblings name *which editing strategy* a run used and are pinned
  * per model, so renaming those to signal a rule-text revision would conflate the two axes.
  */
-export const PROMPT_INPUT_VERSION = "structured-v4";
+export const PROMPT_INPUT_VERSION = "structured-v5";
 export const QUALITY_PROMPT_VERSION = "selective-quality-v2";
 export const PROMPT_VERSIONS = [PROMPT_VERSION, "literary-v3.2.1"] as const;
 export type PromptVersion = (typeof PROMPT_VERSIONS)[number];

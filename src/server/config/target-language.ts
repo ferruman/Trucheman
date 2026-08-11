@@ -27,9 +27,10 @@ const TARGET_LANGUAGES: Record<string, TargetLanguageProfile> = {
 - Transliterate personal and ship names unless an established canonical form or explicit glossary entry requires otherwise.
 - Never mix translation and transliteration strategies for the same entity.
 - Render English street names consistently as a transliterated name plus -стрит (for example, Thomas Street → Томас-стрит) unless an established canonical form requires otherwise.
-- Punctuate dialogue by one Russian convention and never mix them: a paragraph-opening dash (— Реплика, — сказал он.) or «ёлочки» (Он сказал: «Реплика».). Never wrap a «…» quotation in dashes on both sides.
-- A colon introduces speech only when the attribution comes first. When the attribution follows, close the quotation and use a comma and a dash: «Реплика», — сказал он.
-- Give each speaker's turn its own paragraph, and close every quotation you open, including after an ellipsis: «Ворон…».`,
+- Punctuate spoken dialogue with a paragraph-opening dash, never with «ёлочки»: — Реплика, — сказал он. — Ещё реплика. This is the convention for the whole book; a segment that renders speech in quotation marks is wrong even when it is internally consistent.
+- Reserve «ёлочки» for what is not spoken aloud: quoted writing, titles, unspoken thought, and a quotation inside a line of speech.
+- Attribution after the speech takes a comma and a dash, never a colon: — Реплика, — сказал он. A colon introduces speech only when the attribution comes first.
+- Give each speaker's turn its own paragraph, and close every «ёлочка» you open, including after an ellipsis: «Ворон…».`,
     promptStyle: {
       yo: "Use ё consistently where standard Russian spelling requires it.",
       quotes: "Use «ёлочки» and nested „лапки“ consistently.",
