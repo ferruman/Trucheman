@@ -34,6 +34,7 @@ import {
   type GlossaryEntry,
 } from "./consistency-service.js";
 import { formatStyleProfile, resolveStyleProfile } from "./style-profile-service.js";
+import { formatChapterCard, resolveChapterCards } from "./chapter-card-service.js";
 
 export type PreparedDocument = {
   id: string;
@@ -145,6 +146,8 @@ export async function runPreparedBook(
     editedSegments: [],
   }));
   const consistencyErrors: string[] = [];
+  /** Preflight passes that failed. They do not hold the book back, but they are not silent. */
+  let preflightWarnings = 0;
   let styleBlock = "";
   if (useExternal) {
     try {
@@ -161,6 +164,7 @@ export async function runPreparedBook(
     } catch (error) {
       // Advisory: a book without a style profile still translates. Pausing must still pause.
       if (signal?.aborted) throw error;
+      preflightWarnings++;
     }
   }
   const instructions = [job.instructions.trim(), styleBlock].filter(Boolean).join("\n\n");
@@ -186,6 +190,31 @@ export async function runPreparedBook(
     }
   }
   const glossary = mergeGlossaries(job.glossary, generatedGlossary);
+  const chapterCards = new Map<string, string>();
+  if (useExternal) {
+    try {
+      const resolved = await resolveChapterCards(
+        provider,
+        consistencyProfile,
+        sourceLanguage,
+        targetLanguage,
+        sourceDocuments,
+        root,
+        signal,
+        concurrency,
+      );
+      preflightWarnings += resolved.failed;
+      for (const [id, card] of resolved.cards) {
+        const block = formatChapterCard(card);
+        if (block) chapterCards.set(id, block);
+      }
+    } catch (error) {
+      // Advisory, like the style profile: a chapter without a card still translates, so this
+      // is a warning to look at rather than a reason to hold the book back.
+      if (signal?.aborted) throw error;
+      preflightWarnings++;
+    }
+  }
   let translated = job.progress.translated,
     edited = job.progress.edited;
   // Concurrent batches would otherwise make the reported stage and chapter flicker between
@@ -212,6 +241,7 @@ export async function runPreparedBook(
     sourceLanguage,
     targetLanguage,
     instructions,
+    chapterCards,
     glossary,
     qualityMode: job.qualityMode,
     postRepairAudit: job.qualityMode === "high" && postRepairAudit,
@@ -240,7 +270,9 @@ export async function runPreparedBook(
   // One warning per defective segment, not per defect: a block with three findings is still
   // one thing to look at.
   const runWarnings =
-    result.qualityAuditErrors + new Set(result.scanDefects.map((defect) => defect.id)).size;
+    preflightWarnings +
+    result.qualityAuditErrors +
+    new Set(result.scanDefects.map((defect) => defect.id)).size;
   if (runWarnings) {
     await update({ warnings: job.warnings + runWarnings });
   }

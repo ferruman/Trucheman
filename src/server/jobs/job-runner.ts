@@ -48,6 +48,8 @@ export type RunnerOptions = {
   sourceLanguage: ProviderLanguage;
   targetLanguage: ProviderLanguage;
   instructions?: string;
+  /** Document id → the chapter card prompt block for every batch of that document. */
+  chapterCards?: Map<string, string>;
   glossary?: unknown[];
   qualityMode?: "standard" | "high";
   /**
@@ -200,6 +202,7 @@ async function verifyRepairedBlocks(
   draft: ProviderSegment[],
   before: ProviderSegment[],
   after: ProviderSegment[],
+  instructions: string | undefined,
 ): Promise<ProviderSegment[]> {
   const beforeById = new Map(before.map((segment) => [segment.id, segment.text]));
   const changed = new Set(
@@ -215,7 +218,7 @@ async function verifyRepairedBlocks(
       after.filter((segment) => changed.has(segment.id)),
     ),
     { sourceLanguage: options.sourceLanguage, targetLanguage: options.targetLanguage },
-    options.instructions,
+    instructions,
     options.glossary,
     options.signal,
   );
@@ -260,13 +263,19 @@ export async function runTwoPass(
   const runBatch = async (batch: Batch, index: number) => {
     throwIfAborted(options.signal);
     const request = batch.segments.map((s) => ({ id: s.id, text: s.text }));
+    // Every stage of this batch, and every checkpoint key, sees the same instructions: the
+    // user's, plus the card for the chapter this batch belongs to.
+    const instructions =
+      [options.instructions, options.chapterCards?.get(batch.documentId)]
+        .filter((part) => part?.trim())
+        .join("\n\n") || undefined;
     const expectedDraftKey = checkpointKey(
       "translation",
       options.translationProfile,
       request,
       options.sourceLanguage,
       options.targetLanguage,
-      options.instructions,
+      instructions,
       options.glossary,
     );
     const savedDraft =
@@ -283,7 +292,7 @@ export async function runTwoPass(
         "translation",
         request,
         { sourceLanguage: options.sourceLanguage, targetLanguage: options.targetLanguage },
-        options.instructions,
+        instructions,
         options.glossary,
         3,
         options.signal,
@@ -309,7 +318,7 @@ export async function runTwoPass(
       editingSegments,
       options.sourceLanguage,
       options.targetLanguage,
-      options.instructions,
+      instructions,
       options.glossary,
     );
     const savedEdit =
@@ -326,7 +335,7 @@ export async function runTwoPass(
         request,
         draft,
         { sourceLanguage: options.sourceLanguage, targetLanguage: options.targetLanguage },
-        options.instructions,
+        instructions,
         options.glossary,
         options.signal,
       );
@@ -351,7 +360,7 @@ export async function runTwoPass(
         auditSegments,
         options.sourceLanguage,
         options.targetLanguage,
-        options.instructions,
+        instructions,
         options.glossary,
       );
       const savedAudit =
@@ -369,7 +378,7 @@ export async function runTwoPass(
           criticProfile,
           auditSegments,
           { sourceLanguage: options.sourceLanguage, targetLanguage: options.targetLanguage },
-          options.instructions,
+          instructions,
           options.glossary,
           options.signal,
         );
@@ -399,7 +408,7 @@ export async function runTwoPass(
           repairSegments,
           options.sourceLanguage,
           options.targetLanguage,
-          options.instructions,
+          instructions,
           options.glossary,
         );
         const savedRepair =
@@ -415,7 +424,7 @@ export async function runTwoPass(
             options.editingProfile,
             repairSegments,
             { sourceLanguage: options.sourceLanguage, targetLanguage: options.targetLanguage },
-            options.instructions,
+            instructions,
             options.glossary,
             options.signal,
           );
@@ -447,6 +456,7 @@ export async function runTwoPass(
             draft,
             beforeRepair,
             editedSegments,
+            instructions,
           );
         }
       }

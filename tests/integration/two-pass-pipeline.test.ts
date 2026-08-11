@@ -35,6 +35,34 @@ describe("two-pass pipeline", () => {
     expect((await readFile(`${root}/drafts.ndjson`, "utf8")).length).toBeGreaterThan(0);
   });
 
+  it("sends each batch the card of its own chapter, and none to a chapter without one", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-chapter-cards-`);
+    const provider = new FakeProvider();
+    const profile = { name: "fake", endpoint: "local", model: "fake" };
+    await runTwoPass(
+      [
+        { id: "batch-1", documentId: "chapter-1", segments: [segment] },
+        { id: "batch-2", documentId: "chapter-2", segments: [{ ...segment, id: "chapter-2:0" }] },
+      ],
+      provider,
+      {
+        root,
+        translationProfile: profile,
+        editingProfile: profile,
+        ...languages,
+        instructions: "Prefer concise dialogue",
+        chapterCards: new Map([["chapter-1", "- Kyra: female, singular"]]),
+      },
+    );
+    const instructions = provider.requests
+      .filter((request) => request.mode === "translation")
+      .map((request) => request.instructions);
+    expect(instructions).toEqual([
+      "Prefer concise dialogue\n\n- Kyra: female, singular",
+      "Prefer concise dialogue",
+    ]);
+  });
+
   it("reports the active model stage before a provider failure", async () => {
     const root = await mkdtemp(`${tmpdir()}/book-stage-failure-`);
     const stages: string[] = [];

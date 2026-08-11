@@ -139,6 +139,10 @@ For an entity_registry task, return a JSON string with this shape in the segment
 For a resolve_conflicts task, return a JSON string with this shape in the segment text field:
 {"decisions":[{"source":"exact source entity","canonical":"chosen exact target form","variants":["exact variant to replace"]}]}
 
+For a chapter_card task, return a JSON string with this shape in the segment text field:
+{"characters":[{"name":"as written in the chapter","gender":"male|female|other|unknown","number":"singular|plural"}],"address":[{"from":"character","to":"character","register":"formal|informal, with the evidence in one clause"}],"terms":[{"source":"recurring plain noun phrase","note":"what it refers to"}]}
+Record only what the chapter's own text establishes, and only facts a translator of a single isolated paragraph could not recover: grammatical gender and number of the characters, how each pair addresses the other, and recurring non-name noun phrases that must stay identical. Never summarise events, and never list a character the chapter does not name.
+
 For a book_style task, return a JSON string with this shape in the segment text field:
 {"genre":"...","narrativeVoice":"...","tone":"...","register":"...","notes":["short binding instruction for the translator"]}
 Derive it only from the supplied source passages, and describe how the book must sound in the target language. Keep every value short, concrete, and actionable. Never summarise the plot, and never name a passage.
