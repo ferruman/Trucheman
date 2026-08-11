@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -21,6 +21,20 @@ describe("optional EPUBCheck", () => {
     // The fixture's container.xml omits the rootfile media type, so this is RSC-003.
     expect(result.ok).toBe(false);
     expect(epubCheckErrors(result.output).join("\n")).toContain("RSC-003");
+  });
+
+  it("refuses a path that is not named .epub, so the pipeline must check the built book", async () => {
+    const path = join(workspace, "fixture.epub");
+    await buildFixtureEpub(path);
+    const disguised = join(workspace, "output.epub.1234.tmp");
+    await copyFile(path, disguised);
+    const result = await runOptionalEpubCheck(disguised);
+    if (!result.available) return;
+
+    // "Mode required for non-epub files" is not an ERROR line, so pointing the gate at the
+    // temporary file reported nothing at all and looked like a clean pass for every run.
+    expect(result.output).toContain("Mode required for non-epub files");
+    expect(epubCheckErrors(result.output)).toEqual([]);
   });
 
   it("reports only errors, capped", () => {

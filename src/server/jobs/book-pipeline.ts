@@ -308,16 +308,19 @@ export async function runPreparedBook(
     const outputAudit = await auditEpubArchive(temporary, targetLanguage.tag);
     await atomicJson(join(root, "output-consistency-audit.json"), outputAudit);
     report.warnings.push(...outputAudit.warnings);
+    await rename(temporary, output);
+    await syncParentDirectory(output);
     // Conformance gate, when EPUBCheck is installed. It reports, it does not reject: a book
-    // whose source was already non-conformant would otherwise be untranslatable here.
+    // whose source was already non-conformant would otherwise be untranslatable here — so
+    // running it after the rename costs nothing and is the only way it runs at all.
+    // EPUBCheck refuses any path not ending in `.epub` ("Mode required for non-epub files"),
+    // and that refusal is not an ERROR line, so pointing it at the `.tmp` silently passed.
     // A minute is enough for a novel; a hang must not hold the job at 99%.
-    const epubCheck = await runOptionalEpubCheck(temporary, 120000);
+    const epubCheck = await runOptionalEpubCheck(output, 120000);
     if (!epubCheck.ok) {
       await writeFile(join(root, "epubcheck.txt"), epubCheck.output);
       report.warnings.push(...epubCheckErrors(epubCheck.output));
     }
-    await rename(temporary, output);
-    await syncParentDirectory(output);
     // The book is built, but a failed consistency pass means it shipped unresolved name
     // variants. Reporting that as a clean completion is how a 50/50 name split went unseen.
     return { ...report, degraded: consistencyErrors };
