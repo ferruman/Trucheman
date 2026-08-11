@@ -67,6 +67,23 @@ describe("scanSegment", () => {
     ).toBe("missing_numbers");
   });
 
+  it("accepts calibers, model years and magnitudes the way Russian writes them", () => {
+    // A production run reported 26 dropped numbers and every one of them was this: the
+    // hundreds-and-tens numerals of a caliber, a two-digit year, or a rounded count.
+    const ru = (source: string, translation: string) =>
+      scanSegment(source, translation, "s1", "ru").map((defect) => defect.kind);
+    expect(ru("he aimed the .357 at her", "он навёл «триста пятьдесят седьмой» на неё")).toEqual(
+      [],
+    );
+    expect(ru("a pair of .45s in his bag", "пара сорок пятых в его сумке")).toEqual([]);
+    expect(ru("perched on a ’49 Merc", "сидела на «мерке» сорок девятого года")).toEqual([]);
+    expect(ru("perched on a ’49 Merc", "сидела на «мерке» 1949 года")).toEqual([]);
+    expect(ru("345,000 miles on the odometer", "345 тысяч миль на одометре")).toEqual([]);
+    expect(ru("a swallow of H2O", "глоток H₂O")).toEqual([]);
+    // The number is still gone when nothing stands in for it.
+    expect(ru("he aimed the .357 at her", "он навёл пистолет на неё")).toEqual(["missing_numbers"]);
+  });
+
   it("reports source words carried into a different script, and not names in the same script", () => {
     const defects = scanSegment(
       "The harbour was quiet that evening.",
