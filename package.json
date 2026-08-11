@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "e2e": "playwright test",
     "audit:epub": "node --import tsx/esm src/server/evals/run-epub-consistency-audit.ts",
+    "report:models": "node --import tsx/esm src/server/evals/run-model-report.ts",
     "replay:consistency": "node --import tsx/esm src/server/evals/run-job-consistency.ts",
     "trace:segment": "node --import tsx/esm src/server/evals/run-segment-trace.ts",
     "eval:literary": "node --import tsx/esm src/server/evals/run-literary-editor-eval.ts",
