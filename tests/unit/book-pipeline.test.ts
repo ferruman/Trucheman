@@ -113,6 +113,62 @@ describe("book pipeline instructions", () => {
     expect(firstSeen).toEqual([...firstSeen].sort((a, b) => a - b));
   });
 
+  it("pauses when the abort lands in the glossary preflight", async () => {
+    vi.stubEnv("BOOK_TRANSLATOR_PROVIDER", "deterministic");
+    const root = await mkdtemp(`${tmpdir()}/book-pipeline-preflight-abort-`);
+    roots.push(root);
+    await buildFixtureEpub(join(root, "source.epub"));
+    const now = new Date().toISOString();
+    const job: PersistedJob = {
+      version: 1,
+      id: "12345678-1234-4234-8234-123456789012",
+      title: "Book",
+      sourceLanguage: "en",
+      targetLanguage: "ru",
+      status: "ready",
+      stage: "translation",
+      progress: { translated: 0, edited: 0, total: 1, failed: 0 },
+      createdAt: now,
+      updatedAt: now,
+      warnings: 0,
+      documents: [],
+      instructions: "",
+      glossary: [],
+      qualityMode: "standard",
+    };
+    const controller = new AbortController();
+    // Advisory preflight, so a style profile that fails is only a warning and the run goes on
+    // to the glossary — where the pause lands. Swallowing it there translated the whole book
+    // without its glossary and reported the run as completed.
+    const provider: LanguageModelProvider = {
+      async complete() {
+        throw new Error("provider unavailable");
+      },
+    };
+
+    const reported: string[] = [];
+
+    await expect(
+      runPreparedBook(
+        root,
+        job,
+        async (patch) => {
+          if (patch.currentDocument) reported.push(patch.currentDocument);
+          if (patch.currentDocument !== "Preflight: glossary") return;
+          controller.abort(new Error("Job paused"));
+          throw controller.signal.reason;
+        },
+        controller.signal,
+        false,
+        { provider, useExternal: true },
+      ),
+    ).rejects.toThrow("Job paused");
+
+    // The later preflight aborts too, so rejecting proves nothing on its own: what proves the
+    // pause took is that the run never reached it.
+    expect(reported).toEqual(["Preflight: style profile", "Preflight: glossary"]);
+  });
+
   it("localizes EPUB metadata and both EPUB 3 and EPUB 2 navigation", async () => {
     vi.stubEnv("BOOK_TRANSLATOR_PROVIDER", "deterministic");
     const root = await mkdtemp(`${tmpdir()}/book-pipeline-navigation-`);

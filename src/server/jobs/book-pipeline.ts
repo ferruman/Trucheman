@@ -184,6 +184,10 @@ export async function runPreparedBook(
       for (const failure of registry.failedChunks)
         consistencyErrors.push(`Entity registry chunk ${failure.chunk} failed: ${failure.error}`);
     } catch (error) {
+      // Advisory like the two preflights around it, and like them, pausing must still pause:
+      // swallowing the abort here let a paused run carry on with an empty generated glossary
+      // and translate the whole book without it.
+      if (signal?.aborted) throw error;
       consistencyErrors.push(
         `Entity registry unavailable: ${error instanceof Error ? error.message : "unknown error"}`,
       );
