@@ -150,13 +150,19 @@ function dominantScript(text: string) {
  * Words carried over from the original verbatim. Only checked when the two texts are in
  * different scripts: between two Latin languages a shared word is usually a name or a
  * cognate, and flagging those would bury the real finding.
+ *
+ * Only words the source itself writes lowercase count. A capitalized Latin word kept as-is
+ * is a name, a brand or a title — Nine Inch Nails, MasterCard, Levi's — and keeping those is
+ * correct, so flagging them buried the finding exactly the way a cognate would.
  */
 function sourceResidue(source: string, translation: string): string[] {
   const sourceScript = dominantScript(source);
   if (sourceScript === "none" || dominantScript(translation) !== "cyrillic") return [];
   if (sourceScript !== "latin") return [];
   const sourceWords = new Set(
-    (source.toLocaleLowerCase().match(/\p{Script=Latin}{4,}/gu) ?? []).map((word) => word),
+    (source.match(/\p{Script=Latin}{4,}/gu) ?? [])
+      .filter((word) => word === word.toLocaleLowerCase())
+      .map((word) => word.toLocaleLowerCase()),
   );
   const carried = new Set<string>();
   for (const word of translation.match(/\p{Script=Latin}{4,}/gu) ?? []) {
