@@ -73,6 +73,30 @@ describe("settings API boundary", () => {
       );
   });
 
+  it("applies one request timeout to every stage", () => {
+    // 60s was hard-coded in the provider with no way to raise it, so a slow model on a full
+    // batch expired and paid for the whole prompt again.
+    const byDefault = resolveProfiles({}, {});
+    expect(
+      [byDefault.translation, byDefault.editing, byDefault.critic, byDefault.consistency].map(
+        (profile) => profile.timeoutMs,
+      ),
+    ).toEqual([60000, 60000, 60000, 60000]);
+
+    const raised = resolveProfiles({ BOOK_TRANSLATOR_TIMEOUT_MS: "180000" }, {});
+    expect(raised.translation.timeoutMs).toBe(180000);
+    expect(raised.consistency.timeoutMs).toBe(180000);
+    // The .env file wins over the ambient environment, like every other setting here.
+    expect(
+      resolveProfiles({ BOOK_TRANSLATOR_TIMEOUT_MS: "180000" }, { timeoutMs: "90000" }).editing
+        .timeoutMs,
+    ).toBe(90000);
+    for (const value of ["0", "999", "1.5", "soon", "600001"])
+      expect(() => resolveProfiles({ BOOK_TRANSLATOR_TIMEOUT_MS: value }, {})).toThrow(
+        /BOOK_TRANSLATOR_TIMEOUT_MS/,
+      );
+  });
+
   it("selects the evaluated editor prompt for Terra without changing other model defaults", () => {
     expect(defaultEditingPromptVersion("gpt-5.6-terra")).toBe("literary-v3.2.1");
     expect(defaultEditingPromptVersion("openai/gpt-5.6-terra")).toBe("literary-v3.2.1");

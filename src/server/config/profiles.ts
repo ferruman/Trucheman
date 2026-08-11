@@ -40,6 +40,21 @@ function batchConcurrency(value: string | undefined): number {
   return parsed;
 }
 
+const DEFAULT_TIMEOUT_MS = 60000;
+const MAX_TIMEOUT_MS = 600000;
+
+/**
+ * One knob for every stage. A slow reasoning model on a full batch routinely passes the
+ * 60s default; each expiry costs a whole retry of a prompt that was already being answered.
+ */
+function requestTimeout(value: string | undefined): number {
+  if (value === undefined || value.trim() === "") return DEFAULT_TIMEOUT_MS;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1000 || parsed > MAX_TIMEOUT_MS)
+    throw new Error(`BOOK_TRANSLATOR_TIMEOUT_MS must be an integer from 1000 to ${MAX_TIMEOUT_MS}`);
+  return parsed;
+}
+
 export function defaultEditingPromptVersion(model: string): ProviderProfile["promptVersion"] {
   const baseModel = model.toLocaleLowerCase().split("/").at(-1);
   return baseModel === TERRA_MODEL ? "literary-v3.2.1" : undefined;
@@ -67,12 +82,14 @@ export function resolveProfiles(
   const editingModel = secrets.editingModel ?? env.BOOK_TRANSLATOR_EDITING_MODEL ?? DEEPSEEK_MODEL;
   const editingPromptVersion =
     secrets.editingPromptVersion ?? env.BOOK_TRANSLATOR_EDITING_PROMPT_VERSION;
+  const timeoutMs = requestTimeout(secrets.timeoutMs ?? env.BOOK_TRANSLATOR_TIMEOUT_MS);
   const translation: ProviderProfile = {
     name: useExternal ? "deepseek-translation" : "deterministic-local",
     endpoint: translationEndpoint,
     model: secrets.translationModel ?? env.BOOK_TRANSLATOR_TRANSLATION_MODEL ?? DEEPSEEK_MODEL,
     apiKey: secrets.translationApiKey,
     thinking: translationEndpoint.includes("api.deepseek.com") ? "disabled" : undefined,
+    timeoutMs,
   };
   return {
     useExternal,
@@ -86,6 +103,7 @@ export function resolveProfiles(
       apiKey: secrets.editingApiKey,
       thinking: editingEndpoint.includes("api.deepseek.com") ? "disabled" : undefined,
       promptVersion: editingPromptVersion || defaultEditingPromptVersion(editingModel),
+      timeoutMs,
     },
     critic: {
       name: useExternal ? "critic" : "deterministic-local",
@@ -97,6 +115,7 @@ export function resolveProfiles(
         criticEndpoint,
         "BOOK_TRANSLATOR_CRITIC_THINKING",
       ),
+      timeoutMs,
     },
     consistency: {
       name: useExternal ? "consistency" : "deterministic-local",
@@ -108,6 +127,7 @@ export function resolveProfiles(
         consistencyEndpoint,
         "BOOK_TRANSLATOR_CONSISTENCY_THINKING",
       ),
+      timeoutMs,
     },
   };
 }
