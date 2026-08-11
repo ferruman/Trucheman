@@ -5,7 +5,15 @@ import type { PersistedJob } from "../domain/job.js";
 import type { InvalidationStage } from "../../shared/domain/job.js";
 import { DomainError } from "../domain/errors.js";
 import { buildEpub } from "../epub/build.js";
-import { validateEpub, validateEpubArchive, type ValidationReport } from "../epub/validate.js";
+import { parseContainer } from "../epub/package-parser.js";
+import { updatePackageLanguage } from "../epub/localization.js";
+import { parseXml, serializeXml } from "../epub/xml-dom.js";
+import {
+  resolveEpubPath,
+  validateEpub,
+  validateEpubArchive,
+  type ValidationReport,
+} from "../epub/validate.js";
 import { prepareBook, runPreparedBook } from "./book-pipeline.js";
 import type { JobRepository } from "../storage/job-repository.js";
 import { jobRoot } from "../storage/job-paths.js";
@@ -458,7 +466,15 @@ export class JobOrchestrator {
       output = join(root, "output.epub"),
       temporary = `${output}.${process.pid}.${randomUUID()}.tmp`;
     try {
-      await buildEpub(staging, temporary);
+      const builtAt = new Date();
+      const packagePath = parseContainer(
+        await readFile(join(staging, "META-INF", "container.xml"), "utf8"),
+      );
+      const packageFile = resolveEpubPath(staging, packagePath);
+      const packageDom = parseXml(await readFile(packageFile));
+      updatePackageLanguage(packageDom, job.targetLanguage, builtAt);
+      await writeFile(packageFile, serializeXml(packageDom));
+      await buildEpub(staging, temporary, builtAt);
       const handle = await open(temporary, "r");
       try {
         await handle.sync();

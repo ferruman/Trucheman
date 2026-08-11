@@ -20,6 +20,24 @@ describe("EPUB localization", () => {
     expect(absent.documentElement.getAttribute("xml:lang")).toBe("pl");
   });
 
+  it("keeps bibliographic metadata while refreshing output-file metadata", () => {
+    const doc = parseXml(
+      `<package version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Book</dc:title><dc:creator>Author</dc:creator><dc:identifier>978-1-2345-6789-0</dc:identifier><dc:publisher>Publisher</dc:publisher><dc:date>1999</dc:date><dc:language>en</dc:language><meta property="dcterms:modified">1999-01-01T00:00:00Z</meta><meta name="generator" content="Calibre"/></metadata></package>`,
+    );
+
+    updatePackageLanguage(doc, "ru", new Date("2026-08-11T10:09:08.123Z"));
+    const output = serializeXml(doc);
+
+    expect(output).toContain("<dc:title>Book</dc:title>");
+    expect(output).toContain("<dc:creator>Author</dc:creator>");
+    expect(output).toContain("<dc:identifier>978-1-2345-6789-0</dc:identifier>");
+    expect(output).toContain("<dc:publisher>Publisher</dc:publisher>");
+    expect(output).toContain("<dc:date>1999</dc:date>");
+    expect(output).toContain("<dc:language>ru</dc:language>");
+    expect(output).toContain('property="dcterms:modified">2026-08-11T10:09:08Z</meta>');
+    expect(output).toContain('name="generator" content="Book Translator"');
+  });
+
   it("sets HTML language attributes and only xml:lang on NCX", () => {
     const html = parseXml(`<html><body><header lang="en" xml:lang="en"/></body></html>`);
     updateContentLanguage(html, "ru");

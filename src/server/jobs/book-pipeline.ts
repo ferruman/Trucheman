@@ -325,14 +325,15 @@ export async function runPreparedBook(
     updateContentLanguage(dom, targetLanguage.tag);
     await writeFile(path, serializeXml(dom));
   }
+  const builtAt = new Date();
   const packageDom = parseXml(await readFile(prepared.packageFile));
-  updatePackageLanguage(packageDom, targetLanguage.tag);
+  updatePackageLanguage(packageDom, targetLanguage.tag, builtAt);
   await writeFile(prepared.packageFile, serializeXml(packageDom));
   await update({ stage: "building", status: "running" });
   const output = join(root, "output.epub"),
     temporary = `${output}.${process.pid}.${randomUUID()}.tmp`;
   try {
-    await buildEpub(prepared.staging, temporary);
+    await buildEpub(prepared.staging, temporary, builtAt);
     const handle = await open(temporary, "r");
     try {
       await handle.sync();

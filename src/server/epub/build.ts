@@ -12,15 +12,19 @@ async function files(root: string, dir = root): Promise<string[]> {
   }
   return out;
 }
-export async function buildEpub(stagingRoot: string, outputPath: string): Promise<void> {
+export async function buildEpub(
+  stagingRoot: string,
+  outputPath: string,
+  builtAt = new Date(),
+): Promise<void> {
   const zip = new yazl.ZipFile(),
-    all = await files(stagingRoot),
+    all = (await files(stagingRoot)).sort((left, right) => left.localeCompare(right)),
     mime = join(stagingRoot, "mimetype");
   if (!all.includes(mime)) throw new Error("EPUB mimetype is missing");
-  zip.addBuffer(await readFile(mime), "mimetype", { compress: false });
+  zip.addBuffer(await readFile(mime), "mimetype", { compress: false, mtime: builtAt });
   for (const path of all) {
     if (path === mime) continue;
-    zip.addFile(path, relative(stagingRoot, path).split("\\").join("/"));
+    zip.addFile(path, relative(stagingRoot, path).split("\\").join("/"), { mtime: builtAt });
   }
   await new Promise<void>((resolve, reject) => {
     const stream = createWriteStream(outputPath);
