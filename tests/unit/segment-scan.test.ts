@@ -34,6 +34,20 @@ describe("scanSegment", () => {
     expect(kinds("He waited 12 years.", "Он ждал 12 лет.")).toEqual([]);
   });
 
+  it("treats a grouped number and its ungrouped form as the same number", () => {
+    // The real finding: "$1 to $5,000" against «от $1 до $5000» compared ["1","5","000"]
+    // with ["1","5000"] and called a correct amount dropped.
+    expect(kinds("donations of $1 to $5,000 matter", "пожертвования от $1 до $5000 важны")).toEqual(
+      [],
+    );
+    expect(kinds("a fee of 1,250 dollars", "плата в 1 250 долларов")).toEqual([]);
+    // Decimals keep their separator meaning, and a genuinely dropped amount still reports.
+    expect(kinds("it measured 3.14 metres", "он составил 3,14 метра")[0]).toBeUndefined();
+    expect(scanSegment("a fee of 1,250 dollars", "плата в долларах", "s1")[0]?.kind).toBe(
+      "missing_numbers",
+    );
+  });
+
   it("accepts a Russian number written out in words instead of digits", () => {
     // «до спасения двенадцатого числа» is a translation of "till his rescue on the 12th",
     // not a dropped number; reporting it buried the one date that had really been lost.

@@ -24,8 +24,20 @@ function normalized(text: string) {
   return text.replace(/\s+/gu, " ").trim();
 }
 
+/**
+ * Digit groups joined by a thousands separator are one number. English groups with a comma
+ * and Russian with a space, so "$5,000" and «$5000» compared as ["5","000"] against ["5000"]
+ * and reported a perfectly good amount as dropped. Requiring exactly three digits after each
+ * separator keeps decimals — "3.14", «1,5» — out of it.
+ */
+function ungrouped(text: string) {
+  return text.replace(/\d{1,3}(?:[.,\u00a0\u202f\u2009 '\u2019]\d{3})+/gu, (match) =>
+    match.replace(/\D/gu, ""),
+  );
+}
+
 function numbers(text: string) {
-  return (text.match(/\d+/gu) ?? []).filter((value) => value.length <= 6);
+  return (ungrouped(text).match(/\d+/gu) ?? []).filter((value) => value.length <= 6);
 }
 
 // ponytail: Russian only, 1–39 — the dates and small counts prose actually spells out.
