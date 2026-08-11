@@ -22,7 +22,7 @@ import { DeepSeekProvider } from "../providers/deepseek.js";
 import { resolveProfiles } from "../config/profiles.js";
 import { targetLanguageProfile } from "../config/target-language.js";
 import { LANGUAGES } from "../../shared/languages.js";
-import { runTwoPass, type RunnerStage } from "./job-runner.js";
+import { runQualityPipeline, type RunnerStage } from "./job-runner.js";
 import { UsageTrackingProvider } from "./usage-service.js";
 import type { PersistedJob } from "../domain/job.js";
 import { atomicJson, syncParentDirectory } from "../storage/atomic-file.js";
@@ -233,7 +233,7 @@ export async function runPreparedBook(
           currentDocument: documentTitles.get(batches[batchOrder.get(oldest)!].documentId),
         };
   };
-  const result = await runTwoPass(batches, provider, {
+  const result = await runQualityPipeline(batches, provider, {
     root,
     translationProfile,
     editingProfile,

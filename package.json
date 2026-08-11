@@ -19,6 +19,7 @@
     "e2e": "playwright test",
     "audit:epub": "node --import tsx/esm src/server/evals/run-epub-consistency-audit.ts",
     "replay:consistency": "node --import tsx/esm src/server/evals/run-job-consistency.ts",
+    "trace:segment": "node --import tsx/esm src/server/evals/run-segment-trace.ts",
     "eval:literary": "node --import tsx/esm src/server/evals/run-literary-editor-eval.ts",
     "eval:literary:ab": "npm run eval:literary -- --compare",
     "eval:literary:import": "node --import tsx/esm src/server/evals/run-literary-corpus-import.ts",

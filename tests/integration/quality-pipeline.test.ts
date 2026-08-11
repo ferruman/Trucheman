@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { FakeProvider } from "../../src/server/providers/fake-provider.js";
 import { ProviderError, type LanguageModelProvider } from "../../src/server/providers/provider.js";
-import { runTwoPass } from "../../src/server/jobs/job-runner.js";
+import { runQualityPipeline } from "../../src/server/jobs/job-runner.js";
 
 const languages = {
   sourceLanguage: { tag: "en", name: "English" },
@@ -24,7 +24,7 @@ describe("two-pass pipeline", () => {
     const root = await mkdtemp(`${tmpdir()}/book-translator-`);
     const provider = new FakeProvider();
     const profile = { name: "fake", endpoint: "local", model: "fake" };
-    await runTwoPass([{ id: "batch-1", documentId: "chapter-1", segments: [segment] }], provider, {
+    await runQualityPipeline([{ id: "batch-1", documentId: "chapter-1", segments: [segment] }], provider, {
       root,
       translationProfile: profile,
       editingProfile: profile,
@@ -39,7 +39,7 @@ describe("two-pass pipeline", () => {
     const root = await mkdtemp(`${tmpdir()}/book-chapter-cards-`);
     const provider = new FakeProvider();
     const profile = { name: "fake", endpoint: "local", model: "fake" };
-    await runTwoPass(
+    await runQualityPipeline(
       [
         { id: "batch-1", documentId: "chapter-1", segments: [segment] },
         { id: "batch-2", documentId: "chapter-2", segments: [{ ...segment, id: "chapter-2:0" }] },
@@ -80,7 +80,7 @@ describe("two-pass pipeline", () => {
     const profile = { name: "fake", endpoint: "local", model: "fake" };
 
     await expect(
-      runTwoPass([{ id: "batch-1", documentId: "chapter-1", segments: [segment] }], provider, {
+      runQualityPipeline([{ id: "batch-1", documentId: "chapter-1", segments: [segment] }], provider, {
         root,
         translationProfile: profile,
         editingProfile: profile,
@@ -106,11 +106,11 @@ describe("two-pass pipeline", () => {
       instructions: "Keep names",
       ...languages,
     };
-    await runTwoPass(batches, provider, options);
-    await runTwoPass(batches, provider, options);
+    await runQualityPipeline(batches, provider, options);
+    await runQualityPipeline(batches, provider, options);
     expect(provider.requests).toHaveLength(2);
     const changed = { ...profile, model: "v2" };
-    await runTwoPass(batches, provider, {
+    await runQualityPipeline(batches, provider, {
       ...options,
       translationProfile: changed,
       editingProfile: changed,
@@ -131,8 +131,8 @@ describe("two-pass pipeline", () => {
       ...languages,
     };
 
-    await runTwoPass(batches, provider, options);
-    await runTwoPass(batches, provider, {
+    await runQualityPipeline(batches, provider, options);
+    await runQualityPipeline(batches, provider, {
       ...options,
       translationProfile: { ...profile, model: "v2" },
       editingProfile: { ...profile, model: "v2" },
@@ -166,7 +166,7 @@ describe("two-pass pipeline", () => {
       // A run that dies after 253 batches.
       const first = new FakeProvider();
       await expect(
-        runTwoPass(batches, first, {
+        runQualityPipeline(batches, first, {
           ...options,
           onStage: (stage, batch) => {
             if (stage === "translation" && batch.id === "document-1-batch-254")
@@ -185,7 +185,7 @@ describe("two-pass pipeline", () => {
       // The retry re-reads those checkpoints and only calls the model for what is left.
       const second = new FakeProvider();
       const cached: Record<string, number> = { translation: 0, editing: 0 };
-      const result = await runTwoPass(batches, second, {
+      const result = await runQualityPipeline(batches, second, {
         ...options,
         onProgress: (stage, _batch, isCached) => {
           if (isCached) cached[stage]++;
@@ -230,7 +230,7 @@ describe("two-pass pipeline", () => {
       },
     };
 
-    const result = await runTwoPass(batches, provider, {
+    const result = await runQualityPipeline(batches, provider, {
       root,
       translationProfile: profile,
       editingProfile: profile,
@@ -272,7 +272,7 @@ describe("two-pass pipeline", () => {
     };
 
     await expect(
-      runTwoPass(batches, provider, {
+      runQualityPipeline(batches, provider, {
         root,
         translationProfile: profile,
         editingProfile: profile,
@@ -329,13 +329,13 @@ describe("two-pass pipeline", () => {
       ...languages,
     };
 
-    const without = await runTwoPass(batches, provider, options);
+    const without = await runQualityPipeline(batches, provider, options);
     expect(without.edits.get("chapter-1-batch-1")?.[0].text).toBe("Починено");
     expect(audits).toEqual([1]); // the second pass never ran
 
     auditRound = 0;
     audits.length = 0;
-    const withAudit = await runTwoPass(batches, provider, {
+    const withAudit = await runQualityPipeline(batches, provider, {
       ...options,
       root: await mkdtemp(`${tmpdir()}/book-post-repair-audit-on-`),
       postRepairAudit: true,
@@ -357,8 +357,8 @@ describe("two-pass pipeline", () => {
       ...languages,
     };
 
-    await runTwoPass(batches, provider, options);
-    await runTwoPass(batches, provider, {
+    await runQualityPipeline(batches, provider, options);
+    await runQualityPipeline(batches, provider, {
       ...options,
       editingProfile: { ...profile, promptVersion: "literary-v3.2.1" },
     });
@@ -381,12 +381,12 @@ describe("two-pass pipeline", () => {
       editingProfile: profile,
       ...languages,
     };
-    await runTwoPass(
+    await runQualityPipeline(
       [{ id: "batch-1", documentId: "chapter-1", segments: [segment] }],
       provider,
       options,
     );
-    const result = await runTwoPass(
+    const result = await runQualityPipeline(
       [{ id: "chapter-1-batch-1", documentId: "chapter-1", segments: [segment] }],
       provider,
       options,
@@ -446,8 +446,8 @@ describe("two-pass pipeline", () => {
     };
     const batches = [{ id: "batch-quality", documentId: "chapter-1", segments: [segment, second] }];
 
-    const result = await runTwoPass(batches, provider, options);
-    await runTwoPass(batches, provider, options);
+    const result = await runQualityPipeline(batches, provider, options);
+    await runQualityPipeline(batches, provider, options);
 
     expect(provider.requests).toEqual([
       { mode: "translation", model: "fake" },

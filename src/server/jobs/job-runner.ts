@@ -234,7 +234,7 @@ async function verifyRepairedBlocks(
   );
 }
 
-export async function runTwoPass(
+export async function runQualityPipeline(
   batches: Batch[],
   provider: LanguageModelProvider,
   options: RunnerOptions,
