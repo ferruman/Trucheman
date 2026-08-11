@@ -915,11 +915,7 @@ describe("book-wide consistency", () => {
       { id: "g2", source: "Leticia", target: "Летиция", category: "person", enabled: true },
     ];
 
-    const adherence = measureGlossaryAdherence(
-      values,
-      glossary,
-      targetLanguageProfile("ru").nameEndings,
-    );
+    const adherence = measureGlossaryAdherence(values, glossary);
 
     expect(adherence).toContainEqual({
       source: "Kyra",
@@ -928,6 +924,44 @@ describe("book-wide consistency", () => {
       blocksUsingTarget: 1,
     });
     expect(glossaryAdherenceWarnings(adherence).map((entry) => entry.source)).toEqual(["Kyra"]);
+  });
+
+  it("counts a declined, quoted or multi-word glossary target as adherence", () => {
+    // Every entry here was reported as ignored by job efe7bb1b, and every block below obeys
+    // it: the target is simply never written in the nominative.
+    const values: ConsistencyDocument[] = [
+      {
+        id: "inflected",
+        sourceSegments: [
+          sourceSegment("inflected:0", "in April, in the United States"),
+          sourceSegment("inflected:1", "the Cyclopean masonry of New Orleans"),
+          sourceSegment("inflected:2", "the schooner Emma"),
+        ],
+        editedSegments: [
+          { id: "inflected:0", text: "в апреле, в Соединённых Штатах" },
+          { id: "inflected:1", text: "циклопической кладки Нового Орлеана" },
+          { id: "inflected:2", text: "шхуны «Эммы»" },
+        ],
+      },
+    ];
+    const glossary = [
+      { id: "g1", source: "April", target: "апрель", category: "term", enabled: true },
+      {
+        id: "g2",
+        source: "United States",
+        target: "Соединённые Штаты",
+        category: "place",
+        enabled: true,
+      },
+      { id: "g3", source: "Cyclopean", target: "циклопический", category: "term", enabled: true },
+      { id: "g4", source: "New Orleans", target: "Новый Орлеан", category: "place", enabled: true },
+      { id: "g5", source: "Emma", target: "«Эмма»", category: "ship", enabled: true },
+    ];
+
+    const adherence = measureGlossaryAdherence(values, glossary);
+
+    for (const entry of adherence) expect(entry).toMatchObject({ blocksUsingTarget: entry.blocks });
+    expect(glossaryAdherenceWarnings(adherence)).toEqual([]);
   });
 
   it("makes the NCX navMap the authority for a table-of-contents label", () => {

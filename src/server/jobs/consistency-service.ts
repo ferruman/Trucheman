@@ -993,6 +993,26 @@ export type GlossaryAdherence = {
 };
 
 /**
+ * The words of a glossary target, each cut back to what survives inflection, so a block that
+ * declined the target still counts as having used it. `nameEndings` is no help here: it only
+ * ever strips one ending off the whole string, so a multi-word target kept every word but the
+ * last intact, and a target ending in ь kept an ь that the ending replaces. Measured that way
+ * ten blocks that all obeyed «апрель» read as one, and every month, adjective and two-word
+ * name in the registry was reported as an entry the models ignored.
+ */
+function targetPrefixes(target: string) {
+  return (
+    words(target)
+      .map((word) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "").toLocaleLowerCase())
+      .filter(Boolean)
+      // A Russian ending takes two characters, three where it replaces a soft sign: апрель and
+      // апреля share only апре. This is a warning heuristic, so a loose match costs a warning
+      // nobody needed, and a tight one costs a warning that means nothing.
+      .map((word) => word.slice(0, Math.max(3, word.length - 2)))
+  );
+}
+
+/**
  * How often the translation of a block that names an entity actually contains the glossary
  * rendering. The registry can be right and the run still ship both Кира and Кайра, so the
  * glossary has to be measured against the output rather than assumed to have been obeyed.
@@ -1000,21 +1020,22 @@ export type GlossaryAdherence = {
 export function measureGlossaryAdherence(
   documents: ConsistencyDocument[],
   glossary: GlossaryEntry[],
-  nameEndings: string[] = [],
 ): GlossaryAdherence[] {
   const entries = glossary.filter((entry) => entry.enabled && entry.target.trim());
   const evidence = glossaryEvidence(documents, entries);
   return entries
     .map((entry) => {
       const target = entry.target.trim();
-      // Match on the stem so declined renderings count as usage.
-      const stem = nameStem(target, nameEndings).toLocaleLowerCase();
+      const prefixes = targetPrefixes(target);
       const blocks = evidence.get(entry.source.toLocaleLowerCase()) ?? [];
       return {
         source: entry.source,
         target,
         blocks: blocks.length,
-        blocksUsingTarget: blocks.filter((text) => text.toLocaleLowerCase().includes(stem)).length,
+        blocksUsingTarget: blocks.filter((text) => {
+          const lower = text.toLocaleLowerCase();
+          return prefixes.length > 0 && prefixes.every((prefix) => lower.includes(prefix));
+        }).length,
       };
     })
     .filter((entry) => entry.blocks > 0)
@@ -1089,7 +1110,7 @@ export async function runConsistencyPass(options: {
   }
   const glossaryAlignment = alignGlossaryVariants(documents, glossary, options.nameEndings);
   const navigationLabels = alignNavigationLabels(documents, options.navigation);
-  const adherence = measureGlossaryAdherence(documents, glossary, options.nameEndings);
+  const adherence = measureGlossaryAdherence(documents, glossary);
   const ignoredGlossaryEntries = glossaryAdherenceWarnings(adherence);
   const report = buildConsistencyReport(documents, glossary);
   return {
