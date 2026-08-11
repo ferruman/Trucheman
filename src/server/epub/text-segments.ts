@@ -83,6 +83,43 @@ const semanticInline = new Set([
   "u",
   "var",
 ]);
+/**
+ * Semantic inline elements whose boundary is decorative rather than structural. A block
+ * merges across these, giving up the markup on the absorbed side: a sentence chopped at an
+ * `<i>` translates far worse than it reads without the italics. Translating `<i>Emma</i>`
+ * and the bare `The ` around it as separate units produced «Эмма», «Эмма» and an invented
+ * `Люди с «` in the Cthulhu run. Links, footnote markers and ruby annotations stay
+ * boundaries — there the element's own text is the point.
+ */
+const presentationalInline = new Set([
+  "b",
+  "cite",
+  "del",
+  "dfn",
+  "em",
+  "i",
+  "ins",
+  "mark",
+  "s",
+  "samp",
+  "small",
+  "strong",
+  "u",
+  "var",
+]);
+
+/**
+ * True when `format` is `base` wrapped in nothing but decorative inline elements, so the
+ * node's text may move outward into a `base` node. Deliberately one-directional: text is
+ * never pulled *into* a wrapper, which would italicise the whole sentence around it.
+ */
+export function mergesInto(format = "", base = ""): boolean {
+  if (format === base) return true;
+  if (base && !format.startsWith(`${base}>`)) return false;
+  const extra = base ? format.slice(base.length + 1) : format;
+  return extra.split(">").every((name) => presentationalInline.has(name));
+}
+
 function hash(text: string) {
   return createHash("sha256").update(text).digest("hex");
 }
@@ -149,19 +186,28 @@ export type LogicalBlocks = {
   absorbed: Map<string, string>;
 };
 
+/**
+ * A fragment begins a new word — as opposed to continuing the previous one. Trailing
+ * punctuation and possessives hug what precedes them, so joining `<i>Emma</i>` with the
+ * `, he says` after it must not manufacture "Emma , he says". Straight quotes stay out:
+ * "'s" is a possessive far more often than "'" opens a quotation.
+ */
+const startsNewWord = /^[\p{L}\p{N}(\[{«“„¿¡#$£€]/u;
+
 function joinBlockText(parts: string[]): string {
   return parts.reduce((joined, part) => {
     if (!joined) return part;
-    return /\s$/u.test(joined) || /^\s/u.test(part) ? joined + part : `${joined} ${part}`;
+    const spaced = /\s$/u.test(joined) || /^\s/u.test(part) || !startsNewWord.test(part);
+    return spaced ? joined + part : `${joined} ${part}`;
   }, "");
 }
 
 /**
- * Merge consecutive text nodes that share a logical block and an inline formatting
- * context into one translation unit. Emphasis in mid-paragraph still splits the block,
- * because its boundary carries meaning; the fragmented `<span>` typesetting that produced
- * one-word segments collapses back into the sentence the author wrote, including inside a
- * table-of-contents `<a>` that wraps the whole entry.
+ * Merge consecutive text nodes that share a logical block and a compatible inline
+ * formatting context into one translation unit. The fragmented `<span>` typesetting that
+ * produced one-word segments collapses back into the sentence the author wrote, including
+ * inside a table-of-contents `<a>` that wraps the whole entry, and — see `mergesInto` —
+ * across decorative emphasis, whose markup is given up to keep the sentence whole.
  */
 export function mergeLogicalBlocks(segments: TextSegment[]): LogicalBlocks {
   const units: TextSegment[] = [];
@@ -174,7 +220,7 @@ export function mergeLogicalBlocks(segments: TextSegment[]): LogicalBlocks {
       while (
         end < segments.length &&
         segments[end].block === first.block &&
-        segments[end].format === first.format
+        mergesInto(segments[end].format, first.format)
       ) {
         end++;
       }

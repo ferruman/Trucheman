@@ -48,11 +48,10 @@ describe("fragmented EPUB logical blocks", () => {
       "In the Desert",
       "From the Land of the Farther Suns",
       "Part 5 Little Birds of the Night",
-      "He said ",
-      "nothing",
-      " at all.",
+      // Decorative `<em>` is absorbed too: a bare " at all." on its own line is what the
+      // model turns into invented text.
+      "He said nothing at all.",
     ]);
-    // `<em>` boundaries survive: that paragraph is not merged.
     expect(document.segments.length).toBeGreaterThan(document.units.length);
     expect(Object.keys(document.absorbed)).toHaveLength(
       document.segments.length - document.units.length,

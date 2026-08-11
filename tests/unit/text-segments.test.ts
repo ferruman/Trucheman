@@ -20,15 +20,22 @@ describe("text segments", () => {
     );
     const { units, absorbed } = mergeLogicalBlocks(extractTextSegments(d, "doc"));
 
-    expect(units.map((unit) => unit.text)).toEqual([
-      "In the Desert",
-      "He said ",
-      "nothing",
-      " at all.",
-    ]);
-    // The two absorbed spans reinsert as empty; `<em>` keeps its own segment.
-    expect(absorbed.size).toBe(2);
-    expect([...absorbed.values()]).toEqual([units[0].id, units[0].id]);
+    // Decorative `<em>` no longer splits the sentence: translating " at all." on its own
+    // is what produced invented and duplicated fragments around <i>-wrapped names.
+    expect(units.map((unit) => unit.text)).toEqual(["In the Desert", "He said nothing at all."]);
+    expect(absorbed.size).toBe(4);
+    expect([...absorbed.values()]).toEqual([units[0].id, units[0].id, units[1].id, units[1].id]);
+  });
+
+  it("never pulls a sentence into the emphasis that starts it", () => {
+    const d = parseXml(
+      `<html xmlns="http://www.w3.org/1999/xhtml"><body><p><i>Emma</i> sailed at dawn.</p></body></html>`,
+    );
+    const { units, absorbed } = mergeLogicalBlocks(extractTextSegments(d, "doc"));
+
+    // Merging outward is safe; merging inward would italicise the whole paragraph.
+    expect(units.map((unit) => unit.text)).toEqual(["Emma", " sailed at dawn."]);
+    expect(absorbed.size).toBe(0);
   });
 
   it("merges a fragmented entry wrapped in a single link", () => {
@@ -37,13 +44,19 @@ describe("text segments", () => {
     );
     const { units } = mergeLogicalBlocks(extractTextSegments(d, "doc"));
 
-    // The link wraps the whole entry, so nothing distinguishes its four spans.
-    expect(units.map((unit) => unit.text)).toEqual([
-      "Part 5 Little Birds",
-      "Epilogue",
-      " — ",
-      "note",
-    ]);
+    // The link wraps the whole entry, so nothing distinguishes its four spans. The link
+    // itself stays a boundary — its text is what the href points at — while the trailing
+    // `<em>` merges into the run beside it.
+    expect(units.map((unit) => unit.text)).toEqual(["Part 5 Little Birds", "Epilogue", " — note"]);
+  });
+
+  it("joins fragments without manufacturing space before punctuation", () => {
+    const d = parseXml(
+      `<html xmlns="http://www.w3.org/1999/xhtml"><body><p>The <i>Emma</i>, he says, and the <i>Emma</i>'s crew. <span>Part</span> <span>5</span></p></body></html>`,
+    );
+    const { units } = mergeLogicalBlocks(extractTextSegments(d, "doc"));
+
+    expect(units[0].text).toBe("The Emma, he says, and the Emma's crew. Part 5");
   });
 
   it("never merges across a line break or a nested block", () => {
