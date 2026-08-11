@@ -204,9 +204,15 @@ describe("provider prompt contract", () => {
     expect(russianPrompt).toContain("Target-language rules for Russian");
     expect(russianPrompt).toContain("Use ё consistently");
     expect(russianPrompt).toContain("Thomas Street → Томас-стрит");
+    // Dialogue punctuation was the largest Russian-specific defect class in a production
+    // run — mixed dashes and guillemets, a colon before trailing attribution, quotations
+    // left unclosed after an ellipsis — and the rules named only which glyphs to use.
+    expect(russianPrompt).toContain("— Реплика, — сказал он.");
+    expect(russianPrompt).toContain("«Реплика», — сказал он.");
     expect(frenchPrompt).not.toContain("Russian rules");
     expect(frenchPrompt).not.toContain("Thomas Street → Томас-стрит");
     expect(frenchPrompt).not.toContain("Use ё consistently");
+    expect(frenchPrompt).not.toContain("— Реплика, — сказал он.");
   });
 
   it("normalizes regional and case-variant tags for structured target style", () => {

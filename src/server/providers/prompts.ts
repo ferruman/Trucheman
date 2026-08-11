@@ -2,7 +2,14 @@ import { targetLanguageProfile } from "../config/target-language.js";
 import type { ProviderInputSegment, ProviderRequest } from "./provider.js";
 
 export const PROMPT_VERSION = "literary-v3.1";
-export const PROMPT_INPUT_VERSION = "structured-v3";
+/**
+ * Bump when shared prompt text changes semantically for every mode and strategy — common
+ * rules, the output contract, or a target language's rules. `checkpointKey` includes it
+ * unconditionally, so bumping discards cached work that was produced under the old wording.
+ * `PROMPT_VERSION` and its siblings name *which editing strategy* a run used and are pinned
+ * per model, so renaming those to signal a rule-text revision would conflate the two axes.
+ */
+export const PROMPT_INPUT_VERSION = "structured-v4";
 export const QUALITY_PROMPT_VERSION = "selective-quality-v2";
 export const PROMPT_VERSIONS = [PROMPT_VERSION, "literary-v3.2.1"] as const;
 export type PromptVersion = (typeof PROMPT_VERSIONS)[number];
