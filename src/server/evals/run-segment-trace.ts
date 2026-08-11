@@ -63,11 +63,26 @@ const [draft, edit, audit, repair] = await Promise.all(
   ["drafts.ndjson", "edits.ndjson", "audits.ndjson", "repairs.ndjson"].map(stage),
 );
 
-/** Staging holds the reinserted, consistency-corrected text — the same bytes the EPUB got. */
+/**
+ * Staging holds the reinserted, consistency-corrected text — the same bytes the EPUB got.
+ * Re-extracting it renumbers the ids, because merging a logical block empties the text nodes it
+ * absorbed and an empty node is no longer a segment. Joining on the id therefore reads whatever
+ * block happens to sit at that index now; the locator is the node's position in the tree, which
+ * reinsertion does not move.
+ */
+const at = (locator: number[]) => locator.join(".");
+const wantedLocators = new Set(
+  (document.units ?? document.segments)
+    .filter((segment) => belongs(segment.id))
+    .map((segment) => at(segment.locator)),
+);
 let final: string | undefined;
 try {
   const staged = extractTextSegments(parseXml(await readFile(document.path)), document.id);
-  final = staged.find((segment) => segment.id === wanted)?.text;
+  final = staged
+    .filter((segment) => wantedLocators.has(at(segment.locator)))
+    .map((segment) => segment.text)
+    .join("");
 } catch {
   final = undefined;
 }
