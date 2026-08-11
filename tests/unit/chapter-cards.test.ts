@@ -69,6 +69,31 @@ describe("formatChapterCard", () => {
   it("is empty when the model returned nothing usable", () => {
     expect(formatChapterCard({ characters: [], address: [], terms: [] })).toBe("");
   });
+
+  it("drops a character whose gender the chapter never established", () => {
+    // Both cards job efe7bb1b produced. Neither names a character; both were handed to every
+    // batch of their chapter as binding facts.
+    expect(
+      formatChapterCard({
+        characters: [
+          {
+            name: "The Project Gutenberg eBook of The Call of Cthulhu",
+            gender: "unknown",
+            number: "singular",
+          },
+        ],
+        address: [],
+        terms: [],
+      }),
+    ).toBe("");
+    expect(
+      formatChapterCard({
+        characters: [{ name: "не назван", gender: "unknown", number: "singular" }],
+        address: [],
+        terms: [],
+      }),
+    ).toBe("");
+  });
 });
 
 describe("resolveChapterCards", () => {
