@@ -656,6 +656,31 @@ describe("book-wide consistency", () => {
     ).toBe(3);
   });
 
+  it("strips a possessive or a contraction that a full stop hid behind", () => {
+    // The registry's clitic strip was anchored to the end of the candidate, so "Corvus’s."
+    // — ending a sentence — kept its possessive and entered the registry as its own entity.
+    // In production that put the book's central figure in as the possessive "Crow’s",
+    // resolved to a common noun, and the audit then cited it against correct text.
+    const values = [
+      {
+        id: "clitics",
+        sourceSegments: [
+          sourceSegment("clitics:0", "Kyra feared Corvus. She had seen Corvus’s."),
+          sourceSegment("clitics:1", "Corvus’s. Kyra ran. I’m sure they’ve gone."),
+          sourceSegment("clitics:2", "Corvus waited, and I’m certain they’ve waited too."),
+        ],
+        editedSegments: [],
+      },
+    ];
+
+    const sources = extractRepeatedSourceEntities(values).map((entity) => entity.source);
+
+    expect(sources).toContain("Corvus");
+    expect(sources).not.toContain("Corvus’s");
+    expect(sources).not.toContain("I’m");
+    expect(sources).not.toContain("They’ve");
+  });
+
   it("resolves consistency in chunks and keeps decisions when one chunk fails", async () => {
     const root = await mkdtemp(`${tmpdir()}/book-consistency-chunks-`);
     roots.push(root);

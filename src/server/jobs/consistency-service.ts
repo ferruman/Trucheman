@@ -275,9 +275,14 @@ export function extractEntityEvidence(documents: ConsistencyDocument[]): {
       ];
       for (const { value, index, highConfidence } of candidates) {
         // Kyra’s is Kyra. Keeping them apart split one entity's evidence in two and spent
-        // two of the candidate slots on it.
+        // two of the candidate slots on it. Trailing punctuation has to go first: "Crow’s."
+        // ends in a period, so a clitic anchored to the end never matched it, and the book's
+        // central entity entered the registry as the possessive "Crow’s" — resolved to the
+        // common noun «ворона» while "Corvus" was resolved to «Ворон», after which the audit
+        // cited the possessive against correct text and repair capitalized ordinary crows.
         const source = value
-          .replace(/['’]s$/iu, "")
+          .replace(/[.-]+$/u, "")
+          .replace(/['’](s|re|ve|ll|d|m|t)$/iu, "")
           .replace(/[.-]+$/u, "")
           .trim()
           .replace(/\s+/gu, " ");
