@@ -164,11 +164,18 @@ export type RepairRejection = { id: string; reason: string };
  * duplicated fragment, source-language residue, or quote imbalance. Anything else keeps
  * the edited text, which is already known to be acceptable.
  */
-export function reviewRepair(edited: string, repaired: string): string | undefined {
+export function reviewRepair(
+  edited: string,
+  repaired: string,
+  original = edited,
+): string | undefined {
   if (!repaired.trim()) return "empty repair";
   if (repaired === edited) return undefined;
-  // A repair rewords; it does not turn a heading into a sentence.
-  if (repaired.length > edited.length * 2 + 20) return "repair changes the block structure";
+  // A repair rewords; it does not turn a heading into a sentence. Measured against the source
+  // as well as the edit: when the defect *is* a truncated block, the only correct repair is
+  // longer than what it replaces, and reading the edit alone rejected exactly those.
+  if (repaired.length > Math.max(edited.length, original.length) * 2 + 20)
+    return "repair changes the block structure";
   const introduced = adjacentStemRepetitions(repaired) - adjacentStemRepetitions(edited);
   if (introduced > 0) return "repair duplicates an adjacent fragment";
   if (quoteImbalance(edited) === 0 && quoteImbalance(repaired) !== 0)
@@ -180,13 +187,15 @@ export function reviewRepair(edited: string, repaired: string): string | undefin
 export function applySelectiveRepairs(
   edited: ProviderSegment[],
   repairs: ProviderSegment[],
+  inputs: ProviderRepairInputSegment[] = [],
 ): { segments: ProviderSegment[]; rejected: RepairRejection[] } {
   const repairedById = new Map(repairs.map((segment) => [segment.id, segment.text]));
+  const originalById = new Map(inputs.map((segment) => [segment.id, segment.original]));
   const rejected: RepairRejection[] = [];
   const segments = edited.map((segment) => {
     const repaired = repairedById.get(segment.id);
     if (repaired === undefined) return segment;
-    const reason = reviewRepair(segment.text, repaired);
+    const reason = reviewRepair(segment.text, repaired, originalById.get(segment.id));
     if (reason) {
       rejected.push({ id: segment.id, reason });
       return segment;

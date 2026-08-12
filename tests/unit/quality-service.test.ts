@@ -129,6 +129,36 @@ describe("selective literary quality service", () => {
     }
   });
 
+  it("accepts a repair that restores a block the editor truncated", () => {
+    // The real shape of the defect: editing dropped the dialogue and left only the narration,
+    // so the correct repair is far longer than the edit but no longer than the source.
+    const truncated = "Помолчав, Дезидра сказала:";
+    const restored =
+      "Помолчав, Дезидра сказала: — Он тебя накажет, верно? Может, даже убьёт, " +
+      "если не приведёшь меня обратно. Разве не так? Ты играешь с огнём, Крис.";
+    const source =
+      "After a long moment, Desidra said, \"He'll punish you, right? Maybe kill you if you " +
+      "don't bring me back. Isn't that correct? You're playing a dangerous game with me, Chris.\"";
+
+    expect(reviewRepair(truncated, restored)).toBe("repair changes the block structure");
+    expect(reviewRepair(truncated, restored, source)).toBe(undefined);
+    expect(
+      applySelectiveRepairs(
+        [{ id: "s", text: truncated }],
+        [{ id: "s", text: restored }],
+        [
+          {
+            id: "s",
+            original: source,
+            initialTranslation: "",
+            editedTranslation: truncated,
+            issues: [],
+          },
+        ],
+      ),
+    ).toEqual({ segments: [{ id: "s", text: restored }], rejected: [] });
+  });
+
   it("accepts a genuine repair and never changes segment ids or count", () => {
     const result = applySelectiveRepairs(edited, [
       { id: "s1", text: "Когда знания сложатся воедино" },

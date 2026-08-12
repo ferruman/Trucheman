@@ -463,7 +463,7 @@ export async function runQualityPipeline(
           });
         }
         const beforeRepair = editedSegments;
-        const reviewed = applySelectiveRepairs(editedSegments, repairs);
+        const reviewed = applySelectiveRepairs(editedSegments, repairs, repairSegments);
         editedSegments = reviewed.segments;
         rejectedRepairsByBatch[index] = reviewed.rejected.map((rejection) => ({
           batchId: batch.id,
