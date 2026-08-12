@@ -378,6 +378,12 @@ export class DeepSeekProvider implements LanguageModelProvider {
         );
       }
 
+      // The consistency contract asks for the answer alone, so put it back in the envelope
+      // the rest of this code speaks. A model that wrapped it anyway is left as it is.
+      if (request.mode === "consistency" && !Array.isArray(parsed?.segments)) {
+        parsed = { segments: [{ id: transportRequest.segments[0]?.id, text: parsed }] };
+      }
+
       if (request.mode === "audit") {
         if (
           !Array.isArray(parsed?.segments) ||

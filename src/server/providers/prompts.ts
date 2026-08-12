@@ -59,25 +59,25 @@ Valid response example:
 Before responding, silently verify: valid JSON; exact segment count; exact id order; only id/issues keys; every issues value is an array. Do not output this verification.`;
 
 /**
- * The consistency tasks answer with a structure, not with prose. Asking for it as a string
- * meant asking the model to escape a whole JSON document by hand inside another one, and it
- * broke that string an order of magnitude more often than any other stage did: 2.7% of
- * consistency calls came back as unparseable JSON against 0.3% of translation calls and none
- * of editing's. It is the same reason the audit contract takes `issues` as a real array.
+ * The consistency tasks answer with a structure, and with exactly one of them per call.
+ *
+ * Asking for it as a string meant asking the model to escape a whole JSON document by hand
+ * inside another one; asking for it inside the shared `segments` wrapper meant asking it to
+ * close an array it opened a thousand characters earlier, after closing three nested things.
+ * It got the first wrong for 2.7% of the 225 consistency calls in `data/jobs`, against 0.3%
+ * of 1141 translation calls, and it got the second wrong for the same chapter three times
+ * running — twice in one run, with different content both times, ending `]}}}` where `]}}]}`
+ * was due. The wrapper buys nothing here: there is one answer, and the code knows its id.
  */
 const CONSISTENCY_OUTPUT_CONTRACT = `OUTPUT CONTRACT — mandatory and higher priority than stylistic preferences:
 1. Return exactly one valid JSON object and nothing else. No prose, Markdown, or code fences.
-2. The top-level object must contain exactly one key named "segments".
-3. "segments" must be an array with exactly the requested number of elements, in the requested order.
-4. Every element must contain exactly two keys: "id" and "text".
-5. Copy every "id" byte-for-byte from the input. Never translate, shorten, renumber, or reformat an id.
-6. "text" must be a real JSON object, never a string and never JSON encoded inside a string. Write its quotes as ordinary JSON syntax; never escape them.
-7. Never return any other key in a segment.
+2. That object is the answer itself, with the keys the task above describes. There is no "segments" wrapper, no "id", and no "text".
+3. Never return a string containing JSON, and never escape the answer's quotes: write it as ordinary JSON syntax.
 
-Valid response example:
-{"segments":[{"id":"s0001","text":{"entries":[{"source":"House of Secrets","target":"Дом Тайн","category":"place","strategy":"literal"}]}}]}
+Valid response example for an entity_registry task:
+{"entries":[{"source":"House of Secrets","target":"Дом Тайн","category":"place","strategy":"literal"}]}
 
-Before responding, silently verify: valid JSON; exact segment count; exact id order; only id/text keys; every text is an object. Do not output this verification.`;
+Before responding, silently verify: valid JSON; exactly the keys the task asked for; every bracket closed. Do not output this verification.`;
 
 const NATIVE_WRITER_CHECK = `For every sentence, silently ask: "Would a skilled native-language literary writer plausibly phrase this idea this way without seeing the source text?" If not, rewrite it while preserving the author's meaning, tone, period, and stylistic character.`;
 
@@ -161,20 +161,20 @@ Output only the final repaired wording in text. Do not output issue labels, alte
 
 The input text is a JSON task description, not prose to translate. Do not rewrite the book. Make only the requested terminology and consistency decisions from the supplied evidence.
 
-Unlike the other tasks, "text" here is a JSON object, not a string. Write it as part of the response object; never serialize it into a string and never escape its quotes.
+Unlike the other tasks, the answer is the response object itself: no wrapper, no id, and never a string containing JSON.
 
-For an entity_registry task, "text" is an object with this shape:
+For an entity_registry task, return exactly this object:
 {"entries":[{"source":"source form","target":"canonical target form","category":"person|place|ship|organization|work|term|other","strategy":"short explanation"}]}
 
-For a resolve_conflicts task, "text" is an object with this shape:
+For a resolve_conflicts task, return exactly this object:
 {"decisions":[{"source":"exact source entity","canonical":"chosen exact target form","variants":["exact variant to replace"]}]}
 
-For a chapter_card task, "text" is an object with this shape:
+For a chapter_card task, return exactly this object:
 {"characters":[{"name":"as written in the chapter","gender":"male|female|other|unknown","number":"singular|plural","evidence":"short phrase copied verbatim from the chapter"}],"address":[{"from":"character","to":"character","register":"formal|informal","evidence":"short phrase copied verbatim from the chapter"}],"terms":[{"source":"recurring plain noun phrase","note":"what it refers to"}]}
 Record only what the chapter's own text establishes, and only facts a translator of a single isolated paragraph could not recover: grammatical gender and number of the characters, how each pair addresses the other, and recurring non-name noun phrases that must stay identical. Never summarise events, and never list a character the chapter does not name.
 Every evidence value and every recurring term must be copied character for character from the supplied chapter. Code discards any fact whose evidence it cannot find there, so an approximated or remembered quote loses the fact.
 
-For a book_style task, "text" is an object with this shape:
+For a book_style task, return exactly this object:
 {"genre":"...","narrativeVoice":"...","tone":"...","register":"...","notes":["short binding instruction for the translator"]}
 Derive it only from the supplied source passages, and describe how the book must sound in the target language. Keep every value short, concrete, and actionable. Never summarise the plot, and never name a passage.
 
@@ -344,13 +344,15 @@ export function buildPromptInput(
             segmentKeys: ["id", "issues"],
             issuesType: "array",
           }
-        : {
-            format: "json",
-            segmentCount: ids.length,
-            ids,
-            segmentKeys: ["id", "text"],
-            textType: request.mode === "consistency" ? "object" : "string",
-          },
+        : request.mode === "consistency"
+          ? { format: "json", wrapper: "none", topLevel: "the task's own answer object" }
+          : {
+              format: "json",
+              segmentCount: ids.length,
+              ids,
+              segmentKeys: ["id", "text"],
+              textType: "string",
+            },
     userPreferences: request.instructions ?? "",
     glossary: relevantGlossary(request.glossary, request.segments),
     targetStyle,

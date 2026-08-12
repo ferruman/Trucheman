@@ -201,8 +201,13 @@ describe("provider prompt contract", () => {
       }),
     );
 
-    expect(payload.responseContract.textType).toBe("object");
-    expect(prompt).toContain("never a string and never JSON encoded inside a string");
+    expect(payload.responseContract).toEqual({
+      format: "json",
+      wrapper: "none",
+      topLevel: "the task's own answer object",
+    });
+    expect(prompt).toContain('There is no "segments" wrapper');
+    expect(prompt).toContain("never escape the answer's quotes");
     expect(prompt).not.toContain("return a JSON string with this shape");
     // The stages that answer with prose keep the contract that forbids an object.
     expect(buildPrompt({ mode: "translation" })).toContain(

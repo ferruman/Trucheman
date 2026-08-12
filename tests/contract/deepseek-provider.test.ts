@@ -325,7 +325,7 @@ describe("DeepSeek provider", () => {
     expect(error.message).not.toContain(preamble.trim());
   });
 
-  it("serializes a consistency answer the model returned as an object", async () => {
+  it("accepts a consistency answer with no segments wrapper around it", async () => {
     const entries = { entries: [{ source: "House of Secrets", target: "Дом Тайн" }] };
     vi.stubGlobal(
       "fetch",
@@ -336,7 +336,7 @@ describe("DeepSeek provider", () => {
               choices: [
                 {
                   message: {
-                    content: JSON.stringify({ segments: [{ id: "s0001", text: entries }] }),
+                    content: JSON.stringify(entries),
                   },
                   finish_reason: "stop",
                 },
@@ -357,6 +357,40 @@ describe("DeepSeek provider", () => {
     // The caller parses `text`, so the shape it gets back is the same either way — only the
     // escaping the model had to do by hand is gone.
     expect(JSON.parse(response.segments[0].text)).toEqual(entries);
+  });
+
+  it("still accepts a consistency answer the model wrapped in segments", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      segments: [{ id: "s0001", text: { entries: [] } }],
+                    }),
+                  },
+                  finish_reason: "stop",
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+    const response = await new DeepSeekProvider().complete({
+      profile: { name: "consistency", endpoint: "https://provider.test", model: "x", apiKey: "s" },
+      mode: "consistency",
+      ...languages,
+      segments: [{ id: "entity-registry-1", text: '{"task":"entity_registry"}' }],
+    });
+
+    expect(response.segments[0].id).toBe("entity-registry-1");
+    expect(JSON.parse(response.segments[0].text)).toEqual({ entries: [] });
   });
 
   it("still accepts a consistency answer the model stringified itself", async () => {
