@@ -294,9 +294,15 @@ describe("job lifecycle orchestration", () => {
       },
     });
     await orchestrator.start(job.id);
-    await vi.waitFor(async () => expect((await repo.get(job.id)).status).toBe("needs_attention"), {
-      timeout: 5000,
-    });
+    // The status is saved before the event is emitted, so waiting on the status would race
+    // the event this test is about.
+    await vi.waitFor(
+      () => expect(events.map(({ type }) => type)).toContain("completed_with_warnings"),
+      {
+        timeout: 5000,
+      },
+    );
+    expect((await repo.get(job.id)).status).toBe("needs_attention");
 
     // The book is still built, so the stage is complete and the output stays downloadable.
     expect((await repo.get(job.id)).stage).toBe("complete");
@@ -329,9 +335,10 @@ describe("job lifecycle orchestration", () => {
       },
     });
     await orchestrator.start(job.id);
-    await vi.waitFor(async () => expect((await repo.get(job.id)).status).toBe("failed"), {
+    await vi.waitFor(() => expect(events.map(({ type }) => type)).toContain("failed"), {
       timeout: 5000,
     });
+    expect((await repo.get(job.id)).status).toBe("failed");
     expect(events).toContainEqual(
       expect.objectContaining({
         type: "execution_started",
