@@ -289,6 +289,42 @@ describe("DeepSeek provider", () => {
     ).rejects.toThrow(/near: .*"Дом Тайн"} \{"id":"s0002"/);
   });
 
+  it("counts the parse position from the text that was parsed, not the whole answer", async () => {
+    // The parser retries inside the fence, so the reported position is an offset into the
+    // fenced text; measuring it from the raw answer points the window at innocent bytes.
+    const preamble = "Here is the JSON you asked for, carefully checked:\n";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: `${preamble}\`\`\`json\n{"segments":[{"id":"s0001","text":"Дом Тайн"} {"id":"s0002"}]}\n\`\`\``,
+                  },
+                  finish_reason: "stop",
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+    const error = await new DeepSeekProvider()
+      .complete({
+        profile: { name: "x", endpoint: "https://provider.test", model: "x", apiKey: "secret" },
+        mode: "translation",
+        ...languages,
+        segments: [{ id: "document-1:0", text: "House of Secrets" }],
+      })
+      .catch((value) => value);
+    expect(error.message).toContain('near: {"segments":[{"id":"s0001","text":"Дом Тайн"} {"id"');
+    expect(error.message).not.toContain(preamble.trim());
+  });
+
   it("rejects a shifted translation whose IDs still line up", async () => {
     vi.stubGlobal(
       "fetch",
@@ -333,7 +369,7 @@ describe("DeepSeek provider", () => {
       .catch((value) => value);
     expect(error).toBeInstanceOf(ProviderError);
     expect(error.kind).toBe("invalid_response");
-    expect(error.message).toContain("shifted against the request at document-1:1");
+    expect(error.message).toContain("runs into the next segment at document-1:1");
     expect(error.usage).toMatchObject({ promptTokens: 40, completionTokens: 9 });
   });
 

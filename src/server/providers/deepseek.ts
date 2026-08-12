@@ -174,19 +174,32 @@ function transportBodyShape(text: string, contentType: string | null) {
   return `content-type ${contentType ?? "missing"}, ${Buffer.byteLength(text)} bytes, ${form}`;
 }
 
+/**
+ * `JSON.parse`, remembering which text the position in its error message counts from. The
+ * candidates below are all substrings of the answer, so without this a reported position
+ * reads as an offset into the wrong string.
+ */
+function parseFrom(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw Object.assign(error as Error, { parsedText: text });
+  }
+}
+
 function parseStructuredContent(content: string): unknown {
   const trimmed = content.trim();
   try {
     return JSON.parse(trimmed);
   } catch (initialError) {
     const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)?.[1];
-    if (fenced) return JSON.parse(fenced);
+    if (fenced) return parseFrom(fenced);
     const firstBrace = trimmed.indexOf("{");
     const lastBrace = trimmed.lastIndexOf("}");
     if (firstBrace >= 0 && lastBrace > firstBrace) {
-      return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
+      return parseFrom(trimmed.slice(firstBrace, lastBrace + 1));
     }
-    throw initialError;
+    throw Object.assign(initialError as Error, { parsedText: trimmed });
   }
 }
 
@@ -203,7 +216,8 @@ function parseStructuredContent(content: string): unknown {
 function parseErrorContext(content: string, error: unknown): string {
   const position = Number(/position (\d+)/.exec(String(error))?.[1]);
   if (!Number.isFinite(position)) return "";
-  const window = content.slice(Math.max(0, position - 60), position + 60).replace(/\s+/gu, " ");
+  const parsed = (error as { parsedText?: string }).parsedText ?? content;
+  const window = parsed.slice(Math.max(0, position - 60), position + 60).replace(/\s+/gu, " ");
   return ` near: ${window}`;
 }
 
@@ -400,9 +414,7 @@ export class DeepSeekProvider implements LanguageModelProvider {
           const misaligned = misalignedSegmentIds(request.segments, answer.segments);
           if (misaligned.length) {
             throw new Error(
-              `Provider response is shifted against the request at ${misaligned
-                .slice(0, 3)
-                .join(", ")}`,
+              `Provider answer runs into the next segment at ${misaligned.slice(0, 3).join(", ")}`,
             );
           }
         }
