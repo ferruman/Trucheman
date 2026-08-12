@@ -457,6 +457,78 @@ describe("book-wide consistency", () => {
     expect(calls).toBe(1);
   });
 
+  it("halves a chunk whose answer the model could not return whole", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-entity-registry-split-`);
+    roots.push(root);
+    const asked: number[] = [];
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        const payload = JSON.parse(request.segments[0].text);
+        asked.push(payload.entities.length);
+        // What a real run returned for 25 entities: the answer itself ran past the output
+        // limit and arrived cut off mid-string.
+        if (payload.entities.length > 1)
+          throw new Error(
+            "Provider returned malformed structured output (39698 bytes, length: Unterminated string in JSON)",
+          );
+        return {
+          segments: [
+            {
+              id: request.segments[0].id,
+              text: JSON.stringify({
+                entries: payload.entities.map((entity: { source: string }) => ({
+                  source: entity.source,
+                  target: `${entity.source}-ru`,
+                  category: "person",
+                })),
+              }),
+            },
+          ],
+        };
+      },
+    };
+
+    const registry = await resolveEntityRegistry(
+      provider,
+      { name: "resolver", endpoint: "local", model: "deepseek-v4-flash" },
+      { tag: "en", name: "English" },
+      { tag: "ru", name: "Russian" },
+      documents().map((document) => ({ ...document, editedSegments: [] })),
+      root,
+    );
+
+    // The whole chunk, then each half; nothing is abandoned, so no name is left to vary.
+    expect(asked).toEqual([2, 1, 1]);
+    expect(registry.failedChunks).toEqual([]);
+    expect(registry.resolvedChunks).toBe(1);
+    expect(registry.entries.map((entry) => entry.source).sort()).toEqual(["Angell", "Vigilant"]);
+  });
+
+  it("gives up on a chunk that is not failing on size, without quartering it", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-entity-registry-hopeless-`);
+    roots.push(root);
+    let calls = 0;
+    const provider: LanguageModelProvider = {
+      async complete() {
+        calls++;
+        throw new Error("Provider returned an empty response");
+      },
+    };
+
+    const registry = await resolveEntityRegistry(
+      provider,
+      { name: "resolver", endpoint: "local", model: "deepseek-v4-flash" },
+      { tag: "en", name: "English" },
+      { tag: "ru", name: "Russian" },
+      documents().map((document) => ({ ...document, editedSegments: [] })),
+      root,
+    );
+
+    expect(calls).toBe(3);
+    expect(registry.resolvedChunks).toBe(0);
+    expect(registry.failedChunks.map((failure) => failure.chunk)).toEqual(["1.1", "1.2"]);
+  });
+
   it("accepts a registry answer that drops the wrapper object", async () => {
     const root = await mkdtemp(`${tmpdir()}/book-entity-registry-bare-`);
     roots.push(root);
@@ -558,13 +630,13 @@ describe("book-wide consistency", () => {
     const root = await mkdtemp(`${tmpdir()}/book-entity-registry-chunks-`);
     roots.push(root);
     const names = ["Kyra", "Leticia", "Damon", "Raymondo"];
-    let call = 0;
     const provider: LanguageModelProvider = {
       async complete(request) {
-        call++;
-        // The second chunk always times out, exactly like the production run.
-        if (call === 2) throw new Error("Provider request timed out");
         const payload = JSON.parse(request.segments[0].text);
+        // Every request naming Damon times out, exactly like the production run — so
+        // halving the chunk cannot rescue it and it is reported rather than retried away.
+        if (payload.entities.some((entity: { source: string }) => entity.source === "Damon"))
+          throw new Error("Provider request timed out");
         return {
           segments: [
             {
@@ -605,9 +677,13 @@ describe("book-wide consistency", () => {
 
     expect(registry.chunks).toBe(2);
     expect(registry.resolvedChunks).toBe(1);
-    expect(registry.failedChunks).toEqual([{ chunk: 2, error: "Provider request timed out" }]);
-    // A failed chunk must not cost the entries the other chunk produced.
-    expect(registry.entries).toHaveLength(2);
+    expect(registry.failedChunks).toEqual([{ chunk: "1.1", error: "Provider request timed out" }]);
+    // Neither the other chunk's entries nor the half that answered are lost with it.
+    expect(registry.entries.map((entry) => entry.source).sort()).toEqual([
+      "Kyra",
+      "Leticia",
+      "Raymondo",
+    ]);
   });
 
   it("keeps an explicit user glossary entry ahead of generated choices", () => {
@@ -778,13 +854,17 @@ describe("book-wide consistency", () => {
       },
     ];
 
-    let call = 0;
     const provider: LanguageModelProvider = {
       async complete(request) {
-        call++;
-        // The second chunk always times out, exactly like the production run.
-        if (call === 2) throw new Error("Provider request timed out");
         const payload = JSON.parse(request.segments[0].text);
+        // Every request naming Damon times out, exactly like the production run, so halving
+        // the chunk cannot rescue it either.
+        if (
+          payload.report.entityEvidence.some(
+            (entity: { source: string }) => entity.source === "Damon",
+          )
+        )
+          throw new Error("Provider request timed out");
         return {
           segments: [
             {
@@ -816,8 +896,10 @@ describe("book-wide consistency", () => {
     );
 
     expect(resolution.chunks).toBe(Math.ceil(report.entityEvidence.length / 2));
-    expect(resolution.failedChunks).toEqual([{ chunk: 2, error: "Provider request timed out" }]);
-    // One failed chunk must not cancel the decisions the other chunks produced.
+    expect(resolution.failedChunks.map((failure) => failure.error)).toEqual([
+      "Provider request timed out",
+    ]);
+    // One entity the model cannot answer for must not cancel the decisions of the others.
     expect(resolution.resolvedChunks).toBe(resolution.chunks - 1);
     expect(resolution.decisions.length).toBeGreaterThan(0);
 
@@ -833,8 +915,9 @@ describe("book-wide consistency", () => {
     // Answers are persisted per entity as each chunk completes, so a rerun only retries
     // the entities whose chunk failed.
     const cache = JSON.parse(await readFile(`${root}/consistency-resolution.json`, "utf8"));
-    // Five entities in chunks of two: chunk 2 failed, so chunks 1 and 3 left 2 + 1 answers.
-    expect(Object.keys(cache.value.entities)).toHaveLength(3);
+    // Five entities in chunks of two. The chunk holding Damon failed, but halving it saved
+    // the entity it was paired with, so only Damon itself is left unanswered.
+    expect(Object.keys(cache.value.entities)).toHaveLength(4);
   });
 
   it("aligns name variants from the glossary when the resolver is unavailable", () => {

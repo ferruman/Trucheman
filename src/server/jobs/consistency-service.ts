@@ -580,7 +580,8 @@ export async function completeJsonTask(
 }
 
 export type ChunkedRun = { chunks: number; resolvedChunks: number; failedChunks: ChunkFailure[] };
-export type ChunkFailure = { chunk: number; error: string };
+/** `chunk` is the chunk's position, or `6.1` for the first half of a chunk 6 that was split. */
+export type ChunkFailure = { chunk: string; error: string };
 export type EntityRegistry = ChunkedRun & { entries: GlossaryEntry[] };
 
 const answeredSchema = z.object({
@@ -613,6 +614,7 @@ async function completeEntityTask<Item, Answer extends { source: string }>(
     parse: (value: unknown) => Answer[];
     payload: (items: Item[]) => unknown;
     signal?: AbortSignal;
+    onProgress?: (done: number, total: number) => Promise<void> | void;
   },
 ): Promise<ChunkedRun & { answers: Answer[] }> {
   const cache = (await readCache(options.path, CONSISTENCY_CACHE_KEY, answeredSchema)) ?? {
@@ -630,7 +632,18 @@ async function completeEntityTask<Item, Answer extends { source: string }>(
     groups.push(pending.slice(offset, offset + options.chunkSize));
   const failedChunks: ChunkFailure[] = [];
   let resolvedChunks = 0;
-  for (const [index, group] of groups.entries()) {
+  /**
+   * One chunk, halved when the model cannot answer it whole. A chunk of 25 entities carries
+   * enough evidence that the answer itself can overrun the model's output limit — one came
+   * back as 39KB cut off mid-string — and the whole chunk was then abandoned, which is 25
+   * names left free to vary across the book. Halving changes the question that failed, the
+   * same recovery the translation runner already applies to a batch.
+   *
+   * Bounded to two splits: a chunk that still fails at six entities is not failing on size,
+   * and quartering a hopeless chunk down to single entities would pay for dozens of calls to
+   * learn it twice.
+   */
+  const attempt = async (group: typeof pending, label: string, depth = 0): Promise<boolean> => {
     if (options.signal?.aborted)
       throw options.signal.reason instanceof Error ? options.signal.reason : new Error("Aborted");
     // Kept outside the try so a schema failure can report the shape that caused it.
@@ -641,7 +654,7 @@ async function completeEntityTask<Item, Answer extends { source: string }>(
         profile,
         sourceLanguage,
         targetLanguage,
-        `${options.id}-${index + 1}`,
+        `${options.id}-${label}`,
         options.payload(group.map((entry) => entry.item)),
         options.signal,
       );
@@ -653,19 +666,31 @@ async function completeEntityTask<Item, Answer extends { source: string }>(
           (answer) => answer.source.toLocaleLowerCase() === entry.source,
         );
       await writeCache(options.path, CONSISTENCY_CACHE_KEY, cache);
-      resolvedChunks++;
+      return true;
     } catch (error) {
       if (options.signal?.aborted) throw error;
+      if (group.length > 1 && depth < 2) {
+        const middle = Math.ceil(group.length / 2);
+        const head = await attempt(group.slice(0, middle), `${label}.1`, depth + 1);
+        const tail = await attempt(group.slice(middle), `${label}.2`, depth + 1);
+        return head && tail;
+      }
       const message = error instanceof Error ? error.message : "unknown error";
       failedChunks.push({
-        chunk: index + 1,
+        chunk: label,
         // The request itself failing is self-explanatory; a rejected answer is not.
         error:
           received === undefined
             ? message
             : `${message} (received: ${JSON.stringify(received).slice(0, 200)})`,
       });
+      return false;
     }
+  };
+  for (const [index, group] of groups.entries()) {
+    // A chunk counts as resolved only when every entity in it was answered, split or not.
+    if (await attempt(group, String(index + 1))) resolvedChunks++;
+    await options.onProgress?.(index + 1, groups.length);
   }
   const answers = keyed.flatMap((entry) => (cache.entities[entry.key] ?? []) as Answer[]);
   return { answers, chunks: groups.length, resolvedChunks, failedChunks };
