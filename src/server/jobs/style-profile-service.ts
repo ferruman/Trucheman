@@ -13,7 +13,13 @@ import {
 } from "./consistency-service.js";
 
 /** Bump only when the sampling or the profile shape changes: this re-asks the model. */
-const STYLE_PROFILE_VERSION = 1;
+const STYLE_PROFILE_VERSION = 2;
+/**
+ * A budget, not a contract — the same trap the chapter card fell into. Rejecting the profile
+ * for a ninth note loses the genre, the voice and the register with it, and the book is then
+ * translated with no style block at all.
+ */
+const MAX_NOTES = 12;
 /** Enough source to hear the voice, small enough to stay one cheap preflight call. */
 const SAMPLE_BUDGET = 6000;
 const MIN_PASSAGE = 200;
@@ -26,7 +32,10 @@ export const styleProfileSchema = z
     narrativeVoice: z.string().optional(),
     tone: z.string().optional(),
     register: z.string().optional(),
-    notes: z.array(z.string()).max(8).optional(),
+    notes: z
+      .array(z.string())
+      .transform((notes) => notes.slice(0, MAX_NOTES))
+      .optional(),
   })
   .strip();
 

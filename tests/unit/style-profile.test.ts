@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatStyleProfile,
   sampleBookPassages,
+  styleProfileSchema,
 } from "../../src/server/jobs/style-profile-service.js";
 import type { ConsistencyDocument } from "../../src/server/jobs/consistency-service.js";
 
@@ -47,5 +48,16 @@ describe("formatStyleProfile", () => {
       "Book style profile, derived from the source and binding for the whole book:\n- Genre: noir\n- keep it terse",
     );
     expect(formatStyleProfile({ notes: [] })).toBe("");
+  });
+
+  it("trims a long note list instead of losing the profile", () => {
+    // The chapter card lost a whole chapter to the same cap. Here it would cost the book its
+    // genre, voice and register, which is the block every batch is translated against.
+    const parsed = styleProfileSchema.parse({
+      genre: "dark urban fantasy",
+      notes: Array.from({ length: 20 }, (_, index) => `note ${index}`),
+    });
+    expect(parsed.genre).toBe("dark urban fantasy");
+    expect(parsed.notes).toHaveLength(12);
   });
 });
