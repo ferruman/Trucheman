@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { validateProviderResponse } from "../../src/server/providers/response-validator.js";
+import {
+  misalignedSegmentIds,
+  validateProviderResponse,
+} from "../../src/server/providers/response-validator.js";
 
 describe("provider response validation", () => {
   it("requires exact ordered IDs", () => {
@@ -32,5 +35,59 @@ describe("provider response validation", () => {
         { id: "a", text: "a" },
       ]),
     ).toThrow();
+  });
+});
+
+describe("segment alignment", () => {
+  const long = (marker: string, length: number) => marker.repeat(length);
+
+  it("finds answers that carry the next segment's text", () => {
+    // The shape taken from job 9c6c4e7c, batch document-10-batch-8: a sentence split over two
+    // blocks is answered whole under the first id, and everything after it moves up one.
+    const expected = [
+      { id: "a", text: long("a", 120) },
+      { id: "b", text: long("b", 60) },
+      { id: "c", text: long("c", 300) },
+      { id: "d", text: long("d", 100) },
+    ];
+    const shifted = [
+      { id: "a", text: long("x", 180) },
+      { id: "b", text: long("x", 300) },
+      { id: "c", text: long("x", 100) },
+      { id: "d", text: long("x", 100) },
+    ];
+    expect(misalignedSegmentIds(expected, shifted)).toEqual(["b", "c"]);
+  });
+
+  it("accepts an aligned batch, short segments and lopsided neighbours included", () => {
+    const expected = [
+      { id: "a", text: long("a", 120) },
+      { id: "b", text: "Yes." },
+      { id: "c", text: long("c", 300) },
+      // Compressed hard, but its neighbour is no better a match, so nothing moved.
+      { id: "d", text: long("d", 400) },
+      { id: "e", text: long("e", 90) },
+    ];
+    const aligned = [
+      { id: "a", text: long("x", 130) },
+      { id: "b", text: "Да." },
+      { id: "c", text: long("x", 320) },
+      { id: "d", text: long("x", 150) },
+      { id: "e", text: long("x", 95) },
+    ];
+    expect(misalignedSegmentIds(expected, aligned)).toEqual([]);
+  });
+
+  it("compares an editing answer against the draft it was given", () => {
+    const expected = [
+      { id: "a", original: long("o", 120), draft: long("a", 120) },
+      { id: "b", original: long("o", 300), draft: long("b", 300) },
+    ];
+    expect(
+      misalignedSegmentIds(expected, [
+        { id: "a", text: long("x", 290) },
+        { id: "b", text: long("x", 300) },
+      ]),
+    ).toEqual(["a"]);
   });
 });

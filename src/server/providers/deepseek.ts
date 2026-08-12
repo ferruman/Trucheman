@@ -6,7 +6,7 @@ import {
   type ProviderRequest,
   type ProviderResponse,
 } from "./provider.js";
-import { validateProviderResponse } from "./response-validator.js";
+import { misalignedSegmentIds, validateProviderResponse } from "./response-validator.js";
 import { abortableDelay } from "./retry-policy.js";
 
 function withTransportIds(request: ProviderRequest): ProviderRequest {
@@ -368,13 +368,26 @@ export class DeepSeekProvider implements LanguageModelProvider {
       };
       try {
         const validated = validateProviderResponse(candidate, transportRequest.segments);
-        return {
+        const answer = {
           ...validated,
           segments: validated.segments.map((segment, index) => ({
             ...segment,
             id: request.segments[index].id,
           })),
         };
+        // Only these two modes send consecutive prose, which is what makes a neighbour's
+        // length a meaningful comparison; repair sends the flagged segments alone.
+        if (request.mode === "translation" || request.mode === "editing") {
+          const misaligned = misalignedSegmentIds(request.segments, answer.segments);
+          if (misaligned.length) {
+            throw new Error(
+              `Provider response is shifted against the request at ${misaligned
+                .slice(0, 3)
+                .join(", ")}`,
+            );
+          }
+        }
+        return answer;
       } catch (error) {
         const fields = responseFieldSummary(parsed.segments);
         throw new ProviderError(

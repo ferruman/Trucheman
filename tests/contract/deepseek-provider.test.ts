@@ -256,6 +256,54 @@ describe("DeepSeek provider", () => {
     expect(error.usage).toMatchObject({ promptTokens: 20, completionTokens: 3 });
   });
 
+  it("rejects a shifted translation whose IDs still line up", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      segments: [
+                        // The model answered both halves of the split sentence here, then
+                        // moved every remaining answer up one and repeated the last.
+                        { id: "s0001", text: "б".repeat(190) },
+                        { id: "s0002", text: "в".repeat(300) },
+                        { id: "s0003", text: "в".repeat(300) },
+                      ],
+                    }),
+                  },
+                  finish_reason: "stop",
+                },
+              ],
+              usage: { prompt_tokens: 40, completion_tokens: 9 },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+    const error = await new DeepSeekProvider()
+      .complete({
+        profile: { name: "x", endpoint: "https://provider.test", model: "x", apiKey: "secret" },
+        mode: "translation",
+        ...languages,
+        segments: [
+          { id: "document-1:0", text: "a".repeat(120) },
+          { id: "document-1:1", text: "b".repeat(60) },
+          { id: "document-1:2", text: "c".repeat(300) },
+        ],
+      })
+      .catch((value) => value);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error.kind).toBe("invalid_response");
+    expect(error.message).toContain("shifted against the request at document-1:1");
+    expect(error.usage).toMatchObject({ promptTokens: 40, completionTokens: 9 });
+  });
+
   it("returns structured audit issues without a second layer of JSON parsing", async () => {
     vi.stubGlobal(
       "fetch",
