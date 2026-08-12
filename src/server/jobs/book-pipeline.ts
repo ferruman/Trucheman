@@ -217,7 +217,8 @@ export async function runPreparedBook(
         concurrency,
         (done, total) => preflight(`Preflight: chapter cards ${done}/${total}`),
       );
-      preflightWarnings += resolved.failed;
+      // Counted once, as a consistency error below — adding it here too reported one failed
+      // card as two warnings.
       // A chapter without its card is translated without the gender, number and address
       // register its blocks cannot recover on their own. That is the kind of thing this run
       // shipped without, so it belongs with the reasons — a count alone still reported the

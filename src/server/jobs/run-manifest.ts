@@ -80,7 +80,9 @@ export async function writeRunManifest(root: string, job: PersistedJob): Promise
       translation: unitState(countCompleted(drafts), total),
       editing: unitState(countCompleted(edits), total),
       audit: unitState(countCompleted(audits), job.qualityMode === "high" ? total : 0),
-      repair: unitState(countCompleted(repairs), job.qualityMode === "high" ? total : 0),
+      // Repair only visits the batches the audit flagged, so the book is not its denominator:
+      // a finished run that repaired 29 of 158 batches read as 129 batches still outstanding.
+      repair: unitState(countCompleted(repairs), countCompleted(repairs)),
     },
   };
   await atomicJson(join(root, "run-manifest.json"), manifest);
