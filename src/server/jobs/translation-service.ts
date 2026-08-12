@@ -94,7 +94,24 @@ export async function processBatch(
           attempt,
           maxRetries,
         );
-        if (!decision.retry) throw error;
+        if (!decision.retry) {
+          // A batch whose answer the model cannot keep valid does not get better by being
+          // asked a fourth time — every retry sends the same prompt. Halving it does change
+          // the question, and the defect almost always travels with one batch rather than
+          // with the book, so this turns a run-ending error into a slower batch. Halves
+          // recurse down to a single segment, which still throws.
+          if (kind === "invalid_response" && chunk.length > 1) {
+            const middle = Math.ceil(chunk.length / 2);
+            // Sequential: splitting must not double the concurrency the pool was sized for.
+            const head = await processChunk(chunk.slice(0, middle));
+            const tail = await processChunk(chunk.slice(middle));
+            return validateProviderResponse(
+              { segments: [...head.segments, ...tail.segments], finishReason: "stop" },
+              chunk,
+            );
+          }
+          throw error;
+        }
         await abortableDelay(decision.delayMs, signal);
       }
     }
