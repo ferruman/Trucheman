@@ -15,6 +15,9 @@ describe("scanSegment", () => {
     expect(kinds(source, source)).toEqual(["untranslated"]);
     // short blocks are legitimately identical: names, numbers, headings
     expect(kinds("Chapter 4", "Chapter 4")).toEqual([]);
+    // a page-number list is identical in every language and holds no word to translate
+    const pages = "i 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20";
+    expect(kinds(pages, pages)).toEqual([]);
   });
 
   it("reports a translation far shorter or longer than the original", () => {
@@ -84,6 +87,37 @@ describe("scanSegment", () => {
     expect(ru("he aimed the .357 at her", "он навёл пистолет на неё")).toEqual(["missing_numbers"]);
   });
 
+  it('does not read the scanned pronoun "1" as a dropped number', () => {
+    const ru = (source: string, translation: string) =>
+      scanSegment(source, translation, "s1", "ru").map((defect) => defect.kind);
+    // OCR turns "I" into "1" — 26 of one run's 27 dropped-number findings were this.
+    expect(
+      ru("I didn’t see anybody until 1 got here.", "Я никого не видел, пока не пришёл."),
+    ).toEqual([]);
+    expect(ru("Her name’s Shadow. 1 Embraced her.", "Её зовут Шэдоу. Я обратил её.")).toEqual([]);
+    // A digit against a digit is still checked, and a Cyrillic source is left alone.
+    expect(ru("He waited 1,000 years and 12 days.", "Он ждал тысячу лет.")).toEqual([
+      "missing_numbers",
+    ]);
+    expect(scanSegment("Он ждал 1 год и 12 дней.", "He waited 12 days.", "s1", "en")[0]?.kind).toBe(
+      "missing_numbers",
+    );
+  });
+
+  it("accepts a spelled-out number above a thousand", () => {
+    const ru = (source: string, translation: string) =>
+      scanSegment(source, translation, "s1", "ru").map((defect) => defect.kind);
+    expect(
+      ru("its 20,320-foot crown", "её вершина высотой в двадцать тысяч триста двадцать футов"),
+    ).toEqual([]);
+    expect(ru("1,000 miles away", "в тысяче миль отсюда")).toEqual([]);
+    expect(ru("2,500 men", "две тысячи пятьсот человек")).toEqual([]);
+    // A thousand short of its own numeral is still a dropped number.
+    expect(ru("its 20,320-foot crown", "её вершина высотой в триста двадцать футов")).toEqual([
+      "missing_numbers",
+    ]);
+  });
+
   it("separates a word left inside a sentence from text the book keeps foreign", () => {
     // Every residue run 9cfcd03a produced, and which side of the line it fell on.
     const interference: Array<[string, string, string]> = [
@@ -145,6 +179,14 @@ describe("scanSegment", () => {
       kinds(
         "He wore Levi’s and played Nine Inch Nails.",
         "Он носил Levi’s и слушал Nine Inch Nails.",
+      ),
+    ).toEqual([]);
+    // Nor when the source happens to use the same word lowercase in its own prose: the
+    // author's page reported «Science Fiction Reviews» against "received excellent reviews".
+    expect(
+      kinds(
+        "He has received excellent reviews from Science Fiction Reviews.",
+        "Он получил отличные отзывы от Science Fiction Reviews.",
       ),
     ).toEqual([]);
   });

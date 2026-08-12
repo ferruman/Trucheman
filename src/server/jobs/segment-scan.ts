@@ -56,6 +56,18 @@ function numbers(text: string) {
   return (ungrouped(unsubscripted(text)).match(/\d+/gu) ?? []).filter((value) => value.length <= 6);
 }
 
+/**
+ * A scanned book writes the pronoun "I" as "1": «until 1 got here», «Because 1 do not hope».
+ * All 37 standalone "1"s in job 02279a8b's source were this, and they were 26 of that run's
+ * 27 dropped-number findings.
+ *
+ * A bare "1" in front of a word is the trade: "1 mile" stops being checked, which costs one
+ * digit in one block, against a book's worth of phantom findings burying the real ones.
+ */
+function unscanPronouns(text: string) {
+  return text.replace(/(?<![\p{L}\p{N}])1(?=\s+\p{L})/gu, "I");
+}
+
 // ponytail: Russian only, 1–999 — what prose actually spells out. Any other language or
 // larger value keeps reporting, which is the safe direction.
 const RU_STEMS = new Map<number, string>([
@@ -105,7 +117,20 @@ const RU_STEMS = new Map<number, string>([
  */
 function spelledOutStems(value: string): string[] {
   const n = Number(value);
-  if (!Number.isInteger(n) || n < 1 || n > 999) return [];
+  if (!Number.isInteger(n) || n < 1 || n > 999_999) return [];
+  const thousands = Math.floor(n / 1000);
+  if (!thousands) return hundredsStems(n);
+  // «двадцать тысяч триста двадцать» for "20,320". Bare «тысяча» carries no numeral of its
+  // own, so requiring a stem for a leading 1 would report every spelled-out thousand.
+  return [
+    ...(thousands === 1 ? [] : hundredsStems(thousands)),
+    "тысяч",
+    ...hundredsStems(n % 1000),
+  ];
+}
+
+function hundredsStems(n: number): string[] {
+  if (n < 1) return [];
   const parts: number[] = [];
   if (n >= 100) parts.push(Math.floor(n / 100) * 100);
   const rest = n % 100;
@@ -219,7 +244,9 @@ export function scanSegment(
   if (
     original.length >= MIN_IDENTICAL &&
     original.toLocaleLowerCase() === result.toLocaleLowerCase() &&
-    /\p{L}/u.test(original)
+    // A word, not a letter: a page-number list ("i 1 2 3 … 40") is identical in every
+    // language and has nothing to translate.
+    /\p{L}{2,}/u.test(original)
   ) {
     defects.push({ id, kind: "untranslated", detail: "translation is identical to the original" });
     // Identical text trivially fails the ratio and residue checks too; one finding is enough.
@@ -234,7 +261,10 @@ export function scanSegment(
         detail: `translation is ${ratio.toFixed(2)}× the length of the original`,
       });
   }
-  const expected = numbers(original),
+  // Only the source is unscanned: a "1" in the translation is a number the model wrote.
+  const expected = numbers(
+      dominantScript(original) === "latin" ? unscanPronouns(original) : original,
+    ),
     present = numbers(result);
   const missing = expected.filter((value) => {
     const index = present.indexOf(value);
@@ -259,7 +289,13 @@ export function scanSegment(
         .join(", ")}`,
       spans: isolated,
     });
-  const preserved = residue.filter((word) => !isolated.includes(word));
+  // Capitalized in the *translation* is a title or a name kept on purpose — «The New York
+  // Times», «Science Fiction Reviews» — even when the source also uses the word lowercase in
+  // its prose. Only the reported bucket is filtered: an isolated word is interference and
+  // gets repaired whatever its case.
+  const preserved = residue.filter(
+    (word) => !isolated.includes(word) && word === word.toLocaleLowerCase(),
+  );
   if (preserved.length)
     defects.push({
       id,
