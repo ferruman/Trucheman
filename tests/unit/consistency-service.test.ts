@@ -248,6 +248,28 @@ describe("book-wide consistency", () => {
     expect(values[0].editedSegments[0].text).not.toContain("Канон");
   });
 
+  it("never lets a decision replace the space around a name", () => {
+    // The resolver returned «Терман » — its own canonical with a trailing space — among the
+    // variants to replace with «Терман», and the finished book said «Джеки Термандонёсся».
+    const values: ConsistencyDocument[] = [
+      {
+        id: "padded",
+        sourceSegments: [sourceSegment("padded:0", "Jackie Therman’s sultry voice carried.")],
+        editedSegments: [
+          { id: "padded:0", text: "Соблазнительный голос Джеки Терман донёсся сквозь стекло." },
+        ],
+      },
+    ];
+
+    const applied = applyConsistencyDecisions(values, [
+      { source: "Therman", canonical: "Терман", variants: ["Терман ", "Терман", "Тэрман"] },
+    ]);
+
+    expect(values[0].editedSegments[0].text).toContain("Джеки Терман донёсся");
+    expect(values[0].editedSegments[0].text).not.toContain("Термандонёсся");
+    expect(applied).toBe(0);
+  });
+
   it("never lets resolver decisions rename an entity", () => {
     // Every decision here is one the resolver actually returned for the reference book.
     const values: ConsistencyDocument[] = [

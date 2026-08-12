@@ -898,6 +898,10 @@ function splitEnding(word: string, endings: string[]): [stem: string, ending: st
  */
 export function isSafeVariant(variant: string, canonical: string, nameEndings: string[] = []) {
   if (variant.length < 2) return false;
+  // The resolver names a rendering, never the space around it, and `words()` drops that space
+  // before the comparison below ever sees it — so «Терман » read as a respelling of «Терман»
+  // and replacing it deleted the space: a finished book said «Джеки Термандонёсся».
+  if (variant !== variant.trim()) return false;
   // Case alone is not a respelling: a heading's КУЛЬТ КТУЛХУ is not the prose's Культ Ктулху.
   if (variant.toLocaleLowerCase() === canonical.toLocaleLowerCase()) return false;
   const variantWords = words(variant),
