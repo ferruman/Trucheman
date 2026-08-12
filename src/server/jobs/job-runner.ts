@@ -282,6 +282,8 @@ export async function runQualityPipeline(
   // report has to read in book order regardless of who finished first.
   const qualityFindings: Array<{ batchId: string; findings: QualityFinding[] }> = [];
   const rejectedRepairsByBatch: Array<Array<RepairRejection & { batchId: string }>> = [];
+  /** Sent to repair and came back unchanged: flagged, paid for, and still defective. */
+  const unrepairedByBatch: Array<Array<{ batchId: string; id: string }>> = [];
   const scanDefectsByBatch: Array<Array<SegmentDefect & { batchId: string }>> = [];
   const cachedCheckpoints = { translation: 0, editing: 0, audit: 0, repair: 0 };
   const runBatch = async (batch: Batch, index: number) => {
@@ -425,6 +427,7 @@ export async function runQualityPipeline(
       await options.onProgress?.("audit", batch, Boolean(savedAudit));
       const repairSegments = buildRepairSegments(auditSegments, findings);
       if (repairSegments.length) {
+        const repairedIds = new Set(repairSegments.map((segment) => segment.id));
         throwIfAborted(options.signal);
         const expectedRepairKey = checkpointKey(
           "repair",
@@ -483,6 +486,19 @@ export async function runQualityPipeline(
             instructions,
           );
         }
+        // A block the model handed back word for word was not repaired, and neither was one
+        // the post-repair audit reverted. Counting those as repaired reported «Рег crouched
+        // перед Шэдоу» — flagged, sent, returned unchanged — as one of 57 fixed blocks.
+        const beforeById = new Map(beforeRepair.map((segment) => [segment.id, segment.text]));
+        const rejectedIds = new Set(reviewed.rejected.map((rejection) => rejection.id));
+        unrepairedByBatch[index] = editedSegments
+          .filter(
+            (segment) =>
+              repairedIds.has(segment.id) &&
+              !rejectedIds.has(segment.id) &&
+              segment.text === beforeById.get(segment.id),
+          )
+          .map((segment) => ({ batchId: batch.id, id: segment.id }));
       }
     }
     edits.set(batch.id, editedSegments);
@@ -515,6 +531,7 @@ export async function runQualityPipeline(
     }),
   );
   const rejectedRepairs = rejectedRepairsByBatch.flat();
+  const unrepaired = unrepairedByBatch.flat();
   const scanDefects = scanDefectsByBatch.flat();
   {
     const allFindings = qualityFindings.flatMap(({ batchId, findings }) =>
@@ -526,7 +543,7 @@ export async function runQualityPipeline(
       `${options.root}/quality-report.json`,
       JSON.stringify(
         {
-          version: 3,
+          version: 4,
           scan: {
             defectSegments: new Set(scanDefects.map((defect) => defect.id)).size,
             defectsByKind: Object.fromEntries(
@@ -540,7 +557,9 @@ export async function runQualityPipeline(
           auditedSegments: allFindings.length,
           flaggedSegments: allFindings.filter((finding) => finding.issues.length).length,
           repairedSegments:
-            allFindings.filter((finding) => finding.issues.length).length - rejectedRepairs.length,
+            allFindings.filter((finding) => finding.issues.length).length -
+            rejectedRepairs.length -
+            unrepaired.length,
           auditErrorSegments: allFindings.filter((finding) => finding.auditError).length,
           auditErrorsByKind: {
             malformed_json: allFindings.filter((f) => f.auditError === "malformed_json").length,
@@ -548,6 +567,7 @@ export async function runQualityPipeline(
           },
           rejectedIssues: allFindings.reduce((total, finding) => total + finding.rejectedIssues, 0),
           rejectedRepairs,
+          unrepairedSegments: unrepaired,
           cachedCheckpoints,
           findings: allFindings.filter((finding) => finding.issues.length || finding.auditError),
         },

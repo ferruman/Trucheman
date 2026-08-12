@@ -474,6 +474,61 @@ describe("two-pass pipeline", () => {
       repairedSegments: 1,
       auditErrorSegments: 1,
       rejectedIssues: 0,
+      unrepairedSegments: [],
+    });
+  });
+
+  it("does not count a repair that handed the block back unchanged", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-noop-repair-`);
+    // What run 02279a8b got for «Рег crouched перед Шэдоу»: flagged, sent to repair, and
+    // returned word for word. Counted as repaired, it read as a fixed block in the report.
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        if (request.mode === "audit") {
+          return {
+            segments: request.segments.map((input) => ({
+              id: input.id,
+              text: "",
+              issues: [
+                {
+                  span: "Рег crouched",
+                  type: "source_language_interference" as const,
+                  severity: "high" as const,
+                  reason: "A source word left inside a translated sentence",
+                },
+              ],
+            })),
+            finishReason: "stop",
+          };
+        }
+        return {
+          // Every stage returns the same sentence: the residue survives translation, editing
+          // and the repair that was paid for to remove it.
+          segments: request.segments.map((input) => ({
+            id: input.id,
+            text: "Рег crouched перед Шэдоу",
+          })),
+          finishReason: "stop",
+        };
+      },
+    };
+    const profile = { name: "fake", endpoint: "local", model: "fake" };
+    const batches = [{ id: "chapter-1-batch-1", documentId: "chapter-1", segments: [segment] }];
+
+    await runQualityPipeline(batches, provider, {
+      root,
+      translationProfile: profile,
+      editingProfile: profile,
+      qualityMode: "high" as const,
+      ...languages,
+    });
+
+    const report = JSON.parse(await readFile(`${root}/quality-report.json`, "utf8"));
+    expect(report).toMatchObject({
+      flaggedSegments: 1,
+      repairedSegments: 0,
+      rejectedRepairs: [],
+      unrepairedSegments: [{ batchId: "chapter-1-batch-1", id: "chapter-1:0" }],
     });
   });
 });
