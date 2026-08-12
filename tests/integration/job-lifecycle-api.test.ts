@@ -119,6 +119,36 @@ describe("job lifecycle orchestration", () => {
     expect(compatibleRecovery).toBe(true);
   });
 
+  it("keeps the checkpoints of the batches an invalidation did not touch", async () => {
+    // Invalidating one batch leaves the job `ready`. Gating recovery on the status withdrew
+    // it from every other batch, and each block whose instructions had drifted since it was
+    // translated — a chapter card that arrived on a later run — was paid for again.
+    const { repo, job } = await fixture();
+    const root = jobRoot(repo.dataDir, job.id);
+    await mkdir(root, { recursive: true });
+    await writeFile(`${root}/prepared.json`, "{}");
+    await writeFile(
+      `${root}/drafts.ndjson`,
+      ["batch-1", "batch-2"]
+        .map((batchId) => JSON.stringify({ batchId, segments: [] }))
+        .join("\n") + "\n",
+    );
+    let compatibleRecovery: boolean | undefined;
+    const orchestrator = orchestratorFor(repo, {
+      runBook: async (_root, _running, _update, _signal, recoverCompatibleCheckpoints) => {
+        compatibleRecovery = recoverCompatibleCheckpoints;
+      },
+    });
+
+    const invalidated = await orchestrator.invalidate(job.id, "batch-1");
+    expect(invalidated.status).toBe("ready");
+
+    await orchestrator.start(job.id);
+    await vi.waitFor(() => expect(compatibleRecovery).toBeDefined(), { timeout: 5000 });
+
+    expect(compatibleRecovery).toBe(true);
+  });
+
   it("rejects malformed config without corrupting the persisted job", async () => {
     const { repo, job } = await fixture("created");
     expect(() => parseJobConfig({ instructions: {} })).toThrow();

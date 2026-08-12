@@ -262,11 +262,15 @@ export class JobOrchestrator {
       const fingerprint = await this.sourceFingerprint(root);
       // A keyed checkpoint is content-addressed and safe on its own. The by-batch-id recovery
       // below is not: it matches on positional ids, so a source replaced under a paused job
-      // would hand the new text a translation of the old one.
+      // would hand the new text a translation of the old one. That is the whole condition:
+      // the journals say what may be reused and `invalidate` is how work is taken out of
+      // them, so the status the job happens to be in adds nothing. Gating on it meant that
+      // invalidating one batch — which leaves the job `ready` — silently withdrew the
+      // recovery from the other 136, and every block whose chapter card had arrived since it
+      // was translated was paid for again: 2.3M tokens on one such run.
       const sameSource =
         job.sourceFingerprint === undefined || job.sourceFingerprint === fingerprint;
-      const recoverCompatibleCheckpoints =
-        ["paused", "failed", "needs_attention"].includes(job.status) && sameSource;
+      const recoverCompatibleCheckpoints = sameSource;
       if (!sameSource)
         await this.emit(
           id,
