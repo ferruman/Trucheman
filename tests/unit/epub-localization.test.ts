@@ -8,16 +8,27 @@ import { parseXml, serializeXml } from "../../src/server/epub/xml-dom.js";
 describe("EPUB localization", () => {
   it("updates existing package languages and adds one when absent", () => {
     const existing = parseXml(
-      `<package><metadata><dc:language xmlns:dc="http://purl.org/dc/elements/1.1/">en</dc:language></metadata></package>`,
+      `<package version="3.0"><metadata><dc:language xmlns:dc="http://purl.org/dc/elements/1.1/">en</dc:language></metadata></package>`,
     );
     updatePackageLanguage(existing, "ru");
     expect(serializeXml(existing)).toContain(">ru</dc:language>");
     expect(existing.documentElement.getAttribute("xml:lang")).toBe("ru");
 
-    const absent = parseXml(`<package><metadata><title>Book</title></metadata></package>`);
+    const absent = parseXml(
+      `<package version="3.0"><metadata><title>Book</title></metadata></package>`,
+    );
     updatePackageLanguage(absent, "pl");
     expect(serializeXml(absent)).toContain(">pl</dc:language>");
     expect(absent.documentElement.getAttribute("xml:lang")).toBe("pl");
+  });
+
+  it("leaves xml:lang off an EPUB 2 package, whose DTD forbids it", () => {
+    const doc = parseXml(
+      `<package version="2.0"><metadata><dc:language xmlns:dc="http://purl.org/dc/elements/1.1/">en</dc:language></metadata></package>`,
+    );
+    updatePackageLanguage(doc, "ru");
+    expect(serializeXml(doc)).toContain(">ru</dc:language>");
+    expect(doc.documentElement.hasAttribute("xml:lang")).toBe(false);
   });
 
   it("keeps bibliographic metadata while refreshing output-file metadata", () => {

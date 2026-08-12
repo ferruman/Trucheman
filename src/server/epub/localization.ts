@@ -22,7 +22,9 @@ export function updatePackageLanguage(
   rebuiltAt = new Date(),
 ) {
   if (!doc.documentElement) throw new Error("EPUB package document is missing");
-  doc.documentElement.setAttributeNS(XML_NAMESPACE, "xml:lang", targetLanguage);
+  const epub3 = doc.documentElement.getAttribute("version")?.startsWith("3") ?? false;
+  // The OPF 2.0.1 DTD allows no xml:lang on <package>, and EPUBCheck fails the book over it.
+  if (epub3) doc.documentElement.setAttributeNS(XML_NAMESPACE, "xml:lang", targetLanguage);
   let metadata: Element | undefined;
   const languages: Element[] = [];
   const modified: Element[] = [];
@@ -56,7 +58,7 @@ export function updatePackageLanguage(
     if (entry.hasAttribute("content")) entry.setAttribute("content", timestamp);
     else entry.textContent = timestamp;
   }
-  if (!modified.length && doc.documentElement.getAttribute("version")?.startsWith("3")) {
+  if (!modified.length && epub3) {
     const entry = doc.createElementNS(metadata.namespaceURI, "meta");
     entry.setAttribute("property", "dcterms:modified");
     entry.appendChild(doc.createTextNode(timestamp));
