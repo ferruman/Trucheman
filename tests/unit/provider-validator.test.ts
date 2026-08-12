@@ -78,6 +78,41 @@ describe("segment alignment", () => {
     expect(misalignedSegmentIds(expected, aligned)).toEqual([]);
   });
 
+  it("finds an answer that swallowed the next segment without shifting", () => {
+    // Job 9cfcd03a, document-7:1p: the model answered both halves of the split sentence
+    // under the first id and then answered the second id as well, so the glued half was
+    // published twice. Nothing is out of order, so only the pair length gives it away.
+    const expected = [
+      { id: "a", text: long("a", 310) },
+      { id: "b", text: long("b", 542) },
+      { id: "c", text: long("c", 100) },
+    ];
+    expect(
+      misalignedSegmentIds(expected, [
+        { id: "a", text: long("x", 836) },
+        { id: "b", text: long("x", 372) },
+        { id: "c", text: long("x", 105) },
+      ]),
+    ).toEqual(["a"]);
+  });
+
+  it("keeps a segment whose tiny neighbour makes the pair length meaningless", () => {
+    // own + next is barely more than own, so a perfectly ordinary answer lands in the band —
+    // the length has to be unreasonable for the segment itself before that means anything.
+    const expected = [
+      { id: "a", text: long("a", 300) },
+      { id: "b", text: long("b", 45) },
+      { id: "c", text: long("c", 300) },
+    ];
+    expect(
+      misalignedSegmentIds(expected, [
+        { id: "a", text: long("x", 330) },
+        { id: "b", text: long("x", 48) },
+        { id: "c", text: long("x", 310) },
+      ]),
+    ).toEqual([]);
+  });
+
   it("compares an editing answer against the draft it was given", () => {
     const expected = [
       { id: "a", original: long("o", 120), draft: long("a", 120) },

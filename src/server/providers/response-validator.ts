@@ -51,18 +51,28 @@ const MIN_ALIGNMENT_TEXT = 40;
 /** Wider than any language pair drifts: outside it the text belongs to another segment. */
 const OWN_RATIO = { min: 0.5, max: 2.2 };
 const NEIGHBOUR_RATIO = { min: 0.75, max: 1.5 };
+/** An answer this much longer than its own input has taken in text from somewhere. */
+const GLUED_OWN_RATIO = 1.6;
+const GLUED_PAIR_RATIO = { min: 0.8, max: 1.25 };
 
 /**
- * Segments whose answer is one position out of step with the request.
+ * Segments whose answer covers more of the book than the segment does.
  *
  * A source sentence split across two blocks — `…one foot in the House of Shadows, the` /
- * `other on an empty street…` — invites the model to answer both halves under the first id
- * and then shift every remaining answer back by one, padding the tail with a duplicate. The
- * ids stay perfect, so `validateProviderResponse` passes the batch and the book silently ends
- * up with a dozen paragraphs carrying their neighbour's text. The signature is a segment whose
- * answer is the wrong size for its own input and the right size for the next one. Measured
- * over the 2087 finished batches in `data/jobs`, every segment this flags was that bug and
- * none was a legitimately lopsided paragraph, so a single flagged segment is enough.
+ * `other on an empty street…` — invites the model to answer both halves under the first id.
+ * From there it goes one of two ways, and the ids stay perfect either way, so
+ * `validateProviderResponse` passes the batch and the damage reaches the book:
+ *
+ * - it drops the second id's own answer and shifts every later answer back by one, padding
+ *   the tail with a duplicate — the whole rest of the batch then carries its neighbour's
+ *   text. Caught by an answer that is the wrong size for its own input and the right size
+ *   for the next one.
+ * - or it answers the second id as well, and the glued half is published twice. Caught by an
+ *   answer that is about as long as its own input and the next one together.
+ *
+ * Neither rule subsumes the other: over the 2361 finished batches in `data/jobs` the first
+ * flags six batches and the second six, sharing four, and all eight are this bug. None was a
+ * legitimately lopsided paragraph, so a single flagged segment is enough.
  */
 export function misalignedSegmentIds(
   expected: ProviderInputSegment[],
@@ -83,13 +93,16 @@ export function misalignedSegmentIds(
     }
     const ownRatio = answer.length / own.length;
     const neighbourRatio = answer.length / neighbour.length;
-    if (
+    const pairRatio = answer.length / (own.length + neighbour.length);
+    const shifted =
       (ownRatio < OWN_RATIO.min || ownRatio > OWN_RATIO.max) &&
       neighbourRatio >= NEIGHBOUR_RATIO.min &&
-      neighbourRatio <= NEIGHBOUR_RATIO.max
-    ) {
-      misaligned.push(expected[index].id);
-    }
+      neighbourRatio <= NEIGHBOUR_RATIO.max;
+    const glued =
+      ownRatio >= GLUED_OWN_RATIO &&
+      pairRatio >= GLUED_PAIR_RATIO.min &&
+      pairRatio <= GLUED_PAIR_RATIO.max;
+    if (shifted || glued) misaligned.push(expected[index].id);
   }
   return misaligned;
 }
