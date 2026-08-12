@@ -240,6 +240,17 @@ async function verifyRepairedBlocks(
       .filter((finding) => finding.issues.some((issue) => issue.severity === "high"))
       .map((finding) => finding.id),
   );
+  // The critic is not asked twice about what the scan can see for free, and a repair that
+  // leaves a source word inside the sentence it rewrote is strictly worse than the text it
+  // replaced: fixing «он formally поклонился» is what put «в grand жесте» two blocks away.
+  for (const defect of scanSegments(
+    request.filter((segment) => changed.has(segment.id)),
+    after.filter((segment) => changed.has(segment.id)),
+    options.targetLanguage.tag,
+  )) {
+    if (defect.kind === "source_interference" || defect.kind === "untranslated")
+      stillBroken.add(defect.id);
+  }
   return after.map((segment) =>
     stillBroken.has(segment.id)
       ? { ...segment, text: beforeById.get(segment.id) ?? segment.text }
