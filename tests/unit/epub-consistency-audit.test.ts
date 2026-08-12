@@ -114,6 +114,11 @@ describe("EPUB consistency audit", () => {
             "Она молчала, молчала, а потом закричала.",
             // Two sentences that happen to name the same person on both sides of a stop.
             "Он не думал про обиды Лилит. Лилит знала лучше.",
+            // The same across a stop with the endings disagreeing: a figure of speech, a
+            // name declined into the next sentence, and a paragraph meeting the next one.
+            "Ничто из этого не имело значения. Значение имела кровь.",
+            "Кровь ложилась узором на спине Бианки. Бианка молча выносила порку.",
+            "Он вернулся взглядом к дороге. Дорога обратно заняла недолго.",
           ].join(" "),
         },
       ],

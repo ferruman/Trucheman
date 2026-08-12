@@ -43,17 +43,19 @@ export function duplicatedFragments(text: string): string[] {
     const current = words[index];
     const between = text.slice((previous.index ?? 0) + previous[0].length, current.index ?? 0);
     if (/[\p{L}\p{N}]/u.test(between) || rhetoricalSeparator.test(between)) continue;
+    // A full stop between them ends the argument whether or not the endings agree. Picking
+    // a word up across the break is a figure Russian prose uses on purpose — «Ничто из
+    // этого не имело значения. Значение имела кровь» — and the last block of a paragraph
+    // meets the first word of the next one the same way. Ten of one book's twelve audit
+    // warnings were this, and not one was corruption.
+    if (sentenceBreak.test(between)) continue;
     // The same lowercase word twice is emphasis, not corruption: «очень очень», «давай
     // давай», «тихо тихо» are how Russian intensifies — with or without a comma between —
     // and they outnumbered the real findings 53 to 3. Corruption keeps the case it copied,
     // so a doubled name («Алерт», «Алерт») still reports, as does the shape a fragmented
     // reinsertion leaves behind, where the two endings disagree («земле земля»).
     const capitalized = (word: RegExpExecArray) => /\p{Lu}/u.test(text[word.index ?? 0] ?? "");
-    if (
-      previous[0] === current[0] &&
-      (sentenceBreak.test(between) || !(capitalized(previous) && capitalized(current)))
-    )
-      continue;
+    if (previous[0] === current[0] && !(capitalized(previous) && capitalized(current))) continue;
     // «друг друга» is one reciprocal pronoun that happens to be spelt as two declined words.
     if (previous[0] === "друг") continue;
     let common = 0;
