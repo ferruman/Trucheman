@@ -72,16 +72,36 @@ export function duplicatedFragments(text: string): string[] {
 }
 
 /**
- * A table-of-contents label is a single short phrase: any repeated stem in it is
- * corruption, even when the repeats are not adjacent ("… ночи Эпилог Ночи").
+ * A table-of-contents label is a single short phrase: a repeated stem in it is corruption,
+ * even when the repeats are not adjacent ("… ночи Эпилог Ночи").
+ *
+ * Except when the label simply says the same word twice, which chapter titles do on purpose —
+ * "Wednesday, April 21, Miami — Praxis Seizure: Miami" names the city as the setting and
+ * again in the title, and a faithful translation keeps both. What corruption leaves behind is
+ * a repeat that is not the same word twice, or one glued directly to itself.
  */
 export function repeatedStems(text: string): string[] {
-  const stems = new Map<string, string[]>();
-  for (const match of text.toLocaleLowerCase().matchAll(stemWordPattern)) {
-    const stem = match[0].slice(0, 5);
-    stems.set(stem, [...(stems.get(stem) ?? []), match[0]]);
+  const words = [...text.toLocaleLowerCase().matchAll(stemWordPattern)];
+  const stems = new Map<string, number[]>();
+  words.forEach((word, index) => {
+    const stem = word[0].slice(0, 5);
+    stems.set(stem, [...(stems.get(stem) ?? []), index]);
+  });
+  const spelling = (index: number) => {
+    const start = words[index].index ?? 0;
+    return text.slice(start, start + words[index][0].length);
+  };
+  const found: string[] = [];
+  for (const positions of stems.values()) {
+    if (positions.length < 2) continue;
+    const identical = new Set(positions.map(spelling)).size === 1;
+    const adjacent = positions.some(
+      (position, index) => index > 0 && position === positions[index - 1] + 1,
+    );
+    if (identical && !adjacent) continue;
+    found.push(positions.map((index) => words[index][0]).join(" "));
   }
-  return [...stems.values()].filter((words) => words.length > 1).map((words) => words.join(" "));
+  return found;
 }
 
 const capitalizedWordPattern = /(?<![\p{L}\p{N}])[А-ЯЁ][а-яё]{2,}/gu;

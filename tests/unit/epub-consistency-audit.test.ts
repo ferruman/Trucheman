@@ -63,7 +63,13 @@ describe("EPUB consistency audit", () => {
       ],
       "ru",
       "ru",
-      ["Часть 5 Маленькие птицы ночи Эпилог Ночи", "Часть 2. В пустыне"],
+      [
+        "Часть 5 Маленькие птицы ночи Эпилог Ночи",
+        "Часть 2. В пустыне",
+        // The same word twice is how a chapter names its setting and then its title.
+        "Среда, 21 апреля, Майами — Захват Праксиса: Майами",
+        "Эпилог Эпилог",
+      ],
     );
 
     expect(report.warnings).toEqual(
@@ -78,6 +84,11 @@ describe("EPUB consistency audit", () => {
       label: "Часть 2. В пустыне",
       duplicates: [],
     });
+    expect(report.checks.tableOfContents[2]).toEqual({
+      label: "Среда, 21 апреля, Майами — Захват Праксиса: Майами",
+      duplicates: [],
+    });
+    expect(report.warnings).toContain('Table of contents entry is corrupted: "Эпилог Эпилог"');
   });
 
   it("keeps a real duplicated name without reporting ordinary Russian word pairs", () => {
