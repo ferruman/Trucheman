@@ -23,35 +23,38 @@ const CARD_BUDGET = 24000;
 /** Front matter, a title page or a nav document has no characters to track. */
 const MIN_CHAPTER = 2000;
 
+/**
+ * A budget, not a contract. Rejecting the card for a 21st term threw away the characters and
+ * the address registers with it, and the chapter was then translated with no card at all —
+ * one production run lost a chapter that way. Keep the first twenty of each list instead.
+ */
+const CARD_LIST_LIMIT = 20;
+const cardList = <T extends z.ZodTypeAny>(item: T) =>
+  z
+    .array(item)
+    .transform((items) => items.slice(0, CARD_LIST_LIMIT))
+    .optional();
+
 const chapterCardSchema = z
   .object({
-    characters: z
-      .array(
-        z.object({
-          name: z.string(),
-          gender: z.string().optional(),
-          number: z.string().optional(),
-          /** A phrase from the chapter that establishes the fact; checked against the source. */
-          evidence: z.string().optional(),
-        }),
-      )
-      .max(20)
-      .optional(),
-    address: z
-      .array(
-        z.object({
-          from: z.string(),
-          to: z.string(),
-          register: z.string(),
-          evidence: z.string().optional(),
-        }),
-      )
-      .max(20)
-      .optional(),
-    terms: z
-      .array(z.object({ source: z.string(), note: z.string().optional() }))
-      .max(20)
-      .optional(),
+    characters: cardList(
+      z.object({
+        name: z.string(),
+        gender: z.string().optional(),
+        number: z.string().optional(),
+        /** A phrase from the chapter that establishes the fact; checked against the source. */
+        evidence: z.string().optional(),
+      }),
+    ),
+    address: cardList(
+      z.object({
+        from: z.string(),
+        to: z.string(),
+        register: z.string(),
+        evidence: z.string().optional(),
+      }),
+    ),
+    terms: cardList(z.object({ source: z.string(), note: z.string().optional() })),
   })
   .strip();
 

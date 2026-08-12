@@ -169,6 +169,43 @@ describe("resolveChapterCards", () => {
     }
   });
 
+  it("trims an over-long list instead of losing the whole card", async () => {
+    const root = await mkdtemp(join(tmpdir(), "chapter-cards-cap-"));
+    try {
+      // Job 6464f658 lost document-13 entirely: the model returned 21 terms and the card —
+      // characters and address registers included — was rejected for the 21st.
+      const answer = JSON.stringify({
+        characters: [{ name: "Kyra", gender: "female", evidence: "She waited." }],
+        terms: Array.from({ length: 21 }, () => ({ source: "She waited." })),
+      });
+      const provider: LanguageModelProvider = {
+        async complete(request: ProviderRequest): Promise<ProviderResponse> {
+          return {
+            segments: [{ id: request.segments[0].id, text: answer }],
+            finishReason: "stop",
+          };
+        },
+      };
+
+      const { cards, failed } = await resolveChapterCards(
+        provider,
+        profile,
+        languages.sourceLanguage,
+        languages.targetLanguage,
+        [document("document-3", "She waited. ".repeat(400))],
+        root,
+      );
+
+      expect(failed).toBe(0);
+      expect(cards.get("document-3")?.characters?.map((character) => character.name)).toEqual([
+        "Kyra",
+      ]);
+      expect(cards.get("document-3")?.terms).toHaveLength(20);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("asks a second time when the first answer is not usable JSON", async () => {
     const root = await mkdtemp(join(tmpdir(), "chapter-cards-retry-"));
     try {
