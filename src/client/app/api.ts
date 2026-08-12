@@ -52,6 +52,18 @@ export type JobResults = {
   };
 };
 
+export type RunManifest = {
+  version: 1;
+  sourceFingerprint: string | null;
+  preparationVersion: number;
+  createdAt: string;
+  updatedAt: string;
+  status: string;
+  stage: string;
+  recovery: { eligible: boolean; reason: string };
+  units: Record<string, { completed: number; total: number; pending: number }>;
+};
+
 type UsageNumbers = {
   requests: number;
   requestsWithUsage: number;
@@ -113,6 +125,7 @@ export const jobActions = {
     }),
   styleProfile: (id: string) =>
     request<{ profile: StyleProfile | null }>(`/jobs/${id}/style-profile`),
+  runManifest: (id: string) => request<RunManifest>(`/jobs/${id}/run-manifest`),
   saveStyleProfile: (id: string, profile: StyleProfile) =>
     request<{ profile: StyleProfile }>(`/jobs/${id}/style-profile`, {
       method: "PUT",

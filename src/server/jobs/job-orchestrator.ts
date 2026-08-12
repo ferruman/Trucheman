@@ -24,6 +24,7 @@ import { redact } from "../domain/redaction.js";
 import { readUsageReport, type UsageReport } from "./usage-service.js";
 import { styleProfileSchema, type StyleProfile } from "./style-profile-service.js";
 import { writeCache } from "./consistency-service.js";
+import { writeRunManifest, type RunManifest } from "./run-manifest.js";
 
 type UpdateJob = (patch: Partial<PersistedJob>) => Promise<void>;
 type RunBook = (
@@ -192,6 +193,7 @@ export class JobOrchestrator {
             );
             const ready: PersistedJob = {
               ...job,
+              sourceFingerprint: await this.sourceFingerprint(jobRoot(this.repo.dataDir, id)),
               status: "ready",
               stage: "analysis",
               progress: { translated: 0, edited: 0, total, failed: 0 },
@@ -199,14 +201,17 @@ export class JobOrchestrator {
               updatedAt: new Date().toISOString(),
             };
             await this.repo.save(ready);
+            await writeRunManifest(jobRoot(this.repo.dataDir, id), ready);
             await this.emit(id, "analyzed", "Book analysis completed", { total });
           } catch (error) {
-            await this.repo.save({
+            const failed = {
               ...job,
               status: controller.signal.aborted ? "paused" : "failed",
               stage: "analysis",
               updatedAt: new Date().toISOString(),
-            });
+            } as PersistedJob;
+            await this.repo.save(failed);
+            await writeRunManifest(jobRoot(this.repo.dataDir, id), failed);
             if (!controller.signal.aborted)
               await this.emit(id, "analysis_failed", "Book analysis failed", {
                 error: redact(error instanceof Error ? error.message : "unknown error"),
@@ -292,6 +297,7 @@ export class JobOrchestrator {
       this.active.set(id, { controller, promise, kind: "translation" });
       try {
         await this.repo.save(running);
+        await writeRunManifest(root, running);
       } catch (error) {
         controller.abort(error);
         release();
@@ -322,6 +328,7 @@ export class JobOrchestrator {
         updatedAt: new Date().toISOString(),
       };
       await this.repo.save(stopping);
+      await writeRunManifest(jobRoot(this.repo.dataDir, id), stopping);
       task.controller.abort(new Error("Job paused"));
       await this.emit(id, "pause_requested", "Pause requested");
       return stopping;
@@ -333,6 +340,7 @@ export class JobOrchestrator {
         updatedAt: new Date().toISOString(),
       };
       await this.repo.save(paused);
+      await writeRunManifest(jobRoot(this.repo.dataDir, id), paused);
       return paused;
     }
     if (job.status === "paused") return job;
@@ -415,6 +423,7 @@ export class JobOrchestrator {
       updatedAt: new Date().toISOString(),
     };
     await this.repo.save(next);
+    await writeRunManifest(root, next);
     await this.emit(id, "invalidated", `Completed work was invalidated from ${from}`, {
       from,
       ...(batchId ? { batchId } : {}),
@@ -428,6 +437,11 @@ export class JobOrchestrator {
     const cached = await readJsonReport(join(jobRoot(this.repo.dataDir, id), "style-profile.json"));
     const parsed = styleProfileSchema.safeParse(cached?.value);
     return parsed.success ? parsed.data : null;
+  }
+
+  async runManifest(id: string): Promise<RunManifest> {
+    const job = await this.repo.get(id);
+    return writeRunManifest(jobRoot(this.repo.dataDir, id), job);
   }
 
   /**
@@ -497,6 +511,7 @@ export class JobOrchestrator {
         updatedAt: new Date().toISOString(),
       };
       await this.repo.save(next);
+      await writeRunManifest(root, next);
       await this.emit(id, "rebuilt", "EPUB rebuilt");
       return { job: next, validation };
     } finally {
@@ -633,6 +648,7 @@ export class JobOrchestrator {
           updatedAt: new Date().toISOString(),
         };
         await this.repo.save(next);
+        await writeRunManifest(jobRoot(this.repo.dataDir, id), next);
         if (patch.stage && patch.stage !== current.stage)
           await this.emit(id, "stage_changed", `Stage: ${patch.stage}`, { stage: patch.stage });
         if (
@@ -671,13 +687,15 @@ export class JobOrchestrator {
       const current = await this.repo.get(id);
       // A book that was built without its consistency pass is finished, not correct.
       const degraded = degradedReasons(outcome);
-      await this.repo.save({
+      const completed: PersistedJob = {
         ...current,
         status: degraded.length ? "needs_attention" : "completed",
         stage: "complete",
         currentDocument: undefined,
         updatedAt: new Date().toISOString(),
-      });
+      };
+      await this.repo.save(completed);
+      await writeRunManifest(jobRoot(this.repo.dataDir, id), completed);
       if (degraded.length)
         await this.emit(id, "completed_with_warnings", "Translation completed with warnings", {
           reasons: degraded.map(redact),
@@ -686,10 +704,22 @@ export class JobOrchestrator {
     } catch (error) {
       const current = await this.repo.get(id);
       if (controller.signal.aborted) {
-        await this.repo.save({ ...current, status: "paused", updatedAt: new Date().toISOString() });
+        const paused: PersistedJob = {
+          ...current,
+          status: "paused",
+          updatedAt: new Date().toISOString(),
+        };
+        await this.repo.save(paused);
+        await writeRunManifest(jobRoot(this.repo.dataDir, id), paused);
         await this.emit(id, "paused", "Translation paused");
       } else {
-        await this.repo.save({ ...current, status: "failed", updatedAt: new Date().toISOString() });
+        const failed: PersistedJob = {
+          ...current,
+          status: "failed",
+          updatedAt: new Date().toISOString(),
+        };
+        await this.repo.save(failed);
+        await writeRunManifest(jobRoot(this.repo.dataDir, id), failed);
         await this.emit(id, "failed", "Translation failed", {
           error: redact(error instanceof Error ? error.message : "unknown error"),
         });

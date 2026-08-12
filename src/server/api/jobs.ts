@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { createReadStream } from "node:fs";
-import { access, mkdir } from "node:fs/promises";
+import { access, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { assertLanguagePair } from "../../shared/languages.js";
@@ -135,6 +135,7 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
         throw new DomainError("upload_missing", "An EPUB upload is required", 400);
       const base = job.status === "created" ? job : await orchestrator.invalidate(job.id);
       await atomicWrite(join(root, "source.epub"), req.body);
+      await rm(join(root, "run-manifest.json"), { force: true });
       await repo.save({
         ...base,
         status: "created",
@@ -152,6 +153,13 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
   router.get("/:id/style-profile", async (req, res) => {
     try {
       res.json({ profile: await orchestrator.styleProfile(req.params.id) });
+    } catch (error) {
+      problemResponse(res, error, req);
+    }
+  });
+  router.get("/:id/run-manifest", async (req, res) => {
+    try {
+      res.json(await orchestrator.runManifest(req.params.id));
     } catch (error) {
       problemResponse(res, error, req);
     }
