@@ -325,6 +325,73 @@ describe("DeepSeek provider", () => {
     expect(error.message).not.toContain(preamble.trim());
   });
 
+  it("serializes a consistency answer the model returned as an object", async () => {
+    const entries = { entries: [{ source: "House of Secrets", target: "Дом Тайн" }] };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({ segments: [{ id: "s0001", text: entries }] }),
+                  },
+                  finish_reason: "stop",
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+    const response = await new DeepSeekProvider().complete({
+      profile: { name: "consistency", endpoint: "https://provider.test", model: "x", apiKey: "s" },
+      mode: "consistency",
+      ...languages,
+      segments: [{ id: "entity-registry-1", text: '{"task":"entity_registry"}' }],
+    });
+
+    // The caller parses `text`, so the shape it gets back is the same either way — only the
+    // escaping the model had to do by hand is gone.
+    expect(JSON.parse(response.segments[0].text)).toEqual(entries);
+  });
+
+  it("still accepts a consistency answer the model stringified itself", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      segments: [{ id: "s0001", text: '{"decisions":[]}' }],
+                    }),
+                  },
+                  finish_reason: "stop",
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+    const response = await new DeepSeekProvider().complete({
+      profile: { name: "consistency", endpoint: "https://provider.test", model: "x", apiKey: "s" },
+      mode: "consistency",
+      ...languages,
+      segments: [{ id: "resolve-1", text: '{"task":"resolve_conflicts"}' }],
+    });
+
+    expect(JSON.parse(response.segments[0].text)).toEqual({ decisions: [] });
+  });
+
   it("rejects a shifted translation whose IDs still line up", async () => {
     vi.stubGlobal(
       "fetch",

@@ -26,6 +26,16 @@ function normalizeResponseSegments(
   if (!Array.isArray(value)) {
     return value as ProviderResponse["segments"];
   }
+  if (mode === "consistency") {
+    // The answer is a structure; `text` carries its canonical serialization, written here so
+    // the model never has to escape a JSON document inside a JSON string. A model that
+    // stringified it anyway is still right, and its string is already what the caller parses.
+    return value.map((segment) => {
+      if (typeof segment !== "object" || segment === null || !("id" in segment)) return segment;
+      const { id, text } = segment as { id: unknown; text: unknown };
+      return { id, text: typeof text === "string" ? text : JSON.stringify(text) };
+    }) as ProviderResponse["segments"];
+  }
   const preferredFields =
     mode === "editing" || mode === "repair"
       ? [

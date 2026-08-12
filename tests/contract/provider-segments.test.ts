@@ -191,6 +191,29 @@ describe("provider prompt contract", () => {
     expect(repairPayload.segments[0].issues).toHaveLength(1);
   });
 
+  it("asks the consistency resolver for an object, not a JSON document inside a string", () => {
+    const prompt = buildPrompt({ mode: "consistency" });
+    const payload = JSON.parse(
+      buildPromptInput({
+        mode: "consistency",
+        ...languages,
+        segments: [{ id: "entity-registry-1", text: '{"task":"entity_registry","entities":[]}' }],
+      }),
+    );
+
+    expect(payload.responseContract.textType).toBe("object");
+    expect(prompt).toContain("never a string and never JSON encoded inside a string");
+    expect(prompt).not.toContain("return a JSON string with this shape");
+    // The stages that answer with prose keep the contract that forbids an object.
+    expect(buildPrompt({ mode: "translation" })).toContain(
+      '"text" must always be a non-empty JSON string',
+    );
+    expect(
+      JSON.parse(buildPromptInput({ mode: "translation", ...languages, segments: [] }))
+        .responseContract.textType,
+    ).toBe("string");
+  });
+
   it("adds target-language rules only for their matching language", () => {
     const russianPrompt = buildPrompt({
       mode: "consistency",
