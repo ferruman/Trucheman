@@ -104,6 +104,22 @@ describe("book-wide consistency", () => {
     expect(report.warningCount).toBeGreaterThan(0);
   });
 
+  it("does not read an ё homograph pair as a spelling inconsistency", () => {
+    const report = buildConsistencyReport([
+      {
+        id: "homographs",
+        sourceSegments: [],
+        editedSegments: [
+          { id: "homographs:0", text: "Все ушли, и всё стало тихо." },
+          { id: "homographs:1", text: "О чём он думал и чем это кончилось?" },
+        ],
+      },
+    ]);
+
+    expect(report.documents[0].yo.variants).toEqual([]);
+    expect(report.warningCount).toBe(0);
+  });
+
   it("normalizes Russian quote mechanics and coordinate minute marks", () => {
     const values: ConsistencyDocument[] = [
       {

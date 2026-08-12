@@ -486,6 +486,16 @@ function quoteReport(text: string) {
   };
 }
 
+// Words where the е and ё forms are different words, not spellings of one. A book that uses
+// both is correct Russian; flagging them made "все/всё" and "чем/чём" 38 of one run's 53
+// warnings and buried everything else.
+// ponytail: the frequent pairs, not the dictionary — extend when a run flags a new false one.
+const yoHomographs = new Set(
+  `все всем всех чем небо падеж осел слез поем совершенный узнаем признаем берет ведро мел`.split(
+    /\s+/u,
+  ),
+);
+
 function yoVariants(text: string) {
   const forms = new Map<string, Set<string>>();
   for (const match of text.matchAll(wordPattern)) {
@@ -496,7 +506,12 @@ function yoVariants(text: string) {
     forms.set(key, variants);
   }
   return [...forms.entries()]
-    .filter(([, variants]) => variants.size > 1 && [...variants].some((word) => word.includes("ё")))
+    .filter(
+      ([key, variants]) =>
+        !yoHomographs.has(key) &&
+        variants.size > 1 &&
+        [...variants].some((word) => word.includes("ё")),
+    )
     .map(([key, variants]) => ({ key, variants: [...variants].sort() }));
 }
 
