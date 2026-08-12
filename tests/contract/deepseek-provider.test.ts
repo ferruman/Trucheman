@@ -256,6 +256,39 @@ describe("DeepSeek provider", () => {
     expect(error.usage).toMatchObject({ promptTokens: 20, completionTokens: 3 });
   });
 
+  it("shows the text around the point where malformed output stopped parsing", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    // A missing comma between two array elements: the size and the finish
+                    // reason say the model was not cut off, only the text says why.
+                    content: '{"segments":[{"id":"s0001","text":"Дом Тайн"} {"id":"s0002"}]}',
+                  },
+                  finish_reason: "stop",
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+    await expect(
+      new DeepSeekProvider().complete({
+        profile: { name: "x", endpoint: "https://provider.test", model: "x", apiKey: "secret" },
+        mode: "translation",
+        ...languages,
+        segments: [{ id: "document-1:0", text: "House of Secrets" }],
+      }),
+    ).rejects.toThrow(/near: .*"Дом Тайн"} \{"id":"s0002"/);
+  });
+
   it("rejects a shifted translation whose IDs still line up", async () => {
     vi.stubGlobal(
       "fetch",

@@ -191,6 +191,23 @@ function parseStructuredContent(content: string): unknown {
 }
 
 /**
+ * The 60 characters either side of where JSON.parse gave up.
+ *
+ * "Expected ',' or ']' at position 1076" of a 1137-byte answer that finished normally says
+ * the model wrote bad JSON, not that it ran out of room — but not which of the book's own
+ * characters it choked on, and the answer itself is never kept. This window is what turns
+ * the next occurrence into a fix instead of a guess. It is model output about the book, in
+ * the book's own job directory, and it goes through the same redaction and 300-character
+ * cap as every other usage detail.
+ */
+function parseErrorContext(content: string, error: unknown): string {
+  const position = Number(/position (\d+)/.exec(String(error))?.[1]);
+  if (!Number.isFinite(position)) return "";
+  const window = content.slice(Math.max(0, position - 60), position + 60).replace(/\s+/gu, " ");
+  return ` near: ${window}`;
+}
+
+/**
  * Audit responses are validated against their own schema, per segment. A segment whose
  * issues are unusable is marked `invalid_issues` and the rest of the batch survives.
  */
@@ -328,7 +345,9 @@ export class DeepSeekProvider implements LanguageModelProvider {
           // that fails four times in a row says nothing about why.
           `Provider returned malformed structured output (${Buffer.byteLength(content)} bytes, ${
             body?.choices?.[0]?.finish_reason ?? "no finish reason"
-          }: ${parseError instanceof Error ? parseError.message : "unparseable"})`,
+          }: ${
+            parseError instanceof Error ? parseError.message : "unparseable"
+          })${parseErrorContext(content, parseError)}`,
           undefined,
           observedUsage,
           observedRequestId,
