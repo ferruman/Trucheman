@@ -218,6 +218,12 @@ export async function runPreparedBook(
         (done, total) => preflight(`Preflight: chapter cards ${done}/${total}`),
       );
       preflightWarnings += resolved.failed;
+      // A chapter without its card is translated without the gender, number and address
+      // register its blocks cannot recover on their own. That is the kind of thing this run
+      // shipped without, so it belongs with the reasons — a count alone still reported the
+      // book as cleanly completed.
+      if (resolved.failed)
+        consistencyErrors.push(`${resolved.failed} chapter(s) translated without a chapter card`);
       for (const [id, card] of resolved.cards) {
         const block = formatChapterCard(card);
         if (block) chapterCards.set(id, block);

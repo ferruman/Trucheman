@@ -168,4 +168,42 @@ describe("resolveChapterCards", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("asks a second time when the first answer is not usable JSON", async () => {
+    const root = await mkdtemp(join(tmpdir(), "chapter-cards-retry-"));
+    try {
+      // What run 9cfcd03a actually got back: an answer the model finished normally, one
+      // closing bracket short. Nothing downstream notices a card that never arrives, and a
+      // chapter is one indivisible question, so the only recovery is asking again.
+      const answers = [
+        '{"characters":[{"name":"Kyra","gender":"female","evidence":"She waited."}]}}',
+        '{"characters":[{"name":"Kyra","gender":"female","evidence":"She waited."}]}',
+      ];
+      const provider: LanguageModelProvider = {
+        async complete(request: ProviderRequest): Promise<ProviderResponse> {
+          return {
+            segments: [{ id: request.segments[0].id, text: answers.shift() ?? "" }],
+            finishReason: "stop",
+          };
+        },
+      };
+
+      const { cards, failed } = await resolveChapterCards(
+        provider,
+        profile,
+        languages.sourceLanguage,
+        languages.targetLanguage,
+        [document("document-2", "She waited. ".repeat(400))],
+        root,
+      );
+
+      expect(failed).toBe(0);
+      expect(cards.get("document-2")?.characters?.map((character) => character.name)).toEqual([
+        "Kyra",
+      ]);
+      expect(answers).toHaveLength(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

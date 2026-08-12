@@ -10,6 +10,7 @@ import type {
   ProviderProfile,
   ProviderSegment,
 } from "../providers/provider.js";
+import { abortableDelay, retryDecision } from "../providers/retry-policy.js";
 
 /**
  * Layout of the on-disk answer caches. This is not a lever for re-asking the model: bumping
@@ -557,6 +558,13 @@ export function buildConsistencyReport(
   };
 }
 
+/**
+ * `retries` is for callers with no recovery of their own. The chunked tasks below answer a
+ * broken answer by halving the question, which is the better move when the answer was too
+ * big to write; a chapter card is one indivisible question, and its observed failure is the
+ * model dropping a single bracket at the very end of an answer it thought it had finished.
+ * That is worth exactly one more ask — nothing else in the run notices a missing card.
+ */
 export async function completeJsonTask(
   provider: LanguageModelProvider,
   profile: ProviderProfile,
@@ -565,18 +573,37 @@ export async function completeJsonTask(
   id: string,
   payload: unknown,
   signal?: AbortSignal,
+  retries = 0,
 ) {
-  const response = await provider.complete(
-    {
-      profile,
-      mode: "consistency",
-      sourceLanguage,
-      targetLanguage,
-      segments: [{ id, text: JSON.stringify(payload) }],
-    },
-    signal,
-  );
-  return JSON.parse(response.segments[0]?.text ?? "");
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const response = await provider.complete(
+        {
+          profile,
+          mode: "consistency",
+          sourceLanguage,
+          targetLanguage,
+          segments: [{ id, text: JSON.stringify(payload) }],
+        },
+        signal,
+      );
+      return JSON.parse(response.segments[0]?.text ?? "");
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      const decision = retryDecision(
+        {
+          // A response that parsed as a provider answer but not as this task's JSON is the
+          // model breaking the contract, the same as a malformed answer from the provider.
+          kind: (error as { kind?: string }).kind ?? "invalid_response",
+          status: (error as { status?: number }).status,
+        },
+        attempt,
+        retries,
+      );
+      if (!decision.retry) throw error;
+      await abortableDelay(decision.delayMs, signal);
+    }
+  }
 }
 
 export type ChunkedRun = { chunks: number; resolvedChunks: number; failedChunks: ChunkFailure[] };

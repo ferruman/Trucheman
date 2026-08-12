@@ -99,6 +99,9 @@ export async function resolveStyleProfile(
       "book-style",
       { task: "book_style", passages },
       signal,
+      // One indivisible question with no recovery of its own, like a chapter card — and this
+      // one feeds every batch of the book.
+      1,
     ),
   );
   await writeCache(path, key, resolved);

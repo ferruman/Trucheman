@@ -187,6 +187,7 @@ export async function resolveChapterCards(
                 `chapter-card-${chapter.id}`,
                 { task: "chapter_card", chapter: chapter.text },
                 signal,
+                1,
               ),
             ),
             chapter.text,
