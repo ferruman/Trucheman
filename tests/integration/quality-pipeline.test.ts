@@ -24,12 +24,16 @@ describe("two-pass pipeline", () => {
     const root = await mkdtemp(`${tmpdir()}/book-translator-`);
     const provider = new FakeProvider();
     const profile = { name: "fake", endpoint: "local", model: "fake" };
-    await runQualityPipeline([{ id: "batch-1", documentId: "chapter-1", segments: [segment] }], provider, {
-      root,
-      translationProfile: profile,
-      editingProfile: profile,
-      ...languages,
-    });
+    await runQualityPipeline(
+      [{ id: "batch-1", documentId: "chapter-1", segments: [segment] }],
+      provider,
+      {
+        root,
+        translationProfile: profile,
+        editingProfile: profile,
+        ...languages,
+      },
+    );
     expect(provider.requests.map((request) => request.mode)).toEqual(["translation", "editing"]);
     expect(provider.requests[0]).toMatchObject(languages);
     expect((await readFile(`${root}/drafts.ndjson`, "utf8")).length).toBeGreaterThan(0);
@@ -80,15 +84,19 @@ describe("two-pass pipeline", () => {
     const profile = { name: "fake", endpoint: "local", model: "fake" };
 
     await expect(
-      runQualityPipeline([{ id: "batch-1", documentId: "chapter-1", segments: [segment] }], provider, {
-        root,
-        translationProfile: profile,
-        editingProfile: profile,
-        ...languages,
-        onStage: (stage) => {
-          stages.push(stage);
+      runQualityPipeline(
+        [{ id: "batch-1", documentId: "chapter-1", segments: [segment] }],
+        provider,
+        {
+          root,
+          translationProfile: profile,
+          editingProfile: profile,
+          ...languages,
+          onStage: (stage) => {
+            stages.push(stage);
+          },
         },
-      }),
+      ),
     ).rejects.toThrow("Editor failed");
 
     expect(stages).toEqual(["translation", "editing"]);
