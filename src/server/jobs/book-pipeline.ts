@@ -286,13 +286,15 @@ export async function runPreparedBook(
     },
   });
   // One warning per defective segment, not per defect: a block with three findings is still
-  // one thing to look at.
+  // one thing to look at. Every term below is recomputed over the whole book on every run,
+  // cached batches included, so this replaces the count rather than adding to it — a resumed
+  // run used to report the book's warnings on top of the previous run's, and 48 read as 104.
   const runWarnings =
     preflightWarnings +
     result.qualityAuditErrors +
     new Set(result.scanDefects.map((defect) => defect.id)).size;
   if (runWarnings) {
-    await update({ warnings: job.warnings + runWarnings });
+    await update({ warnings: runWarnings });
   }
   const consistencyDocuments: ConsistencyDocument[] = prepared.documents.map((document) => ({
     id: document.id,
@@ -324,7 +326,7 @@ export async function runPreparedBook(
     consistencyReport.errors.length +
     consistencyReport.ignoredGlossaryEntries.length;
   if (warningCount) {
-    await update({ warnings: job.warnings + runWarnings + warningCount });
+    await update({ warnings: runWarnings + warningCount });
   }
   for (const document of prepared.documents) {
     const editedDocument = consistencyDocuments.find((candidate) => candidate.id === document.id);

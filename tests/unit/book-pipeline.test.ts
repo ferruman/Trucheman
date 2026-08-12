@@ -61,6 +61,57 @@ describe("book pipeline instructions", () => {
     expect(await readFile(join(root, "edits.ndjson"), "utf8")).toBe(firstEdits);
   });
 
+  it("reports this run's warnings, not the previous run's plus this one's", async () => {
+    vi.stubEnv("BOOK_TRANSLATOR_PROVIDER", "deterministic");
+    const root = await mkdtemp(`${tmpdir()}/book-pipeline-warnings-`);
+    roots.push(root);
+    await buildFixtureEpub(join(root, "source.epub"));
+    const now = new Date().toISOString();
+    const job: PersistedJob = {
+      version: 1,
+      id: "12345678-1234-4234-8234-123456789012",
+      title: "Book",
+      sourceLanguage: "en",
+      targetLanguage: "ru",
+      status: "needs_attention",
+      stage: "translation",
+      progress: { translated: 0, edited: 0, total: 1, failed: 0 },
+      createdAt: now,
+      updatedAt: now,
+      // What the previous run left behind. The scan and the consistency pass both recompute
+      // over the whole book on a resume, so adding to this counts the same book twice.
+      warnings: 500,
+      documents: [],
+      instructions: "",
+      glossary: [],
+      qualityMode: "standard",
+    };
+    const counts: number[] = [];
+    // Every preflight is advisory, so a provider that refuses them produces warnings while
+    // the book still translates.
+    const fake = new FakeProvider();
+    const provider: LanguageModelProvider = {
+      async complete(request, signal) {
+        if (request.mode === "consistency") throw new Error("provider unavailable");
+        return fake.complete(request, signal);
+      },
+    };
+
+    await runPreparedBook(
+      root,
+      job,
+      async (patch) => {
+        if (typeof patch.warnings === "number") counts.push(patch.warnings);
+      },
+      undefined,
+      false,
+      { provider, useExternal: true },
+    );
+
+    expect(counts.length).toBeGreaterThan(0);
+    for (const count of counts) expect(count).toBeLessThan(500);
+  });
+
   it("reports the oldest open batch so concurrent workers cannot rewind the progress", async () => {
     vi.stubEnv("BOOK_TRANSLATOR_PROVIDER", "deterministic");
     vi.stubEnv("BOOK_TRANSLATOR_CONCURRENCY", "4");
