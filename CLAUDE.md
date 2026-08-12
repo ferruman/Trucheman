@@ -2,7 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-`AGENTS.md` holds the conventions (structure, style, commit/PR rules) and stays authoritative for those. This file covers commands and the architecture that spans multiple files.
+Three files, one subject each, and none of them repeats another:
+
+- **`ARCHITECTURE.md`** — how the system works. Read it first; it is the base description of the pipeline, the storage and the boundaries.
+- **`AGENTS.md`** — the conventions: structure, style, commit and PR rules. Authoritative for those.
+- **this file** — how to run and work on the repository: commands, and the traps that cost an hour if you do not know them.
 
 ## Commands
 
@@ -34,62 +38,24 @@ npm run eval:literary -- --limit 3 --model deepseek-v4-pro --prompt-version lite
 npm run eval:literary -- --provider deterministic     # free; exercises corpus/scoring only
 npm run audit:epub -- path/to/book.epub               # consistency audit of an existing EPUB
 npm run trace:segment -- data/jobs/<id> <segment-id>  # free; one block's source→draft→edit→audit→repair→final
+npm run report:models                                 # free; cost and quality per model, read from finished jobs
 ```
+
+`eval:literary` over the whole corpus enforces `minPassRate` from `evals/literary-editor/cases.json` and exits non-zero below it; a `--limit` or `--offset` run only samples, so it reports the rule as unenforced instead of failing.
 
 `epubcheck` is optional — `runOptionalEpubCheck` and `scripts/check-epub.mjs` both treat `ENOENT` as a pass, so its integration test asserts both branches and the pipeline gate simply does nothing when it isn't installed. It writes its findings to **stderr**; stdout carries only the summary. The test fixtures are deliberately minimal and do not pass EPUBCheck (their `container.xml` omits the rootfile media type), so a pipeline run over a fixture legitimately reports conformance errors.
 
 ## Architecture
 
-Local-first EPUB translator. Express + React (Vite), everything on the local filesystem; the only outbound traffic is provider calls.
+**`ARCHITECTURE.md` is the description of this system and the file to read first.** It covers the request → job flow, the job state machine, every stage of the translation pipeline, the storage layout and its durability rules, checkpointing and invalidation, providers and their retry semantics, secrets, and the EPUB security boundaries. Keep it current: a change that alters any of those belongs in that file, in the section it belongs to, not in a second description here.
 
-### Request → job flow
+The invariants worth knowing before you touch anything, each explained there in full:
 
-`src/server/index.ts` parses env config, creates the data dir, wires `createApp`, and calls `recoverActiveJobs` (jobs left `running`/`analyzing` by a crash are demoted to `paused`/`needs_attention`) before listening. `createApp` (`src/server/app.ts`) constructs the three repositories, one `JobOrchestrator`, and mounts all routers under `/api/jobs`; unmatched routes fall through to the built SPA in `dist/client` — which is why `predev` builds the client before the dev server starts.
-
-### Job lifecycle — the state machine is the contract
-
-`src/shared/domain/job.ts` owns `JobStatus`, `JobStage`, the legal `transitions` table, and `progressFor`'s invariants (`edited <= translated <= total`). Any new state or transition must be added there; `changeStatus` throws on illegal moves. `src/server/domain/job.ts` adds the zod-validated on-disk shape (`persistedJobSchema`, `version: 1`) and `toJobView`, the **only** projection sent to the browser — nothing reaches the client that doesn't go through it.
-
-`JobOrchestrator` (`src/server/jobs/job-orchestrator.ts`) is the concurrency boundary. A single-slot `Scheduler` allows exactly one active job process-wide; `claims` guards the window between "decided to start" and "task registered" so concurrent `POST /start` calls collapse into one `launches` promise. Pause is `AbortController.abort()`; the run loop turns an aborted signal into `paused`, anything else into `failed`. Errors emitted to clients go through `redact()`.
-
-### Translation pipeline
-
-`runPreparedBook` (`src/server/jobs/book-pipeline.ts`) is the whole book run:
-
-1. **Always re-extracts** the source EPUB into `staging/`. Assembly mutates staged documents in place, so reusing a previous staging directory would re-insert translations into already-translated text.
-2. Chooses provider: `DeepSeekProvider` only when `BOOK_TRANSLATOR_PROVIDER !== "deterministic"` **and** both translation and editing API keys exist; otherwise `FakeProvider` (deterministic `[translated] …` prefix), which is what tests and e2e run against.
-3. Resolves provider profiles through `config/profiles.ts` — translation, editing, consistency, each with its own endpoint/model/thinking/prompt version, consistency falling back to the translation profile's key/endpoint/model. `resolveProfiles()` is the single source of truth: the pipeline runs on it and `GET /api/settings` reports it, so the UI can never show configuration a run would not use.
-4. Style profile, entity registry and chapter cards (external providers only). The style profile (`style-profile-service.ts`) is one cached preflight call over passages sampled across the book; its block is appended to the job instructions, so it reaches every stage and every checkpoint key. The registry is merged with the user glossary, user entries winning. Chapter cards (`chapter-card-service.ts`) are one cached call per content document, run on the same concurrency pool as translation, recording only what a single batch cannot recover — character gender/number, how each pair addresses the other, recurring non-name terms — and reach the batches of that document alone, via `RunnerOptions.chapterCards`. All three are advisory: a failure counts as a job warning and never holds the book back.
-5. `runQualityPipeline` (`job-runner.ts`) — per batch: translate, then edit, appending to `drafts.ndjson` / `edits.ndjson`. Every batch also goes through `segment-scan.ts`, a free deterministic comparison of each block with its original (empty, untranslated, length ratio, dropped numbers, source-script residue); its findings land in `quality-report.json`, which is now written in both quality modes.
-6. Consistency: mechanical normalization (`ё`, «ёлочки» — Russian targets only), evidence report, model-driven conflict resolution where **the model returns decisions and code applies the replacements**, then `consistency-report.json`.
-7. Reinsert edited text, rewrite language tags in content + package, build to a `.tmp`, `fsync`, validate, audit, run EPUBCheck when it is installed (report-only: errors become job warnings and `epubcheck.txt`, never a failure), and only then `rename` into `output.epub`.
-
-A text node larger than the batch budget is split across batches, and the chunks carry `<segment id>#<n>` ids so they stay distinct through the journals; `mergeChunkedSegments` rejoins them before step 6. Reusing the bare id there collapsed the pieces in the id-keyed reinsertion map and silently dropped everything but the last chunk, so keep chunk ids distinct if you touch `batcher.ts`.
-
-Resumability comes from `checkpointKey` in `job-runner.ts`: a SHA-256 over prompt version, mode, profile identity, segments, instructions, and glossary. Change a prompt, model, or glossary and every checkpoint key changes, so cached work is correctly discarded — this is why `PROMPT_VERSION`/`PROMPT_INPUT_VERSION` in `providers/prompts.ts` must be bumped when prompt text changes semantically. Consistency results cache the same way (`entity-registry.json`, `consistency-resolution.json`, keyed by `CONSISTENCY_VERSION` + payload + model + target language).
-
-### Storage layout
-
-Everything for a job lives in `<dataDir>/jobs/<uuid>/`: `job.json`, `source.epub`, `staging/`, `drafts.ndjson`, `edits.ndjson`, `prepared.json`, `consistency-report.json`, `entity-registry.json`, `consistency-resolution.json`, `style-profile.json`, `chapter-cards.json`, `quality-report.json`, `epubcheck.txt`, `output.epub`. The only global file is `<dataDir>/events.ndjson` — one append-only log for every job, never pruned, so anything that scans it per event is quadratic in the life of the install (`EventRepository` keeps the last id in memory for exactly this reason).
-
-Durability rules, don't bypass them: state writes go through `atomic-file.ts` (temp file → fsync → rename → fsync parent dir); journals append via `ndjson-journal.ts` with `fsync` per line, and `readJournal` **stops at the first unparseable line** so a torn tail truncates rather than corrupts. Every filesystem path derived from user input goes through `safeJobPath`/`jobRoot` (`storage/job-paths.ts`) or `resolveEpubPath` (`epub/validate.ts`).
-
-### Providers
-
-`LanguageModelProvider.complete()` is the single seam (`providers/provider.ts`). Prompts are assembled in `providers/prompts.ts` from composable blocks — common rules, a strict JSON output contract, per-mode rules, and `TARGET_LANGUAGE_RULES` keyed by target language. Book content is explicitly framed as untrusted data, never instructions. `response-validator.ts` enforces the contract (exact ids, exact count, string `text`); `retry-policy.ts` + `ProviderError`'s `kind` (`temporary` / `configuration` / `invalid_response`) decide what is retried.
-
-### Secrets
-
-`config/secrets.ts` reads `.env.local` then `.env` **synchronously at call time** — no dotenv, no `process.env` mutation, and the server must be restarted after editing them. Runtime config (host/port/dataDir/upload limit) is separate, zod-parsed from `process.env` in `config/schema.ts`. Credentials never enter job state, events, or `JobView`; `GET /api/settings` is read-only and reports endpoint/model plus a `hasApiKey` boolean via `profilesView`.
-
-### Client
-
-React 19 + a hand-rolled router (`client/app/routes.tsx`); `client/app/api.ts` is the only fetch layer and unwraps RFC 7807 problem responses. Live progress comes from `GET /api/jobs/:id/events` (SSE) — `EventRepository` replays `events.ndjson` from `last-event-id`, then streams, with a 15s heartbeat comment.
-
-### Security boundaries worth knowing before touching EPUB code
-
-`epub/archive-policy.ts` rejects absolute/traversing/backslash/NUL entry names, drive letters, encrypted entries, unsupported compression, and enforces entry-count / per-entry / total-expansion limits (zip-bomb defense). `epub/validate.ts` additionally rejects `?`, `#`, and percent-encoded separators in EPUB-internal references. Hostile-input fixtures live in `tests/fixtures/build-hostile-epubs.ts`.
+- `src/shared/domain/job.ts` owns the legal status transitions; `toJobView` is the only projection the browser ever sees.
+- One job runs process-wide (a single-slot `Scheduler`), and pause is `AbortController.abort()`.
+- `checkpointKey` decides what a rerun pays for again, so `PROMPT_VERSION` / `PROMPT_INPUT_VERSION` must be bumped when prompt text changes semantically.
+- State writes go through `atomic-file.ts`, journals through `ndjson-journal.ts`, and user-derived paths through `safeJobPath` / `resolveEpubPath`. Do not bypass them.
 
 ## Testing layout
 
-Tests are grouped by the boundary they exercise, not by source folder: `tests/unit` (pure logic), `tests/integration` (filesystem, HTTP, job lifecycle, EPUB round-trips), `tests/contract` (provider and API shapes), `tests/e2e` (Playwright, deterministic provider). Vitest runs in the `node` environment for all of them. EPUB fixtures are generated by `tests/fixtures/build-epubs.ts` / `build-hostile-epubs.ts`; assertions on archive contents use `tests/helpers/epub-inspector.ts`.
+See the Testing section of `ARCHITECTURE.md` for how the suites are split and what generates the EPUB fixtures. The one thing that lives only here: run a focused test with the commands above rather than adding `.only`, and never trust a red e2e run before checking for a stale dev server on 4173.
