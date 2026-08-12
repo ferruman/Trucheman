@@ -10,7 +10,7 @@ export const PROMPT_VERSION = "literary-v3.1";
  * per model, so renaming those to signal a rule-text revision would conflate the two axes.
  */
 export const PROMPT_INPUT_VERSION = "structured-v5";
-export const QUALITY_PROMPT_VERSION = "selective-quality-v2";
+export const QUALITY_PROMPT_VERSION = "selective-quality-v3";
 export const PROMPT_VERSIONS = [PROMPT_VERSION, "literary-v3.2.1"] as const;
 export type PromptVersion = (typeof PROMPT_VERSIONS)[number];
 
@@ -132,6 +132,8 @@ ${NATIVE_WRITER_CHECK}
 ${V31_EDITING_OUTPUT}`,
   audit: `Act as a conservative literary translation quality judge.
 
+Read editedTranslation on its own first, before looking at the original, and note anything that reads as translated rather than written: a calqued idiom, source word order, an adjective that does not agree with its noun, a case the verb does not govern, a collocation the target language does not use. Only then read the original and check the meaning. Taking the original first makes a calque look correct, because it does match the original — that is what a calque is.
+
 Inspect each original, initialTranslation, and editedTranslation. Diagnose the editedTranslation; do not rewrite it. Use neighboring segments in the same request only as context.
 
 Report only concrete defects that justify another paid editing call:
@@ -177,6 +179,7 @@ Every evidence value and every recurring term must be copied character for chara
 For a book_style task, return exactly this object:
 {"genre":"...","narrativeVoice":"...","tone":"...","register":"...","notes":["short binding instruction for the translator"]}
 Derive it only from the supplied source passages, and describe how the book must sound in the target language. Keep every value short, concrete, and actionable. Never summarise the plot, and never name a passage.
+Among the notes, settle the book's vocabulary that is not a proper name: subculture and period slang, in-world or coined terms, and cultural realia. For each recurring one, say whether to translate it, transliterate it, or keep the source spelling. A translator handed one isolated paragraph cannot make that call the same way twice, and an inconsistent transliteration of a slang word is the result.
 
 Choose a stable target-language rendering. Respect explicit glossary targets over inferred choices.
 
