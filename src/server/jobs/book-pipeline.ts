@@ -148,9 +148,14 @@ export async function runPreparedBook(
   const consistencyErrors: string[] = [];
   /** Preflight passes that failed. They do not hold the book back, but they are not silent. */
   let preflightWarnings = 0;
+  // Preflight is minutes of provider calls with no batch to count, so without this the job
+  // sits at "running, 0/N" long enough to look hung. The stage is honest: this is analysis.
+  const preflight = (label: string) =>
+    update({ status: "running", stage: "analysis", currentDocument: label });
   let styleBlock = "";
   if (useExternal) {
     try {
+      await preflight("Preflight: style profile");
       const styleProfile = await resolveStyleProfile(
         provider,
         consistencyProfile,
@@ -171,6 +176,7 @@ export async function runPreparedBook(
   let generatedGlossary: GlossaryEntry[] = [];
   if (useExternal) {
     try {
+      await preflight("Preflight: glossary");
       const registry = await resolveEntityRegistry(
         provider,
         consistencyProfile,
@@ -179,6 +185,8 @@ export async function runPreparedBook(
         sourceDocuments,
         root,
         signal,
+        undefined,
+        (done, total) => preflight(`Preflight: glossary ${done}/${total}`),
       );
       generatedGlossary = registry.entries;
       for (const failure of registry.failedChunks)
@@ -197,6 +205,7 @@ export async function runPreparedBook(
   const chapterCards = new Map<string, string>();
   if (useExternal) {
     try {
+      await preflight("Preflight: chapter cards");
       const resolved = await resolveChapterCards(
         provider,
         consistencyProfile,
@@ -206,6 +215,7 @@ export async function runPreparedBook(
         root,
         signal,
         concurrency,
+        (done, total) => preflight(`Preflight: chapter cards ${done}/${total}`),
       );
       preflightWarnings += resolved.failed;
       for (const [id, card] of resolved.cards) {
@@ -219,6 +229,10 @@ export async function runPreparedBook(
       preflightWarnings++;
     }
   }
+  // Hand the stage back explicitly: a run whose batches are all cached never calls onStage,
+  // and would otherwise still read "analysis" while it builds the book.
+  if (useExternal)
+    await update({ status: "running", stage: "translation", currentDocument: undefined });
   let translated = job.progress.translated,
     edited = job.progress.edited;
   // Concurrent batches would otherwise make the reported stage and chapter flicker between

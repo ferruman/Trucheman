@@ -705,6 +705,8 @@ export async function resolveEntityRegistry(
   root: string,
   signal?: AbortSignal,
   chunkSize = CONSISTENCY_CHUNK_SIZE,
+  /** Preflight runs for minutes with no batch to report. Say which chunk it is on. */
+  onProgress?: (done: number, total: number) => Promise<void> | void,
 ): Promise<EntityRegistry> {
   const entities = extractRepeatedSourceEntities(documents).map(
     ({ source, occurrences, contexts }) => ({
@@ -728,6 +730,7 @@ export async function resolveEntityRegistry(
       parse: (value) => registrySchema.parse(unwrapped(value, "entries")).entries,
       payload: (chunk) => ({ task: "entity_registry", entities: chunk }),
       signal,
+      onProgress,
     },
   );
   const allowed = new Set(entities.map((entity) => entity.source.toLocaleLowerCase()));
