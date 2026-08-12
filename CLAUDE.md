@@ -20,7 +20,7 @@ npm test             # vitest run  (tests/unit, tests/integration, tests/contrac
 npm run e2e          # playwright; boots `npm run dev` with BOOK_TRANSLATOR_PROVIDER=deterministic
 ```
 
-`reuseExistingServer: true` means e2e silently attaches to whatever already listens on 4173 — check for a stale dev server before trusting a failure.
+e2e runs on its own port (4174), its own data directory (`test-results/e2e-data`) and `reuseExistingServer: false`, so it neither reuses nor disturbs a dev server on 4173. Both can run at once.
 
 Single test / focused runs:
 
@@ -58,4 +58,4 @@ The invariants worth knowing before you touch anything, each explained there in 
 
 ## Testing layout
 
-See the Testing section of `ARCHITECTURE.md` for how the suites are split and what generates the EPUB fixtures. The one thing that lives only here: run a focused test with the commands above rather than adding `.only`, and never trust a red e2e run before checking for a stale dev server on 4173.
+See the Testing section of `ARCHITECTURE.md` for how the suites are split and what generates the EPUB fixtures. The one thing that lives only here: run a focused test with the commands above rather than adding `.only`.
