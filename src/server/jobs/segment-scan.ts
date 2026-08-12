@@ -9,8 +9,19 @@ import type { ProviderInputSegment, ProviderSegment } from "../providers/provide
  * free, runs in both quality modes, and only reports — nothing is rewritten on its word.
  */
 export type SegmentDefectKind =
-  "empty" | "untranslated" | "length_ratio" | "missing_numbers" | "source_residue";
-export type SegmentDefect = { id: string; kind: SegmentDefectKind; detail: string };
+  | "empty"
+  | "untranslated"
+  | "length_ratio"
+  | "missing_numbers"
+  | "source_residue"
+  | "source_interference";
+/** `spans` carries the exact words a repair has to replace, for the kinds that get repaired. */
+export type SegmentDefect = {
+  id: string;
+  kind: SegmentDefectKind;
+  detail: string;
+  spans?: string[];
+};
 
 /** Below this a heading, a name, or a date is legitimately identical or lopsided. */
 const MIN_COMPARABLE = 80;
@@ -171,6 +182,29 @@ function sourceResidue(source: string, translation: string): string[] {
   return [...carried];
 }
 
+/**
+ * Of the words carried over, the ones with target-script words on both sides.
+ *
+ * «он formally поклонился ей» is interference: the model translated the sentence and left one
+ * word behind. «Ach, liebe Gott», «Ignis magnificus, veni», «Grateful Dead» are not — a book
+ * keeps its German dialogue, its Latin incantation and its band names, and every one of those
+ * sits inside a run of source text. Every residue this run of the book produced fell cleanly
+ * on one side or the other, which is what makes the first kind worth paying a repair for and
+ * the second kind worth only reporting.
+ */
+function isolatedResidue(translation: string, carried: string[]): string[] {
+  if (!carried.length) return [];
+  const wanted = new Set(carried.map((word) => word.toLocaleLowerCase()));
+  const words = [...translation.matchAll(/[\p{L}\p{M}]+/gu)].map((match) => match[0]);
+  const cyrillic = (word: string | undefined) => Boolean(word && /\p{Script=Cyrillic}/u.test(word));
+  const isolated = new Set<string>();
+  for (const [index, word] of words.entries()) {
+    if (!wanted.has(word.toLocaleLowerCase())) continue;
+    if (cyrillic(words[index - 1]) && cyrillic(words[index + 1])) isolated.add(word);
+  }
+  return [...isolated];
+}
+
 export function scanSegment(
   source: string,
   translation: string,
@@ -215,11 +249,22 @@ export function scanSegment(
       detail: `numbers missing from the translation: ${missing.slice(0, MAX_REPORTED_EXAMPLES).join(", ")}`,
     });
   const residue = sourceResidue(original, result);
-  if (residue.length)
+  const isolated = isolatedResidue(result, residue);
+  if (isolated.length)
+    defects.push({
+      id,
+      kind: "source_interference",
+      detail: `source words left inside the translation: ${isolated
+        .slice(0, MAX_REPORTED_EXAMPLES)
+        .join(", ")}`,
+      spans: isolated,
+    });
+  const preserved = residue.filter((word) => !isolated.includes(word));
+  if (preserved.length)
     defects.push({
       id,
       kind: "source_residue",
-      detail: `untranslated source words: ${residue.slice(0, MAX_REPORTED_EXAMPLES).join(", ")}`,
+      detail: `untranslated source words: ${preserved.slice(0, MAX_REPORTED_EXAMPLES).join(", ")}`,
     });
   return defects;
 }

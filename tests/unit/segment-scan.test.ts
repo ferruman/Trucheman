@@ -84,14 +84,59 @@ describe("scanSegment", () => {
     expect(ru("he aimed the .357 at her", "он навёл пистолет на неё")).toEqual(["missing_numbers"]);
   });
 
+  it("separates a word left inside a sentence from text the book keeps foreign", () => {
+    // Every residue run 9cfcd03a produced, and which side of the line it fell on.
+    const interference: Array<[string, string, string]> = [
+      [
+        "Ms. Therman did an admirable job",
+        "Госпожа Терман проделала admirable работу",
+        "admirable",
+      ],
+      ["Charnas sounded shocked.", "Чарнас sounded изумлённым, и все замолчали.", "sounded"],
+      [
+        "Ilse wished she could slip back",
+        "Ильза wished она могла бы соскользнуть обратно",
+        "wished",
+      ],
+      ["he formally bowed to her", "Она встала, и он formally поклонился ей.", "formally"],
+    ];
+    for (const [source, translation, word] of interference) {
+      const defects = scanSegment(source, translation, "s1").filter((defect) =>
+        defect.kind.startsWith("source_"),
+      );
+      expect([word, defects.map((defect) => defect.kind)]).toEqual([word, ["source_interference"]]);
+      expect(defects[0].spans).toEqual([word]);
+    }
+
+    const preserved: Array<[string, string]> = [
+      // A Latin incantation, a German line of dialogue, a band name: all kept on purpose.
+      [
+        "“Ignis magnificus, veni y illuminatum occulos mios,”",
+        "— Ignis magnificus, veni y illuminatum occulos mios, — пробормотал он.",
+      ],
+      ["“Ach, liebe Gott...,” Westphal whispered.", "— Ach, liebe Gott... — прошептал Вестфаль."],
+      ["“Wer hat gesiegt!” he cried out.", "— Wer hat gesiegt! — крикнул он."],
+      ["Lyle, mein Liebchen, I must ask you", "Лайл, mein Liebchen, я должен просить вас"],
+      ["the worst tribute to the Grateful Dead", "худшая дань уважения Grateful Dead в истории"],
+    ];
+    for (const [source, translation] of preserved) {
+      const kinds = scanSegment(source, translation, "s1")
+        .map((defect) => defect.kind)
+        .filter((kind) => kind === "source_interference");
+      expect([translation.slice(0, 24), kinds]).toEqual([translation.slice(0, 24), []]);
+    }
+  });
+
   it("reports source words carried into a different script, and not names in the same script", () => {
     const defects = scanSegment(
       "The harbour was quiet that evening.",
       "В harbour было тихо в тот вечер.",
       "s1",
     );
-    expect(defects.map((defect) => defect.kind)).toEqual(["source_residue"]);
+    // Target-language words on both sides: the sentence was translated around it.
+    expect(defects.map((defect) => defect.kind)).toEqual(["source_interference"]);
     expect(defects[0].detail).toContain("harbour");
+    expect(defects[0].spans).toEqual(["harbour"]);
     // Latin to Latin: a shared word is a name or a cognate, not residue
     expect(kinds("The harbour was quiet.", "Der harbour war ruhig.")).toEqual([]);
     // A capitalized word kept as-is is a name, a brand or a title, and keeping it is right.

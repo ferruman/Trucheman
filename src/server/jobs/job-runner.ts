@@ -35,6 +35,7 @@ const SEGMENT_DEFECT_KINDS: SegmentDefectKind[] = [
   "length_ratio",
   "missing_numbers",
   "source_residue",
+  "source_interference",
 ];
 /** The report is a diagnostic, not a journal; a broken run must not write a 100k-entry file. */
 const MAX_REPORTED_DEFECTS = 500;
@@ -149,9 +150,12 @@ function throwIfAborted(signal?: AbortSignal) {
  * the untouched English as the translation and finds it excellent. The scan sees it for
  * free, so it joins the critic's findings instead of only reaching the report.
  *
- * Only this one defect kind is routed here. `source_residue` fires on «Project Gutenberg»,
- * which the licence requires to stay English, and `length_ratio`/`missing_numbers` are
- * heuristics — paying a rewrite to "fix" correct text is worse than reporting it.
+ * Two defect kinds are routed here. `source_residue` is not one of them: it fires on «Project
+ * Gutenberg», which the licence requires to stay English, on a kept German line and on a band
+ * name, and `length_ratio`/`missing_numbers` are heuristics — paying a rewrite to "fix"
+ * correct text is worse than reporting it. `source_interference` is the subset the scan can
+ * tell apart with certainty: a source word with target-language words on both sides, which
+ * the model left behind in a sentence it did translate.
  */
 function untranslatedFindings(
   request: ProviderSegment[],
@@ -160,19 +164,28 @@ function untranslatedFindings(
 ): QualityFinding[] {
   const editedById = new Map(edited.map((segment) => [segment.id, segment.text]));
   return scanSegments(request, edited, targetTag)
-    .filter((defect) => defect.kind === "untranslated")
+    .filter((defect) => defect.kind === "untranslated" || defect.kind === "source_interference")
     .map((defect) => ({
       id: defect.id,
       rejectedIssues: 0,
-      issues: [
-        {
-          span: (editedById.get(defect.id) ?? "").slice(0, 2000),
-          type: "source_language_interference" as const,
-          severity: "high" as const,
-          reason: "The block is identical to the original: it was never translated.",
-        },
-      ],
-    }));
+      issues:
+        defect.kind === "untranslated"
+          ? [
+              {
+                span: (editedById.get(defect.id) ?? "").slice(0, 2000),
+                type: "source_language_interference" as const,
+                severity: "high" as const,
+                reason: "The block is identical to the original: it was never translated.",
+              },
+            ]
+          : (defect.spans ?? []).map((span) => ({
+              span,
+              type: "source_language_interference" as const,
+              severity: "high" as const,
+              reason: `"${span}" is a source-language word left inside a translated sentence.`,
+            })),
+    }))
+    .filter((finding) => finding.issues.length);
 }
 
 /** Critic findings plus the scan's, merged per block so one id never asks for two repairs. */
