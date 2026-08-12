@@ -402,4 +402,31 @@ describe("DeepSeek provider", () => {
     expect(calls).toHaveLength(2);
     expect(calls[1] - calls[0]).toBeGreaterThanOrEqual(900);
   });
+
+  it("names the transport fault instead of reporting every drop identically", async () => {
+    // What Node throws when the connection dies mid-run: one generic message, the real
+    // fault in `cause`. A whole book's failures read "Provider request failed" without it.
+    const dropped = new TypeError("fetch failed");
+    (dropped as { cause?: unknown }).cause = Object.assign(new Error("socket hang up"), {
+      code: "ECONNRESET",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw dropped;
+      }),
+    );
+
+    await expect(
+      new DeepSeekProvider().complete({
+        profile: { name: "x", endpoint: "https://provider.test", model: "x", apiKey: "secret" },
+        mode: "translation",
+        ...languages,
+        segments: [{ id: "document-1:0", text: "Hello" }],
+      }),
+    ).rejects.toMatchObject({
+      kind: "temporary",
+      message: "Provider request failed (ECONNRESET)",
+    });
+  });
 });

@@ -146,6 +146,20 @@ function parseTransportBody(text: string): unknown {
   }
 }
 
+/**
+ * What actually went wrong underneath `fetch`. Node reports every transport failure as
+ * "fetch failed" and hides the distinction in `cause.code`, which is the only part worth
+ * keeping: a system error code names the fault without carrying a URL or a credential.
+ */
+export function transportCause(error: unknown): string {
+  const cause = (error as { cause?: unknown })?.cause;
+  const code = (cause as { code?: unknown })?.code;
+  if (typeof code === "string" && code) return code;
+  const message =
+    (cause as { message?: unknown })?.message ?? (error as { message?: unknown })?.message;
+  return typeof message === "string" && message.trim() ? message.slice(0, 120) : "no cause";
+}
+
 function transportBodyShape(text: string, contentType: string | null) {
   const trimmed = text.trimStart();
   const form = trimmed.startsWith("<")
@@ -306,10 +320,15 @@ export class DeepSeekProvider implements LanguageModelProvider {
       let parsed: any;
       try {
         parsed = parseStructuredContent(content);
-      } catch {
+      } catch (parseError) {
         throw new ProviderError(
           "invalid_response",
-          "Provider returned malformed structured output",
+          // The parser message and the size are the difference between "the answer was cut
+          // off" and "the model wrote something that is not JSON" — without them a batch
+          // that fails four times in a row says nothing about why.
+          `Provider returned malformed structured output (${Buffer.byteLength(content)} bytes, ${
+            body?.choices?.[0]?.finish_reason ?? "no finish reason"
+          }: ${parseError instanceof Error ? parseError.message : "unparseable"})`,
           undefined,
           observedUsage,
           observedRequestId,
@@ -385,7 +404,11 @@ export class DeepSeekProvider implements LanguageModelProvider {
       if (timeout.aborted) {
         throw new ProviderError("temporary", "Provider request timed out");
       }
-      throw new ProviderError("temporary", "Provider request failed");
+      // `fetch` reports every transport failure as the same "fetch failed", and puts the
+      // difference — ECONNRESET, ENOTFOUND, a socket closed mid-body — in `cause`. Dropping
+      // it left four books' worth of runs saying only "Provider request failed", which does
+      // not distinguish a dropped connection from a wrong endpoint.
+      throw new ProviderError("temporary", `Provider request failed (${transportCause(error)})`);
     }
   }
 }
