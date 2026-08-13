@@ -131,6 +131,7 @@ export async function runPreparedBook(
     translation: translationProfile,
     editing: editingProfile,
     critic: criticProfile,
+    repair: repairProfile,
     consistency: consistencyProfile,
   } = resolveProfiles();
   const useExternal = overrides?.useExternal ?? resolvedUseExternal;
@@ -263,6 +264,7 @@ export async function runPreparedBook(
     translationProfile,
     editingProfile,
     criticProfile,
+    repairProfile,
     sourceLanguage,
     targetLanguage,
     instructions,

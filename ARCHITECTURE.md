@@ -75,7 +75,7 @@ The legal moves live in the `transitions` table in `src/shared/domain/job.ts`; `
 
 Controlled by `src/server/jobs/book-pipeline.ts` and `src/server/jobs/job-runner.ts`:
 
-The provider is `DeepSeekProvider` only when `BOOK_TRANSLATOR_PROVIDER !== "deterministic"` **and** both the translation and editing keys exist; otherwise `FakeProvider` (a deterministic `[translated] …` prefix), which is what the tests and the e2e suite run against. Profiles come from `config/profiles.ts` — translation, editing, critic and consistency, each with its own endpoint, model, thinking mode and prompt version, consistency falling back to the translation profile's key. `resolveProfiles()` is the single source of truth: the pipeline runs on it and `GET /api/settings` reports it, so the UI cannot show configuration a run would not use.
+The provider is `DeepSeekProvider` only when `BOOK_TRANSLATOR_PROVIDER !== "deterministic"` **and** both the translation and editing keys exist; otherwise `FakeProvider` (a deterministic `[translated] …` prefix), which is what the tests and the e2e suite run against. Profiles come from `config/profiles.ts` — translation, editing, critic, repair and consistency, each with its own endpoint, model, thinking mode and prompt version, consistency falling back to the translation profile's key. Repair is the exception: only its model and thinking mode are its own (`BOOK_TRANSLATOR_REPAIR_MODEL`, `BOOK_TRANSLATOR_REPAIR_THINKING`), and it takes the editing endpoint, key and prompt version, because the reason it is separate is a bigger model on the same provider — a strong critic in front of a weak repairer returns a sixth of its repairs unchanged. `resolveProfiles()` is the single source of truth: the pipeline runs on it and `GET /api/settings` reports it, so the UI cannot show configuration a run would not use.
 
 1. **Prepare book** (`prepareBook`): re-extract the EPUB to `staging/` on **every** run — assembly mutates staged documents in place — parse all XHTML/NCX documents, extract text segments, merge them into logical blocks, batch them
 2. **Preflight** (external providers only, stage `analysis`): style profile, entity registry → generated glossary, and one chapter card per content document. All three are cached and advisory: a failure is a job warning, never a stop. The style block is appended to the job instructions, so it reaches every stage and every checkpoint key; a chapter card reaches only the batches of its own document
@@ -116,7 +116,7 @@ Every call, including a rejected one, appends a record to `usage.ndjson` with it
 - `DeepSeekProvider` (`src/server/providers/deepseek.ts`) — calls DeepSeek API (or compatible OpenAI-like endpoints)
 - `FakeProvider` (`src/server/providers/fake-provider.ts`) — deterministic local provider for testing/e2e, no credentials needed
 
-Provider selection is configured via `BOOK_TRANSLATOR_PROVIDER` env var and separate profile env vars for translation, editing, critic, and consistency (each with its own endpoint/model/key).
+Provider selection is configured via `BOOK_TRANSLATOR_PROVIDER` env var and separate profile env vars for translation, editing, critic, and consistency (each with its own endpoint/model/key), plus `BOOK_TRANSLATOR_REPAIR_MODEL` for the repair stage alone.
 
 ---
 

@@ -46,6 +46,8 @@ export type RunnerOptions = {
   translationProfile: ProviderProfile;
   editingProfile: ProviderProfile;
   criticProfile?: ProviderProfile;
+  /** Defaults to the editing profile, which is where repair lived before it had its own. */
+  repairProfile?: ProviderProfile;
   sourceLanguage: ProviderLanguage;
   targetLanguage: ProviderLanguage;
   instructions?: string;
@@ -264,6 +266,7 @@ export async function runQualityPipeline(
   options: RunnerOptions,
 ) {
   const criticProfile = options.criticProfile ?? options.editingProfile;
+  const repairProfile = options.repairProfile ?? options.editingProfile;
   const draftJournal = await readJournal<Checkpoint>(`${options.root}/drafts.ndjson`);
   const editJournal = await readJournal<Checkpoint>(`${options.root}/edits.ndjson`);
   const auditJournal = await readJournal<Checkpoint>(`${options.root}/audits.ndjson`);
@@ -431,7 +434,7 @@ export async function runQualityPipeline(
         throwIfAborted(options.signal);
         const expectedRepairKey = checkpointKey(
           "repair",
-          options.editingProfile,
+          repairProfile,
           repairSegments,
           options.sourceLanguage,
           options.targetLanguage,
@@ -448,7 +451,7 @@ export async function runQualityPipeline(
           await options.onStage?.("repair", batch);
           const repaired = await repairBatch(
             provider,
-            options.editingProfile,
+            repairProfile,
             repairSegments,
             { sourceLanguage: options.sourceLanguage, targetLanguage: options.targetLanguage },
             instructions,
@@ -462,7 +465,7 @@ export async function runQualityPipeline(
             checkpointKey: expectedRepairKey,
             attempts: repaired.attempts,
             warnings: repaired.warnings,
-            profile: options.editingProfile.name,
+            profile: repairProfile.name,
           });
         }
         const beforeRepair = editedSegments;

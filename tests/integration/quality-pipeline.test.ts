@@ -478,6 +478,65 @@ describe("two-pass pipeline", () => {
     });
   });
 
+  it("sends repair to its own profile and keeps its checkpoint apart from editing", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-repair-profile-`);
+    const seen: Array<{ mode: string; model: string }> = [];
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        seen.push({ mode: request.mode, model: request.profile.model });
+        if (request.mode === "audit") {
+          return {
+            segments: request.segments.map((input) => ({
+              id: input.id,
+              text: "",
+              issues: [
+                {
+                  span: "Черновик",
+                  type: "unnatural_language" as const,
+                  severity: "high" as const,
+                  reason: "reason",
+                },
+              ],
+            })),
+            finishReason: "stop",
+          };
+        }
+        return {
+          segments: request.segments.map((input) => ({
+            id: input.id,
+            text: request.mode === "repair" ? "Починено" : "Черновик",
+          })),
+          finishReason: "stop",
+        };
+      },
+    };
+    const profile = { name: "fake", endpoint: "local", model: "flash" };
+    const options = {
+      root,
+      translationProfile: profile,
+      editingProfile: profile,
+      repairProfile: { ...profile, name: "fake-repair", model: "pro" },
+      qualityMode: "high" as const,
+      ...languages,
+    };
+    const batches = [{ id: "chapter-1-batch-1", documentId: "chapter-1", segments: [segment] }];
+
+    const first = await runQualityPipeline(batches, provider, options);
+    expect(first.edits.get("chapter-1-batch-1")?.[0].text).toBe("Починено");
+    expect(seen.filter((call) => call.mode === "repair")).toEqual([
+      { mode: "repair", model: "pro" },
+    ]);
+
+    // A different repair model is a different prompt, so the repair checkpoint misses while
+    // translation, editing and the audit above it are all reused.
+    seen.length = 0;
+    await runQualityPipeline(batches, provider, {
+      ...options,
+      repairProfile: { ...profile, name: "fake-repair", model: "pro-2" },
+    });
+    expect(seen).toEqual([{ mode: "repair", model: "pro-2" }]);
+  });
+
   it("does not count a repair that handed the block back unchanged", async () => {
     const root = await mkdtemp(`${tmpdir()}/book-noop-repair-`);
     // What run 02279a8b got for «Рег crouched перед Шэдоу»: flagged, sent to repair, and

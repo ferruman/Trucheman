@@ -13,6 +13,8 @@ export type SecretStore = Readonly<{
   editingModel?: string;
   criticModel?: string;
   criticThinking?: string;
+  repairModel?: string;
+  repairThinking?: string;
   consistencyModel?: string;
   consistencyThinking?: string;
   editingPromptVersion?: string;
@@ -50,6 +52,8 @@ export function loadSecrets(path?: string): SecretStore {
     editingModel: values.BOOK_TRANSLATOR_EDITING_MODEL || undefined,
     criticModel: values.BOOK_TRANSLATOR_CRITIC_MODEL || undefined,
     criticThinking: values.BOOK_TRANSLATOR_CRITIC_THINKING || undefined,
+    repairModel: values.BOOK_TRANSLATOR_REPAIR_MODEL || undefined,
+    repairThinking: values.BOOK_TRANSLATOR_REPAIR_THINKING || undefined,
     consistencyModel: values.BOOK_TRANSLATOR_CONSISTENCY_MODEL || undefined,
     consistencyThinking: values.BOOK_TRANSLATOR_CONSISTENCY_THINKING || undefined,
     editingPromptVersion: values.BOOK_TRANSLATOR_EDITING_PROMPT_VERSION || undefined,

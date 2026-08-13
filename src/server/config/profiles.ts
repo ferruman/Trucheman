@@ -14,6 +14,13 @@ export type ResolvedProfiles = {
   translation: ProviderProfile;
   editing: ProviderProfile;
   critic: ProviderProfile;
+  /**
+   * Repair rewrites the blocks the critic condemned. It followed the editing profile until a
+   * run put a stronger critic in front of a weaker repairer and 34 of 205 repairs came back
+   * word for word. Only the model is its own — same endpoint and key as editing, since the
+   * case this exists for is a bigger model on the same provider.
+   */
+  repair: ProviderProfile;
   consistency: ProviderProfile;
 };
 
@@ -117,6 +124,19 @@ export function resolveProfiles(
       ),
       timeoutMs,
     },
+    repair: {
+      name: useExternal ? "deepseek-repair" : "deterministic-local",
+      endpoint: editingEndpoint,
+      model: secrets.repairModel ?? env.BOOK_TRANSLATOR_REPAIR_MODEL ?? editingModel,
+      apiKey: secrets.editingApiKey,
+      thinking: thinkingMode(
+        secrets.repairThinking ?? env.BOOK_TRANSLATOR_REPAIR_THINKING,
+        editingEndpoint,
+        "BOOK_TRANSLATOR_REPAIR_THINKING",
+      ),
+      promptVersion: editingPromptVersion || defaultEditingPromptVersion(editingModel),
+      timeoutMs,
+    },
     consistency: {
       name: useExternal ? "consistency" : "deterministic-local",
       endpoint: consistencyEndpoint,
@@ -146,6 +166,7 @@ export function profilesView(profiles: ResolvedProfiles = resolveProfiles()) {
     translation: view(profiles.translation),
     editing: view(profiles.editing),
     critic: view(profiles.critic),
+    repair: view(profiles.repair),
     consistency: view(profiles.consistency),
   };
 }

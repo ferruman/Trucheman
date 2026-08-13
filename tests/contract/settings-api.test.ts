@@ -29,6 +29,12 @@ describe("settings API boundary", () => {
         model: "critic-model",
         apiKey: "sk-secret-value",
       },
+      repair: {
+        name: "deepseek-repair",
+        endpoint: "https://example.test/chat",
+        model: "repair-model",
+        apiKey: "sk-secret-value",
+      },
       consistency: {
         name: "consistency",
         endpoint: "https://example.test/chat",
@@ -42,7 +48,24 @@ describe("settings API boundary", () => {
     });
     expect(view.consistency.hasApiKey).toBe(false);
     expect(view.critic.model).toBe("critic-model");
+    expect(view.repair.model).toBe("repair-model");
     expect(JSON.stringify(view)).not.toContain("sk-secret-value");
+  });
+
+  it("keeps repair on the editing model until it is given one of its own", () => {
+    const shared = resolveProfiles({ BOOK_TRANSLATOR_EDITING_MODEL: "flash" }, {});
+    expect(shared.repair.model).toBe("flash");
+    expect(shared.repair.endpoint).toBe(shared.editing.endpoint);
+    const split = resolveProfiles(
+      { BOOK_TRANSLATOR_EDITING_MODEL: "flash", BOOK_TRANSLATOR_REPAIR_MODEL: "pro" },
+      {},
+    );
+    expect([split.editing.model, split.repair.model]).toEqual(["flash", "pro"]);
+    // The .env file wins over the ambient environment, like every other setting here.
+    expect(
+      resolveProfiles({ BOOK_TRANSLATOR_REPAIR_MODEL: "pro" }, { repairModel: "terra" }).repair
+        .model,
+    ).toBe("terra");
   });
 
   it("falls back to the deterministic provider when credentials are absent", () => {
