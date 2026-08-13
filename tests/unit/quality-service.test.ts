@@ -3,6 +3,7 @@ import {
   applySelectiveRepairs,
   buildQualityAuditSegments,
   buildRepairSegments,
+  isActionableQualityIssue,
   parseQualityFindings,
   reviewRepair,
 } from "../../src/server/jobs/quality-service.js";
@@ -179,5 +180,44 @@ describe("selective literary quality service", () => {
       { id: "s1", issues: [], rejectedIssues: 0, auditError: "malformed_json" },
     ]);
     expect(buildRepairSegments(inputs, findings)).toEqual([]);
+  });
+
+  it("rejects critic issues whose reasons explicitly conclude there is no defect", () => {
+    const inputs = buildQualityAuditSegments(original, initial, edited);
+    const findings = parseQualityFindings(inputs, [
+      {
+        id: "s1",
+        text: "",
+        issues: [
+          {
+            span: edited[0].text,
+            type: "unnatural_language",
+            severity: "high",
+            reason: "The phrase is unusual, but it is acceptable. No strong defect.",
+          },
+          {
+            span: edited[0].text,
+            type: "glossary_inconsistency",
+            severity: "medium",
+            reason: "Форма корректна и является допустимым склонением.",
+          },
+        ],
+      },
+    ]);
+
+    expect(findings).toEqual([{ id: "s1", issues: [], rejectedIssues: 2 }]);
+    expect(buildRepairSegments(inputs, findings)).toEqual([]);
+  });
+
+  it("keeps an actionable reason even when it distinguishes a correct detail", () => {
+    const issue = {
+      span: "его тёмные крылья",
+      type: "semantic_error" as const,
+      severity: "high" as const,
+      reason:
+        "The adjective agreement is correct, but the pronoun refers to the wrong character and changes the meaning.",
+    };
+
+    expect(isActionableQualityIssue(issue)).toBe(true);
   });
 });

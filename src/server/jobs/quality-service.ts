@@ -32,6 +32,30 @@ export type QualityFinding = {
   auditError?: AuditError;
 };
 
+/**
+ * The critic occasionally argues itself out of a finding but still emits the issue object.
+ * Keep this gate deliberately narrow: it rejects explicit no-defect conclusions and explicit
+ * uncertainty, not reasons that merely acknowledge one correct detail before naming another.
+ */
+const nonActionableReasonPatterns = [
+  /\b(?:therefore\s+)?this is not an? (?:error|issue)\b/iu,
+  /\bno (?:issue|inconsistency|strong defect|clear defect|real defect)\b/iu,
+  /\bnot (?:a )?(?:strong|clear|real|actual) defect\b/iu,
+  /\bactually acceptable\b/iu,
+  /\b(?:it|this|the (?:translation|rendering|wording|phrase|form)) is acceptable\b/iu,
+  /\bborderline\b/iu,
+  /\blow[- ]confidence\b/iu,
+  /не является (?:ошибкой|дефектом|проблемой)/iu,
+  /(?:ошибки|проблемы|несоответствия) нет/iu,
+  /не стоит (?:это )?отмечать/iu,
+  /низк\p{L}* уверенн\p{L}*/iu,
+  /(?:это|вариант|форма|склонение) (?:полностью )?(?:корректн\p{L}*|допустим\p{L}*)/iu,
+];
+
+export function isActionableQualityIssue(issue: QualityIssue): boolean {
+  return !nonActionableReasonPatterns.some((pattern) => pattern.test(issue.reason));
+}
+
 export function buildQualityAuditSegments(
   original: ProviderSegment[],
   initialTranslation: ProviderSegment[],
@@ -87,7 +111,9 @@ export function parseQualityFindings(
       };
     }
     const edited = inputById.get(segment.id)?.editedTranslation ?? "";
-    const issues = parsed.data.issues.filter((issue) => edited.includes(issue.span));
+    const issues = parsed.data.issues.filter(
+      (issue) => edited.includes(issue.span) && isActionableQualityIssue(issue),
+    );
     return {
       id: segment.id,
       issues,

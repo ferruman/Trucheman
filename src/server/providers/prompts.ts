@@ -10,7 +10,7 @@ export const PROMPT_VERSION = "literary-v3.1";
  * per model, so renaming those to signal a rule-text revision would conflate the two axes.
  */
 export const PROMPT_INPUT_VERSION = "structured-v5";
-export const QUALITY_PROMPT_VERSION = "selective-quality-v3";
+export const QUALITY_PROMPT_VERSION = "selective-quality-v4";
 export const PROMPT_VERSIONS = [PROMPT_VERSION, "literary-v3.2.1"] as const;
 export type PromptVersion = (typeof PROMPT_VERSIONS)[number];
 
@@ -51,7 +51,8 @@ const AUDIT_OUTPUT_CONTRACT = `OUTPUT CONTRACT — mandatory and higher priority
 5. Copy every "id" byte-for-byte from the input. Never translate, shorten, renumber, or reformat an id.
 6. "issues" must be a real JSON array of objects, never a string and never JSON encoded inside a string. Use [] when the segment needs no repair.
 7. Every issue object must contain exactly the keys "span", "type", "severity", and "reason", all JSON strings. "type" must be one of semantic_error, source_language_interference, unnatural_language, context_error, glossary_inconsistency, editor_regression. "severity" must be medium or high. "span" must be copied byte-for-byte from editedTranslation.
-8. Never return "text", "translation", "edited", or any other key in a segment.
+8. "reason" must state one concrete, actionable defect without debating the opposite conclusion. If your analysis says the wording is correct, acceptable, defensible, merely unusual, borderline, or low-confidence, omit the issue. Never report an issue whose proposed better wording is identical to its span.
+9. Never return "text", "translation", "edited", or any other key in a segment.
 
 Valid response example:
 {"segments":[{"id":"s0001","issues":[]},{"id":"s0002","issues":[{"span":"exact suspicious span","type":"unnatural_language","severity":"medium","reason":"concise concrete reason"}]}]}
@@ -144,6 +145,14 @@ Report only concrete defects that justify another paid editing call:
 - a clear regression where the initialTranslation was better than the editedTranslation.
 
 Do not flag a passage merely because another stylistic wording is possible or smoother. Prefer no issue when the editedTranslation is faithful, natural, and stylistically appropriate. Never invent a span: every span must be copied exactly from editedTranslation.
+
+Before adding an issue, silently try to disprove it:
+1. Identify the exact meaning, grammar, glossary, or target-language rule that the span violates.
+2. Test the strongest reasonable reading under which the span is valid: natural inflection, context, idiom, deliberate ambiguity, metaphor, character voice, or authorial style.
+3. If that reading makes the span correct or defensible, or if you are uncertain, output no issue. A glossary target is a lemma and may be inflected naturally; a correct inflected form is not a glossary inconsistency.
+4. If the defect survives, write one concise reason that asserts the defect and why repair is required. Do not include self-correction, alternatives, internal debate, or conclusions such as "not an error", "acceptable", "borderline", or "low confidence".
+
+Use high severity only for a demonstrable mistranslation, omission, addition, lost necessary meaning, broken reference, or target-language error that materially changes comprehension. Use medium for a demonstrable but local defect. If neither threshold is met, return no issue.
 
 A segment is one complete logical block — a paragraph, heading, table-of-contents entry, or caption. Judge it as a whole. Never treat a short segment as a defective sentence merely because it is short; headings and list entries are legitimately terse and must not be padded, completed, or expanded.
 
