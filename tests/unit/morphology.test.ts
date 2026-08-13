@@ -3,6 +3,7 @@ import {
   agreementFindings,
   findAgreementErrors,
   loadMorphology,
+  proposeAgreementFixes,
 } from "../../src/server/epub/morphology.js";
 
 /** A hand-built lexicon: the rules are what is under test, not the dictionary. */
@@ -29,8 +30,15 @@ const LEXICON: Record<string, string[][]> = {
   стула: [["NOUN", "masc", "sing", "gent"]],
   бледная: [["ADJF", "femn", "sing", "nomn"]],
   луна: [["NOUN", "femn", "sing", "nomn"]],
+  бледный: [["ADJF", "masc", "sing", "nomn"]],
   это: [["ADJF", "Apro", "neut", "sing", "nomn"]],
   ночь: [["NOUN", "femn", "sing", "nomn"]],
+};
+
+/** Only the forms a test needs; a missing one stands for "the paradigm has no such form". */
+const FORMS: Record<string, string> = {
+  "резкий:femn,sing,nomn": "резкая",
+  "полным:femn,sing,gent": "полной",
 };
 
 const morph = Object.assign(
@@ -42,6 +50,10 @@ const morph = Object.assign(
         toString: () => flags.join(","),
       }),
       score: 1 / parses.length,
+      inflect: (grammemes: string[]) => {
+        const form = FORMS[`${word.toLocaleLowerCase()}:${grammemes.join(",")}`];
+        return form ? { toString: () => form } : undefined;
+      },
     }));
   },
   { init: (_path: string, done: (error?: Error) => void) => done() },
@@ -75,6 +87,27 @@ describe("findAgreementErrors", () => {
     expect(phrases("Он был резкий, встряска ждала его.")).toEqual([]);
     // An unknown word is not a finding: the dictionary is from 2016 and books are not.
     expect(phrases("Резкий вздрог подчеркнул его слова.")).toEqual([]);
+  });
+});
+
+describe("proposeAgreementFixes", () => {
+  it("derives the correction and keeps the original capitalisation", () => {
+    expect(proposeAgreementFixes("Резкий встряска подчеркнула его слова.", morph)).toEqual([
+      { phrase: "Резкий встряска", replacement: "Резкая встряска", kind: "adjective_noun" },
+    ]);
+  });
+
+  it("corrects a numeral by swapping the only other form it has", () => {
+    expect(
+      proposeAgreementFixes("Два отвратительных горгульи охраняли дверь.", morph)[0],
+    ).toMatchObject({ replacement: "Две отвратительных горгульи" });
+  });
+
+  it("proposes nothing when the paradigm has no such form", () => {
+    // «Резкий» inflects; a word whose form is missing is left to a human rather than guessed.
+    const [finding] = findAgreementErrors("Бледный встряска ждала его.", morph);
+    expect(finding?.phrase).toBe("Бледный встряска");
+    expect(proposeAgreementFixes("Бледный встряска ждала его.", morph)).toEqual([]);
   });
 });
 

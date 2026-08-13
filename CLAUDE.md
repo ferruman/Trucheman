@@ -37,6 +37,7 @@ Paid evaluation runs (need real credentials in `.env.local`):
 npm run eval:literary -- --limit 3 --model deepseek-v4-pro --prompt-version literary-v3.2.1
 npm run eval:literary -- --provider deterministic     # free; exercises corpus/scoring only
 npm run audit:epub -- path/to/book.epub               # consistency audit of an existing EPUB
+npm run fix:agreement -- data/jobs/<id>               # free; lists Russian agreement corrections, applies by number
 npm run trace:segment -- data/jobs/<id> <segment-id>  # free; one block's source→draft→edit→audit→repair→final
 npm run report:models                                 # free; cost and quality per model, read from finished jobs
 ```

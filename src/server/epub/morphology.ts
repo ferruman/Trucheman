@@ -17,9 +17,16 @@ export type AgreementFinding = {
   kind: "adjective_noun" | "numeral_gender";
 };
 
+/** A correction the dictionary can derive on its own, for a human to accept or reject. */
+export type AgreementFix = AgreementFinding & { replacement: string };
+
 /** One parse of one word, reduced to what agreement needs. */
 type Grammemes = { gender: string; number: string; case: string };
-type Parse = { tag: Record<string, boolean> & { toString(): string }; score: number };
+type Parse = {
+  tag: Record<string, boolean> & { toString(): string };
+  score: number;
+  inflect?: (grammemes: string[]) => { toString(): string } | undefined;
+};
 type Morph = ((word: string) => Parse[] | undefined) & {
   init: (path: string, done: (error?: Error) => void) => void;
 };
@@ -131,6 +138,54 @@ export function findAgreementErrors(text: string, morph: Morph): AgreementFindin
   return findings;
 }
 
+function matchCase(source: string, replacement: string) {
+  return /\p{Lu}/u.test(source[0] ?? "")
+    ? replacement[0].toLocaleUpperCase() + replacement.slice(1)
+    : replacement;
+}
+
+/**
+ * The correction for a finding, when the dictionary can derive one without guessing — which is
+ * a stricter bar than reporting it. A report costs a glance; a wrong correction edits the book.
+ *
+ * So: the noun must give one unambiguous target form, the adjective must inflect into it, and
+ * the result must be the same word with a different ending. Everything else is left to a human,
+ * which is also why nothing here runs inside the pipeline.
+ */
+export function proposeAgreementFixes(text: string, morph: Morph): AgreementFix[] {
+  const fixes: AgreementFix[] = [];
+  for (const finding of findAgreementErrors(text, morph)) {
+    const words = finding.phrase.split(" ");
+    if (finding.kind === "numeral_gender") {
+      // The noun's gender is the evidence and the numeral has exactly two forms.
+      const swapped = words[0].toLocaleLowerCase() === "два" ? "две" : "два";
+      fixes.push({
+        ...finding,
+        replacement: [matchCase(words[0], swapped), ...words.slice(1)].join(" "),
+      });
+      continue;
+    }
+    const [adjective, noun] = words;
+    const nounForms = (morph(noun) ?? []).filter((parse) => parse.tag.NOUN).map(grammemes);
+    const adjectiveParses = (morph(adjective) ?? []).filter((parse) => parse.tag.ADJF);
+    const cases = new Set(adjectiveParses.map((parse) => grammemes(parse).case));
+    const target = nounForms.filter((form) => cases.has(form.case));
+    // Two readings of the noun are two different corrections; a human picks, not this.
+    const unique = new Set(target.map((form) => `${form.gender}/${form.number}/${form.case}`));
+    if (unique.size !== 1) continue;
+    const [{ gender, number, case: grammaticalCase }] = target;
+    const inflected = adjectiveParses
+      .map((parse) => parse.inflect?.([gender, number, grammaticalCase])?.toString())
+      .find((form): form is string => Boolean(form));
+    // The same word in another form, not another word: an analyzer that hands back an
+    // unrelated lemma must not silently rewrite the book.
+    if (!inflected || inflected.slice(0, 3) !== adjective.toLocaleLowerCase().slice(0, 3)) continue;
+    const replacement = `${matchCase(adjective, inflected)} ${noun}`;
+    if (replacement !== finding.phrase) fixes.push({ ...finding, replacement });
+  }
+  return fixes;
+}
+
 let loading: Promise<Morph | undefined> | undefined;
 
 /**
@@ -157,4 +212,9 @@ export async function loadMorphology(): Promise<Morph | undefined> {
 export async function agreementFindings(text: string): Promise<AgreementFinding[]> {
   const morph = await loadMorphology();
   return morph ? findAgreementErrors(text, morph) : [];
+}
+
+export async function agreementFixes(text: string): Promise<AgreementFix[]> {
+  const morph = await loadMorphology();
+  return morph ? proposeAgreementFixes(text, morph) : [];
 }
