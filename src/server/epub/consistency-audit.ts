@@ -5,6 +5,7 @@ import { extractEpub } from "./extract.js";
 import { parseContainer, parsePackage } from "./package-parser.js";
 import { resolveEpubPath } from "./validate.js";
 import { localName, parseXml } from "./xml-dom.js";
+import { agreementFindings, type AgreementFinding } from "./morphology.js";
 
 type AuditDocument = {
   id: string;
@@ -211,6 +212,8 @@ export function analyzeEpubConsistency(
   packageLanguage: string | undefined,
   expectedLanguage = "ru",
   tocLabels: string[] = [],
+  /** From `morphology.ts`, which needs an optional package and an async load of its own. */
+  agreement: AgreementFinding[] = [],
 ) {
   const text = documents.map((document) => document.text).join("\n");
   const quoteDocuments = documents.map((document) => ({
@@ -274,6 +277,12 @@ export function analyzeEpubConsistency(
     warnings.push("Possible ё drift: a 4000-character Russian window contains no ё");
   const clusters = nameClusters(text);
   if (clusters.length) warnings.push(`${clusters.length} possible capitalized-name cluster(s)`);
+  for (const finding of agreement)
+    warnings.push(
+      finding.kind === "numeral_gender"
+        ? `Numeral disagrees with its noun: "${finding.phrase}"`
+        : `Adjective disagrees with its noun: "${finding.phrase}"`,
+    );
   const emptyDocuments = documents.filter((document) => !document.text.trim()).map((d) => d.id);
   for (const id of emptyDocuments) warnings.push(`${id}: translated document is empty`);
   const duplicates = documents.flatMap((document) =>
@@ -306,6 +315,7 @@ export function analyzeEpubConsistency(
       quotes: quoteDocuments,
       yo: { documents: yoDocuments, windows: yoWindows },
       capitalizedNameClusters: clusters,
+      agreement,
       duplicatedFragments: duplicates,
       emptyDocuments,
       tableOfContents: toc,
@@ -349,7 +359,11 @@ export async function auditExtractedEpub(root: string, expectedLanguage = "ru") 
       xmlLang: html.getAttribute("xml:lang") ?? undefined,
     });
   }
-  return analyzeEpubConsistency(documents, pkg.language, expectedLanguage, tocLabels);
+  // The whole book as one text: the analyzer's dictionaries cost more to load than to run.
+  const agreement = expectedLanguage.toLocaleLowerCase().startsWith("ru")
+    ? await agreementFindings(documents.map((document) => document.text).join("\n"))
+    : [];
+  return analyzeEpubConsistency(documents, pkg.language, expectedLanguage, tocLabels, agreement);
 }
 
 export async function auditEpubArchive(archivePath: string, expectedLanguage = "ru") {
