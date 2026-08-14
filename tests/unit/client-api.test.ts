@@ -66,4 +66,21 @@ describe("client API", () => {
       expect.objectContaining({ method: "DELETE" }),
     );
   });
+
+  it("requests an isolated EPUB repair for the requested job", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ accepted: true }), {
+        status: 202,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await jobActions.repairEpub("job-1");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/jobs/job-1/repair-epub",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
 });

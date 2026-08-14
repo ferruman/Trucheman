@@ -13,7 +13,11 @@ import {
 import { parseXml, serializeXml } from "../epub/xml-dom.js";
 import { buildEpub } from "../epub/build.js";
 import { auditEpubArchive } from "../epub/consistency-audit.js";
-import { epubCheckErrors, runOptionalEpubCheck } from "../epub/epubcheck.js";
+import {
+  epubCheckErrors,
+  persistEpubCheckResult,
+  runOptionalEpubCheck,
+} from "../epub/epubcheck.js";
 import { resolveEpubPath, validateEpubArchive } from "../epub/validate.js";
 import { updateContentLanguage, updatePackageLanguage } from "../epub/localization.js";
 import type { LanguageModelProvider } from "../providers/provider.js";
@@ -379,8 +383,8 @@ export async function runPreparedBook(
     // and that refusal is not an ERROR line, so pointing it at the `.tmp` silently passed.
     // A minute is enough for a novel; a hang must not hold the job at 99%.
     const epubCheck = await runOptionalEpubCheck(output, 120000);
+    await persistEpubCheckResult(root, epubCheck);
     if (!epubCheck.ok) {
-      await writeFile(join(root, "epubcheck.txt"), epubCheck.output);
       report.warnings.push(...epubCheckErrors(epubCheck.output));
     }
     // The book is built, but a failed consistency pass means it shipped unresolved name

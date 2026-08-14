@@ -15,7 +15,24 @@ export function jobResultsRouter(_repo: JobRepository, orchestrator: JobOrchestr
   r.post("/:id/rebuild", async (req, res) => {
     try {
       const result = await orchestrator.rebuild(req.params.id);
-      res.status(202).json({ job: toJobView(result.job), validation: result.validation });
+      res.status(202).json({
+        job: toJobView(result.job),
+        validation: result.validation,
+        epubCheck: result.epubCheck,
+      });
+    } catch (error) {
+      problemResponse(res, error, req);
+    }
+  });
+  r.post("/:id/repair-epub", async (req, res) => {
+    try {
+      const result = await orchestrator.repairEpub(req.params.id);
+      res.status(202).json({
+        job: toJobView(result.job),
+        validation: result.validation,
+        epubCheck: result.epubCheck,
+        repair: result.repair,
+      });
     } catch (error) {
       problemResponse(res, error, req);
     }

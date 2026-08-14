@@ -579,6 +579,72 @@ dd {
   margin-top: 1.25rem;
 }
 
+.epubcheck-section {
+  border-bottom: 1px solid var(--border);
+}
+.epubcheck-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.epubcheck-heading h3,
+.epubcheck-heading p {
+  margin: 0.2rem 0 0;
+}
+.epubcheck-heading p {
+  color: var(--muted);
+  font: 0.75rem/1.5 var(--mono);
+}
+.epubcheck-section.has-errors .epubcheck-heading p {
+  color: var(--warning);
+}
+.epubcheck-guidance,
+.epubcheck-empty,
+.epubcheck-omitted {
+  margin: 0;
+  padding: 0.8rem 1.25rem;
+  color: var(--muted);
+  font: 0.75rem/1.5 var(--mono);
+}
+.epubcheck-guidance {
+  border-bottom: 1px solid var(--warning-border);
+  background: var(--warning-soft);
+  color: var(--text);
+}
+.epubcheck-log {
+  max-height: 24rem;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+  background: var(--canvas);
+}
+.epubcheck-log li {
+  display: grid;
+  grid-template-columns: 4.5rem 5.5rem minmax(0, 1fr);
+  gap: 0.65rem;
+  padding: 0.55rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  font: 0.6875rem/1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+.epubcheck-log strong {
+  text-transform: uppercase;
+}
+.epubcheck-log code {
+  color: var(--accent);
+}
+.epubcheck-error strong,
+.epubcheck-fatal strong {
+  color: var(--danger-text);
+}
+.epubcheck-warning strong {
+  color: var(--warning);
+}
+
 .usage-section {
   border-bottom: 1px solid var(--border);
 }
@@ -1157,6 +1223,16 @@ dialog .actions {
   .usage-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .epubcheck-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .epubcheck-log li {
+    grid-template-columns: 4rem minmax(0, 1fr);
+  }
+  .epubcheck-log span {
+    grid-column: 1 / -1;
   }
   .usage-heading p {
     white-space: normal;

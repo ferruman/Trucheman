@@ -16,12 +16,32 @@ type Props = {
   id: string;
   results?: JobResults;
   error: string;
-  busy: boolean;
+  busyAction: string;
   onRetry: () => void;
   onRebuild: () => void;
+  onRepairEpub: () => void;
 };
 
-export function ResultPage({ id, results, error, busy, onRetry, onRebuild }: Props) {
+function epubCheckSummary(report: NonNullable<JobResults["epubCheck"]>) {
+  if (!report.available) return "Not installed — optional check skipped";
+  if (report.ok && report.counts.warning === 0) return "Passed with no findings";
+  if (report.ok) return `Passed with ${report.counts.warning} warning(s)`;
+  return `${report.counts.fatal + report.counts.error} error(s), ${report.counts.warning} warning(s)`;
+}
+
+export function ResultPage({
+  id,
+  results,
+  error,
+  busyAction,
+  onRetry,
+  onRebuild,
+  onRepairEpub,
+}: Props) {
+  const busy = busyAction !== "";
+  const epubNeedsRepair =
+    results?.epubCheck?.available &&
+    (!results.epubCheck.ok || results.epubCheck.counts.warning > 0);
   return (
     <section className="result-panel" aria-labelledby="result-heading">
       <div className="panel-heading">
@@ -47,6 +67,10 @@ export function ResultPage({ id, results, error, busy, onRetry, onRebuild }: Pro
             <div>
               <dt>Translation statistics</dt>
               <dd>{results.statistics === null ? "Not available" : "Available"}</dd>
+            </div>
+            <div>
+              <dt>EPUB conformance</dt>
+              <dd>{results.epubCheck ? epubCheckSummary(results.epubCheck) : "Not checked yet"}</dd>
             </div>
             {results.quality && (
               <div>
@@ -119,6 +143,44 @@ export function ResultPage({ id, results, error, busy, onRetry, onRebuild }: Pro
               </div>
             )}
           </dl>
+          {results.epubCheck && results.epubCheck.available && (
+            <section
+              className={`epubcheck-section ${results.epubCheck.ok ? "is-valid" : "has-errors"}`}
+              aria-labelledby="epubcheck-heading"
+            >
+              <div className="epubcheck-heading">
+                <div>
+                  <span className="section-label">EPUBCheck</span>
+                  <h3 id="epubcheck-heading">Conformance log</h3>
+                </div>
+                <p role="status">{epubCheckSummary(results.epubCheck)}</p>
+              </div>
+              {!results.epubCheck.ok && (
+                <p className="epubcheck-guidance">
+                  The translated book is still downloadable. Repair works on a separate copy and
+                  keeps the current EPUB unless the rebuilt candidate passes validation.
+                </p>
+              )}
+              {results.epubCheck.messages.length > 0 ? (
+                <ol className="epubcheck-log" aria-label="EPUBCheck findings">
+                  {results.epubCheck.messages.map((message, index) => (
+                    <li className={`epubcheck-${message.level}`} key={`${message.code}:${index}`}>
+                      <strong>{message.level}</strong>
+                      {message.code && <code>{message.code}</code>}
+                      <span>{message.text}</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="epubcheck-empty">No EPUBCheck messages were reported.</p>
+              )}
+              {results.epubCheck.omittedMessages > 0 && (
+                <p className="epubcheck-omitted">
+                  {results.epubCheck.omittedMessages} additional message(s) omitted from this view.
+                </p>
+              )}
+            </section>
+          )}
           <section className="usage-section" aria-labelledby="usage-heading">
             <div className="usage-heading">
               <div>
@@ -189,8 +251,13 @@ export function ResultPage({ id, results, error, busy, onRetry, onRebuild }: Pro
               Download translated EPUB
             </a>
             <button className="secondary" disabled={busy} type="button" onClick={onRebuild}>
-              {busy ? "Rebuilding…" : "Rebuild output"}
+              {busyAction === "rebuild" ? "Rebuilding…" : "Rebuild output"}
             </button>
+            {epubNeedsRepair && (
+              <button disabled={busy} type="button" onClick={onRepairEpub}>
+                {busyAction === "repair EPUB" ? "Repairing EPUB…" : "Repair EPUB"}
+              </button>
+            )}
           </div>
         </>
       )}

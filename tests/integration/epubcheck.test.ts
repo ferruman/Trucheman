@@ -2,7 +2,11 @@ import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { epubCheckErrors, runOptionalEpubCheck } from "../../src/server/epub/epubcheck.js";
+import {
+  epubCheckErrors,
+  parseEpubCheckOutput,
+  runOptionalEpubCheck,
+} from "../../src/server/epub/epubcheck.js";
 import { buildFixtureEpub } from "../fixtures/build-epubs.js";
 
 const workspace = await mkdtemp(join(tmpdir(), "epubcheck-"));
@@ -53,5 +57,23 @@ describe("optional EPUBCheck", () => {
     const capped = epubCheckErrors(many.join("\n"));
     expect(capped).toHaveLength(21);
     expect(capped.at(-1)).toContain("5 further problems");
+  });
+
+  it("exposes stable counts and capped messages for the results screen", () => {
+    const output = [
+      "ERROR(RSC-005): output.epub/chapter.xhtml: bad attribute",
+      "WARNING(PKG-010): output.epub: filename contains spaces",
+      "Messages: 0 fatals / 1 errors / 1 warnings / 0 infos",
+    ].join("\n");
+    expect(parseEpubCheckOutput(output, { processOk: false })).toMatchObject({
+      available: true,
+      ok: false,
+      counts: { fatal: 0, error: 1, warning: 1, info: 0 },
+      messages: [
+        { level: "error", code: "RSC-005" },
+        { level: "warning", code: "PKG-010" },
+      ],
+      omittedMessages: 0,
+    });
   });
 });

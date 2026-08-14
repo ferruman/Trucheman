@@ -180,9 +180,10 @@ export function JobPage({ id }: { id: string }) {
               id={id}
               results={results}
               error={resultsError}
-              busy={busyAction === "rebuild"}
+              busyAction={busyAction}
               onRetry={() => void loadResults()}
               onRebuild={() => void act("rebuild", () => jobActions.rebuild(id))}
+              onRepairEpub={() => void act("repair EPUB", () => jobActions.repairEpub(id))}
             />
           )}
           <StyleProfilePanel id={id} onSaved={() => void refresh()} />

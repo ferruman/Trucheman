@@ -10,6 +10,19 @@ export type StyleProfile = {
 
 export type JobResults = {
   validation: unknown | null;
+  epubCheck: {
+    version: 1;
+    checkedAt: string | null;
+    available: boolean;
+    ok: boolean;
+    counts: { fatal: number; error: number; warning: number; info: number };
+    messages: Array<{
+      level: "fatal" | "error" | "warning" | "info";
+      code: string | null;
+      text: string;
+    }>;
+    omittedMessages: number;
+  } | null;
   statistics: unknown | null;
   quality: {
     auditedSegments: number;
@@ -133,5 +146,7 @@ export const jobActions = {
     }),
   results: (id: string) => request<JobResults>(`/jobs/${id}/results`),
   rebuild: (id: string) => request<AcceptedResponse>(`/jobs/${id}/rebuild`, { method: "POST" }),
+  repairEpub: (id: string) =>
+    request<AcceptedResponse>(`/jobs/${id}/repair-epub`, { method: "POST" }),
   remove: (id: string) => request<void>(`/jobs/${id}`, { method: "DELETE" }),
 };

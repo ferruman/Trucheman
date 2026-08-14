@@ -5,7 +5,14 @@ import type { PersistedJob } from "../domain/job.js";
 import type { InvalidationStage } from "../../shared/domain/job.js";
 import { DomainError } from "../domain/errors.js";
 import { buildEpub } from "../epub/build.js";
+import {
+  persistEpubCheckResult,
+  readEpubCheckReport,
+  runOptionalEpubCheck,
+  type EpubCheckReport,
+} from "../epub/epubcheck.js";
 import { parseContainer } from "../epub/package-parser.js";
+import { createRepairedEpubWorkspace, type EpubRepairSummary } from "../epub/repair.js";
 import { updatePackageLanguage } from "../epub/localization.js";
 import { parseXml, serializeXml } from "../epub/xml-dom.js";
 import {
@@ -54,6 +61,7 @@ type JournalRecord = {
 
 export type JobResults = {
   validation: ValidationReport | null;
+  epubCheck: EpubCheckReport | null;
   usage: UsageReport;
   statistics: {
     translated: number;
@@ -470,10 +478,12 @@ export class JobOrchestrator {
     return profile;
   }
 
-  async rebuild(id: string): Promise<{ job: PersistedJob; validation: ValidationReport }> {
+  async rebuild(
+    id: string,
+  ): Promise<{ job: PersistedJob; validation: ValidationReport; epubCheck: EpubCheckReport }> {
     const job = await this.repo.get(id);
     this.assertMutable(id, job);
-    if (!["completed", "ready", "failed", "paused"].includes(job.status))
+    if (!["completed", "needs_attention", "ready", "failed", "paused"].includes(job.status))
       throw new DomainError(
         "job_not_rebuildable",
         "The job cannot be rebuilt in its current state",
@@ -508,18 +518,87 @@ export class JobOrchestrator {
         );
       await rename(temporary, output);
       await syncParentDirectory(output);
+      const epubCheckResult = await runOptionalEpubCheck(output, 120000);
+      await persistEpubCheckResult(root, epubCheckResult);
       const next: PersistedJob = {
         ...job,
-        status: "completed",
+        status: job.status === "needs_attention" ? "needs_attention" : "completed",
         stage: "complete",
         updatedAt: new Date().toISOString(),
       };
       await this.repo.save(next);
       await writeRunManifest(root, next);
-      await this.emit(id, "rebuilt", "EPUB rebuilt");
-      return { job: next, validation };
+      await this.emit(
+        id,
+        "rebuilt",
+        epubCheckResult.ok ? "EPUB rebuilt and checked" : "EPUB rebuilt; EPUBCheck found problems",
+        { epubCheck: epubCheckResult.counts },
+      );
+      const { output: _output, ...epubCheck } = epubCheckResult;
+      return { job: next, validation, epubCheck };
     } finally {
       await rm(temporary, { force: true });
+    }
+  }
+
+  async repairEpub(id: string): Promise<{
+    job: PersistedJob;
+    validation: ValidationReport;
+    epubCheck: EpubCheckReport;
+    repair: EpubRepairSummary;
+  }> {
+    const job = await this.repo.get(id);
+    this.assertMutable(id, job);
+    if (!["completed", "needs_attention"].includes(job.status) || job.stage !== "complete")
+      throw new DomainError("job_not_repairable", "Only a completed EPUB can be repaired", 409);
+    const root = jobRoot(this.repo.dataDir, id);
+    const staging = join(root, "staging");
+    const repairRoot = join(root, `.epub-repair-${randomUUID()}`);
+    const candidate = join(root, `.epub-repair-${randomUUID()}.epub`);
+    const output = join(root, "output.epub");
+    try {
+      const repair = await createRepairedEpubWorkspace(staging, repairRoot);
+      const builtAt = new Date();
+      const packagePath = parseContainer(
+        await readFile(join(repairRoot, "META-INF", "container.xml"), "utf8"),
+      );
+      const packageFile = resolveEpubPath(repairRoot, packagePath);
+      const packageDom = parseXml(await readFile(packageFile));
+      updatePackageLanguage(packageDom, job.targetLanguage, builtAt);
+      await writeFile(packageFile, serializeXml(packageDom));
+      await buildEpub(repairRoot, candidate, builtAt);
+      const handle = await open(candidate, "r");
+      try {
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      const validation = await validateEpubArchive(candidate);
+      if (!validation.ok)
+        throw new DomainError(
+          "repair_invalid",
+          `Repaired EPUB failed internal validation: ${validation.errors.join(", ")}`,
+          422,
+        );
+      const epubCheckResult = await runOptionalEpubCheck(candidate, 120000);
+      if (epubCheckResult.available && !epubCheckResult.ok)
+        throw new DomainError(
+          "repair_incomplete",
+          `Repair left ${epubCheckResult.counts.fatal + epubCheckResult.counts.error} EPUBCheck error(s); the existing output was kept`,
+          422,
+        );
+      await rename(candidate, output);
+      await syncParentDirectory(output);
+      await persistEpubCheckResult(root, epubCheckResult);
+      const next = { ...job, updatedAt: new Date().toISOString() };
+      await this.repo.save(next);
+      await writeRunManifest(root, next);
+      await this.emit(id, "epub_repaired", "EPUB structure repaired and revalidated", repair);
+      const { output: _output, ...epubCheck } = epubCheckResult;
+      return { job: next, validation, epubCheck, repair };
+    } finally {
+      await rm(repairRoot, { recursive: true, force: true });
+      await rm(candidate, { force: true });
     }
   }
 
@@ -548,6 +627,7 @@ export class JobOrchestrator {
     const consistency = await readJsonReport(join(root, "consistency-report.json"));
     return {
       validation,
+      epubCheck: await readEpubCheckReport(root),
       usage: await readUsageReport(root),
       quality: quality && {
         auditedSegments: count(quality.auditedSegments),
