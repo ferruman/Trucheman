@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { loadSecrets } from "../config/secrets.js";
 import { DeepSeekProvider } from "../providers/deepseek.js";
@@ -22,8 +23,8 @@ function argument(name: string): string | undefined {
   return index >= 0 ? process.argv[index + 1] : undefined;
 }
 
-function timestamp() {
-  return new Date().toISOString().replace(/[:.]/g, "-");
+function runId() {
+  return `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`;
 }
 
 type CandidateResult = {
@@ -159,7 +160,7 @@ async function main() {
   const promptLabel = compare ? promptVersions.join("-vs-") : promptVersions[0];
   const runLabel = [promptLabel, model, thinking].filter(Boolean).join("-");
   const outputPath = resolve(
-    argument("--output") ?? `eval-results/literary-editor/${runLabel}-${timestamp()}.json`,
+    argument("--output") ?? `eval-results/literary-editor/${runLabel}-${runId()}.json`,
   );
 
   const profile: ProviderProfile =
