@@ -5,7 +5,7 @@ import { extractEpub } from "./extract.js";
 import { parseContainer, parsePackage } from "./package-parser.js";
 import { resolveEpubPath } from "./validate.js";
 import { localName, parseXml } from "./xml-dom.js";
-import { agreementFindings, type AgreementFinding } from "./morphology.js";
+import { agreementFixes, type AgreementFinding } from "./morphology.js";
 
 type AuditDocument = {
   id: string;
@@ -27,7 +27,9 @@ const rhetoricalSeparator = /[-–—…]|\.\.\./u;
  * Two sentences, not one fragment: «…проблемами обиды Лилит. Лилит знала лучше» is ordinary
  * prose that happens to name the same person on both sides of a full stop.
  */
-const sentenceBreak = /[.!?]/u;
+// Newlines separate block nodes in the extracted audit text. A heading ending in «ИЗДАНИЙ»
+// followed by a paragraph beginning «Издание…» is not a duplicated fragment.
+const sentenceBreak = /[.!?\r\n]/u;
 
 /** Two words are the same word only if they differ in an ending, not in most of the stem. */
 const MIN_STEM_SHARE = 0.8;
@@ -52,11 +54,11 @@ export function duplicatedFragments(text: string): string[] {
     if (sentenceBreak.test(between)) continue;
     // The same lowercase word twice is emphasis, not corruption: «очень очень», «давай
     // давай», «тихо тихо» are how Russian intensifies — with or without a comma between —
-    // and they outnumbered the real findings 53 to 3. Corruption keeps the case it copied,
-    // so a doubled name («Алерт», «Алерт») still reports, as does the shape a fragmented
-    // reinsertion leaves behind, where the two endings disagree («земле земля»).
-    const capitalized = (word: RegExpExecArray) => /\p{Lu}/u.test(text[word.index ?? 0] ?? "");
-    if (previous[0] === current[0] && !(capitalized(previous) && capitalized(current))) continue;
+    // and they outnumbered the real findings 53 to 3. A doubled name may likewise be a
+    // deliberate vocative ("Danny, Danny" in a production source), so target-only evidence
+    // cannot call identical words corruption. Different endings from fragmented reinsertion
+    // («земле земля») remain actionable.
+    if (previous[0] === current[0]) continue;
     // «друг друга» is one reciprocal pronoun that happens to be spelt as two declined words.
     if (previous[0] === "друг") continue;
     let common = 0;
@@ -276,13 +278,12 @@ export function analyzeEpubConsistency(
   )
     warnings.push("Possible ё drift: a 4000-character Russian window contains no ё");
   const clusters = nameClusters(text);
-  if (clusters.length) warnings.push(`${clusters.length} possible capitalized-name cluster(s)`);
-  for (const finding of agreement)
-    warnings.push(
-      finding.kind === "numeral_gender"
-        ? `Numeral disagrees with its noun: "${finding.phrase}"`
-        : `Adjective disagrees with its noun: "${finding.phrase}"`,
-    );
+  // Fuzzy target-only name clusters are diagnostic evidence, not a warning by themselves.
+  // Inflections and unrelated short names routinely land within two edits of one another.
+  // Morphology is likewise diagnostic. Even when it can derive a replacement, sentence
+  // context may show that the adjective governs this noun or describes a person of another
+  // gender. Keep the candidates and proposed forms in checks for review, but do not inflate
+  // the job's warning count with them.
   const emptyDocuments = documents.filter((document) => !document.text.trim()).map((d) => d.id);
   for (const id of emptyDocuments) warnings.push(`${id}: translated document is empty`);
   const duplicates = documents.flatMap((document) =>
@@ -295,7 +296,9 @@ export function analyzeEpubConsistency(
     warnings.push(`Table of contents entry is corrupted: "${entry.label}"`);
   const emptyTocLabels = tocLabels.filter((label) => !label.trim()).length;
   if (emptyTocLabels) warnings.push(`${emptyTocLabels} empty table-of-contents label(s)`);
-  if (hyphenStreet.length && wordStreet.length)
+  const streetStem = (value: string) => value.toLocaleLowerCase().slice(0, 5);
+  const hyphenStreetStems = new Set(hyphenStreet.map(streetStem));
+  if (wordStreet.some((value) => hyphenStreetStems.has(streetStem(value))))
     warnings.push("Mixed Russian street-name conventions (-стрит and улица + name)");
   if (
     coordinateMatches.some((coordinate) => coordinate.mark !== "′" || !coordinate.canonicalSpacing)
@@ -360,8 +363,11 @@ export async function auditExtractedEpub(root: string, expectedLanguage = "ru") 
     });
   }
   // The whole book as one text: the analyzer's dictionaries cost more to load than to run.
+  // Only surface findings for which the morphology engine can derive one unambiguous fix.
+  // The broader detector remains available for diagnostics, but its dictionary ambiguity
+  // produced mostly false warnings in completed books.
   const agreement = expectedLanguage.toLocaleLowerCase().startsWith("ru")
-    ? await agreementFindings(documents.map((document) => document.text).join("\n"))
+    ? await agreementFixes(documents.map((document) => document.text).join("\n"))
     : [];
   return analyzeEpubConsistency(documents, pkg.language, expectedLanguage, tocLabels, agreement);
 }

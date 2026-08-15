@@ -59,6 +59,9 @@ describe("book pipeline instructions", () => {
     });
     expect(await readFile(join(root, "drafts.ndjson"), "utf8")).toBe(firstDrafts);
     expect(await readFile(join(root, "edits.ndjson"), "utf8")).toBe(firstEdits);
+    expect(JSON.parse(await readFile(join(root, "quality-report.json"), "utf8"))).toMatchObject({
+      scanStage: "post_consistency",
+    });
   });
 
   it("reports this run's warnings, not the previous run's plus this one's", async () => {
@@ -281,5 +284,47 @@ describe("book pipeline instructions", () => {
     expect(outputAudit.warnings).not.toEqual(
       expect.arrayContaining([expect.stringMatching(/language/i)]),
     );
+  });
+
+  it("repairs source-language interference found by the final scan", async () => {
+    vi.stubEnv("BOOK_TRANSLATOR_PROVIDER", "deterministic");
+    const root = await mkdtemp(`${tmpdir()}/book-pipeline-final-repair-`);
+    roots.push(root);
+    await buildFixtureEpub(join(root, "source.epub"));
+    const now = new Date().toISOString();
+    const job: PersistedJob = {
+      version: 1,
+      id: "12345678-1234-4234-8234-123456789012",
+      title: "Book",
+      sourceLanguage: "en",
+      targetLanguage: "ru",
+      status: "ready",
+      stage: "translation",
+      progress: { translated: 0, edited: 0, total: 3, failed: 0 },
+      createdAt: now,
+      updatedAt: now,
+      warnings: 0,
+      documents: [],
+      instructions: "",
+      glossary: [],
+      qualityMode: "standard",
+    };
+    const provider = new FakeProvider((text, mode) => {
+      if (mode === "translation") return "Русский crouched текст";
+      if (mode === "repair") return text.replace(/[A-Za-z]{3,}/g, "перевод");
+      return text;
+    });
+
+    const result = await runPreparedBook(root, job, async () => undefined, undefined, false, {
+      provider,
+      useExternal: false,
+    });
+
+    expect(result.degraded).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/final correctness scan/)]),
+    );
+    const report = JSON.parse(await readFile(join(root, "quality-report.json"), "utf8"));
+    expect(report.postConsistencyRepair).toMatchObject({ attempted: 4, changed: 4, rejected: 0 });
+    expect(report.scan.defectsByKind.source_interference).toBe(0);
   });
 });

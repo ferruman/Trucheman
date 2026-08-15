@@ -50,10 +50,134 @@ const nonActionableReasonPatterns = [
   /не стоит (?:это )?отмечать/iu,
   /низк\p{L}* уверенн\p{L}*/iu,
   /(?:это|вариант|форма|склонение) (?:полностью )?(?:корректн\p{L}*|допустим\p{L}*)/iu,
+  /перевод (?:в данном сегменте )?верен/iu,
+  /основани(?:й|я) для исправления нет/iu,
+  /изменени\p{L}*[^.!?]{0,80}(?:противоречит|является ошибк)/iu,
+  /не буду (?:включать|отмечать)[^.!?]{0,80}(?:сомнительн|замечани)/iu,
+  /(?:я )?не уверен/iu,
+  /требуется уточнение/iu,
 ];
 
-export function isActionableQualityIssue(issue: QualityIssue): boolean {
-  return !nonActionableReasonPatterns.some((pattern) => pattern.test(issue.reason));
+function reasonContradictsEvidence(
+  issue: QualityIssue,
+  input?: ProviderAuditInputSegment,
+): boolean {
+  const reason = issue.reason;
+  const quotedForms = [...reason.matchAll(/[«“"]([^»”"]+)[»”"]/gu)].map((match) =>
+    match[1].trim().toLocaleLowerCase(),
+  );
+  if (new Set(quotedForms).size < quotedForms.length) return true;
+  if (
+    issue.type === "semantic_error" &&
+    issue.severity === "high" &&
+    /перевод (?:в целом |основн\p{L}* )?(?:сохраняет|передаёт) (?:смысл|значение)/iu.test(reason)
+  )
+    return true;
+  // The critic sometimes describes punctuation as outside the guillemets while copying a
+  // span that visibly has it inside. Trust the exact span, not that explanation.
+  if (
+    /(?:после|снаружи|outside|after)[^.!?]{0,50}(?:кавыч|quote)/iu.test(reason) &&
+    /[.!?…]»$/u.test(issue.span)
+  )
+    return true;
+  // A proposed "correct" form that is already the reported span asks repair to make no change.
+  for (const match of reason.matchAll(
+    /(?:правильн\p{L}*|корректн\p{L}*|следует|требу\p{L}*|предписыва\p{L}*)[^«»]{0,100}«([^»]+)»/giu,
+  )) {
+    if (issue.span.includes(match[1])) return true;
+  }
+  // Russian terminal full stops normally follow the closing guillemet. The critic repeatedly
+  // demanded English placement while copying a span that already followed the Russian rule.
+  if (
+    /(?:точк|period|full stop)[^.!?]{0,100}(?:внутри|перед закрыва|inside|before the closing)/iu.test(
+      reason,
+    ) &&
+    /»\.$/u.test(issue.span)
+  )
+    return true;
+  // A claimed missing word that is visibly present in the critic's own exact span is a
+  // self-contradiction, not a repair request.
+  for (const match of reason.matchAll(
+    /(?:отсутствует|пропущено|пропущен)\s+(?:слово\s+)?["'“«]([^"'”»]+)["'”»]/giu,
+  )) {
+    if (issue.span.toLocaleLowerCase().includes(match[1].toLocaleLowerCase())) return true;
+  }
+  // Russian typography requires a space after the dialogue dash. Reject the recurring
+  // critic hallucination that asks to remove it from an already correct `— Реплика` span.
+  if (
+    /тире без пробела|no space after (?:the )?dash/iu.test(reason) &&
+    /—\s+\p{L}/u.test(issue.span)
+  )
+    return true;
+  // A dialogue line beginning with a dash does not need quotation marks. Likewise, Russian
+  // direct speech after authorial words is conventionally introduced by `: —`.
+  if (
+    /^—\s/u.test(issue.span) &&
+    /(?:не хватает|отсутствует|требу\p{L}*)[^.!?]{0,50}(?:кавыч|closing quote)/iu.test(reason)
+  )
+    return true;
+  if (
+    /:\s+—/u.test(issue.span) &&
+    /(?:неверн|некоррект|наруш)[^.!?]{0,80}(?:двоеточ|тире)|(?:двоеточ|тире)[^.!?]{0,80}(?:неверн|некоррект|наруш)/iu.test(
+      reason,
+    )
+  )
+    return true;
+  if (
+    /дефис[^.!?]{0,50}(?:опущен|отсутствует)|(?:опущен|отсутствует)[^.!?]{0,50}дефис/iu.test(
+      reason,
+    ) &&
+    issue.span.includes("-")
+  )
+    return true;
+  if (
+    /(?:объедин|слит|merge)[^.!?]{0,80}(?:запят|comma)/iu.test(reason) &&
+    /[.!?…]$/u.test(issue.span)
+  )
+    return true;
+  if (!input) return false;
+  // Roman-numeral headings are intentionally language-neutral.
+  if (
+    input.original.trim() === input.editedTranslation.trim() &&
+    /^(?=[IVXLCDM]+$)M{0,4}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})$/u.test(
+      input.original.trim(),
+    )
+  )
+    return true;
+  // "Missing negation" is a high-risk semantic claim. Require the reason to quote the exact
+  // negative source phrase: a negation elsewhere in a long segment is not evidence for it.
+  if (
+    /(?:опущен\p{L}* отрицан|missing (?:a |the )?negation)/iu.test(reason) &&
+    /[A-Za-z]/u.test(input.original)
+  ) {
+    const source = input.original.toLocaleLowerCase();
+    const citedNegativeSource = [...reason.matchAll(/["“«]([^"”»]{2,160})["”»]/gu)].some(
+      ([, quote]) =>
+        /\b(?:no|not|never|neither|nor|nothing|nobody|nowhere|without)\b|n['’]t\b/iu.test(quote) &&
+        source.includes(quote.toLocaleLowerCase()),
+    );
+    if (!citedNegativeSource) return true;
+  }
+  // A source word deliberately preserved as the entire contents of target-language quotes
+  // is a sign, title, label, or cited expression—not an accidentally untranslated word.
+  if (
+    issue.type === "source_language_interference" &&
+    input.original.toLocaleLowerCase().includes(issue.span.toLocaleLowerCase()) &&
+    (input.editedTranslation.includes(`«${issue.span}»`) ||
+      input.editedTranslation.includes(`“${issue.span}”`))
+  )
+    return true;
+  return false;
+}
+
+export function isActionableQualityIssue(
+  issue: QualityIssue,
+  input?: ProviderAuditInputSegment,
+): boolean {
+  return (
+    !nonActionableReasonPatterns.some((pattern) => pattern.test(issue.reason)) &&
+    !reasonContradictsEvidence(issue, input)
+  );
 }
 
 export function buildQualityAuditSegments(
@@ -110,9 +234,10 @@ export function parseQualityFindings(
           parsed.data.auditError === "malformed_json" ? "malformed_json" : "invalid_issues",
       };
     }
-    const edited = inputById.get(segment.id)?.editedTranslation ?? "";
+    const input = inputById.get(segment.id);
+    const edited = input?.editedTranslation ?? "";
     const issues = parsed.data.issues.filter(
-      (issue) => edited.includes(issue.span) && isActionableQualityIssue(issue),
+      (issue) => edited.includes(issue.span) && isActionableQualityIssue(issue, input),
     );
     return {
       id: segment.id,
@@ -169,6 +294,9 @@ function adjacentStemRepetitions(text: string): number {
     const current = words[index];
     const between = text.slice(previous.index + previous.value.length, current.index);
     if (/[\p{L}\p{N}]/u.test(between)) continue;
+    // «Пустая, пустее некуда» is an adjective followed by its comparative, not a fragment
+    // duplicated by repair.
+    if (/(?:ее|ей)$/u.test(current.value)) continue;
     if (commonPrefixLength(previous.value, current.value) >= 4) count++;
   }
   return count;

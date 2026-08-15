@@ -26,7 +26,7 @@ describe("EPUB structural repair", () => {
     );
     await writeFile(
       join(source, "OEBPS", "Text", "[Bad] File (v1).xhtml"),
-      `<html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml"><body><a id="chapter" name="chapter"></a><p>[Bad] File (v1).xhtml remains visible</p><br clear="both"/><img border="0" v:shapes="shape1" src="image.jpg"/></body></html>`,
+      `<html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml"><body><a id="chapter" name="chapter"></a><p>[Bad] File (v1).xhtml remains visible</p><p class="outline">Before <h1>Outline</h1><ul><li>Chapter</li></ul> after</p><br clear="both"/><img border="0" v:shapes="shape1" src="image.jpg"/></body></html>`,
     );
     await writeFile(
       join(source, "OEBPS", "Text", "styles.css"),
@@ -42,6 +42,7 @@ describe("EPUB structural repair", () => {
       rewrittenIds: 1,
       removedLegacyAttributes: 5,
       convertedAnchors: 1,
+      restructuredParagraphs: 1,
     });
     await expect(
       access(join(repaired, "OEBPS", "Text", "_Bad_File_v1_.xhtml")),
@@ -58,6 +59,8 @@ describe("EPUB structural repair", () => {
     expect(xhtml).toContain("[Bad] File (v1).xhtml remains visible");
     expect(xhtml).toContain("clear: both");
     expect(xhtml).toContain("border-width: 0px");
+    expect(xhtml).toContain('<p class="outline">Before </p><h1>Outline</h1>');
+    expect(xhtml).toContain('</ul><p class="outline"> after</p>');
     const css = await readFile(join(repaired, "OEBPS", "Text", "styles.css"), "utf8");
     expect(css).toContain('url("cover_image.jpg")');
     expect(css).toContain('content: "cover image.jpg remains visible"');

@@ -77,11 +77,15 @@ export type JobResults = {
   quality: {
     auditedSegments: number;
     flaggedSegments: number;
+    repairedSegments: number;
+    remainingFlaggedSegments: number;
+    unchangedRepairs: number;
     auditErrorSegments: number;
     auditErrorsByKind: { malformed_json: number; invalid_issues: number };
     rejectedRepairs: number;
     /** Deterministic per-segment findings; produced in both quality modes. */
     scanDefectSegments: number;
+    advisoryScanDefectSegments: number;
     scanDefectsByKind: Record<string, number>;
     /** Batches the last run replayed from a checkpoint instead of paying for again. */
     cachedCheckpoints: { translation: number; editing: number; audit: number; repair: number };
@@ -123,6 +127,35 @@ async function readJsonReport(path: string): Promise<Record<string, any> | null>
   } catch {
     return null;
   }
+}
+
+async function hasHardQualityDefects(root: string): Promise<boolean> {
+  const quality = await readJsonReport(join(root, "quality-report.json"));
+  const defects = Array.isArray(quality?.scan?.defects) ? quality.scan.defects : [];
+  if (
+    defects.some(
+      (defect: { kind?: unknown }) =>
+        typeof defect.kind === "string" &&
+        !["source_residue", "missing_numbers"].includes(defect.kind),
+    )
+  )
+    return true;
+  const unresolved = Array.isArray(quality?.unresolvedFindings) ? quality.unresolvedFindings : [];
+  return unresolved.some((finding: { issues?: unknown }) =>
+    Array.isArray(finding.issues)
+      ? finding.issues.some(
+          (issue: { severity?: unknown; type?: unknown }) =>
+            issue.severity === "high" &&
+            (issue.type === "semantic_error" || issue.type === "editor_regression"),
+        )
+      : false,
+  );
+}
+
+async function hasRunAttentionReasons(root: string): Promise<boolean> {
+  if (await hasHardQualityDefects(root)) return true;
+  const consistency = await readJsonReport(join(root, "consistency-report.json"));
+  return Array.isArray(consistency?.errors) && consistency.errors.length > 0;
 }
 
 export class JobOrchestrator {
@@ -520,9 +553,13 @@ export class JobOrchestrator {
       await syncParentDirectory(output);
       const epubCheckResult = await runOptionalEpubCheck(output, 120000);
       await persistEpubCheckResult(root, epubCheckResult);
+      const attentionReasons = await hasRunAttentionReasons(root);
       const next: PersistedJob = {
         ...job,
-        status: job.status === "needs_attention" ? "needs_attention" : "completed",
+        status:
+          attentionReasons || (epubCheckResult.available && !epubCheckResult.ok)
+            ? "needs_attention"
+            : "completed",
         stage: "complete",
         updatedAt: new Date().toISOString(),
       };
@@ -590,7 +627,14 @@ export class JobOrchestrator {
       await rename(candidate, output);
       await syncParentDirectory(output);
       await persistEpubCheckResult(root, epubCheckResult);
-      const next = { ...job, updatedAt: new Date().toISOString() };
+      const next: PersistedJob = {
+        ...job,
+        status:
+          (await hasRunAttentionReasons(root)) || (epubCheckResult.available && !epubCheckResult.ok)
+            ? "needs_attention"
+            : "completed",
+        updatedAt: new Date().toISOString(),
+      };
       await this.repo.save(next);
       await writeRunManifest(root, next);
       await this.emit(id, "epub_repaired", "EPUB structure repaired and revalidated", repair);
@@ -625,13 +669,34 @@ export class JobOrchestrator {
     }
     const quality = await readJsonReport(join(root, "quality-report.json"));
     const consistency = await readJsonReport(join(root, "consistency-report.json"));
+    const legacyScanDefects = Array.isArray(quality?.scan?.defects) ? quality.scan.defects : [];
+    const legacyAdvisoryScanSegments = new Set(
+      legacyScanDefects
+        .filter((defect: { kind?: unknown }) => defect.kind === "source_residue")
+        .map((defect: { id?: unknown }) => defect.id)
+        .filter((id: unknown): id is string => typeof id === "string"),
+    ).size;
+    const flaggedSegments = count(quality?.flaggedSegments);
+    const repairedSegments = count(quality?.repairedSegments);
+    const advisoryScanDefectSegments =
+      quality?.scan?.advisoryDefectSegments === undefined
+        ? legacyAdvisoryScanSegments
+        : count(quality.scan.advisoryDefectSegments);
     return {
       validation,
       epubCheck: await readEpubCheckReport(root),
       usage: await readUsageReport(root),
       quality: quality && {
         auditedSegments: count(quality.auditedSegments),
-        flaggedSegments: count(quality.flaggedSegments),
+        flaggedSegments,
+        repairedSegments,
+        remainingFlaggedSegments:
+          quality.remainingFlaggedSegments === undefined
+            ? Math.max(0, flaggedSegments - repairedSegments)
+            : count(quality.remainingFlaggedSegments),
+        unchangedRepairs: Array.isArray(quality.unrepairedSegments)
+          ? quality.unrepairedSegments.length
+          : count(quality.repairOutcomes?.unchanged),
         auditErrorSegments: count(quality.auditErrorSegments),
         auditErrorsByKind: {
           malformed_json: count(quality.auditErrorsByKind?.malformed_json),
@@ -640,7 +705,11 @@ export class JobOrchestrator {
         rejectedRepairs: Array.isArray(quality.rejectedRepairs)
           ? quality.rejectedRepairs.length
           : 0,
-        scanDefectSegments: count(quality.scan?.defectSegments),
+        scanDefectSegments:
+          quality.scan?.actionableDefectSegments === undefined
+            ? Math.max(0, count(quality.scan?.defectSegments) - advisoryScanDefectSegments)
+            : count(quality.scan.actionableDefectSegments),
+        advisoryScanDefectSegments,
         scanDefectsByKind: quality.scan?.defectsByKind ?? {},
         cachedCheckpoints: {
           translation: count(quality.cachedCheckpoints?.translation),
@@ -755,8 +824,9 @@ export class JobOrchestrator {
           );
         }
       };
+      const root = jobRoot(this.repo.dataDir, id);
       const outcome = await this.runBook(
-        jobRoot(this.repo.dataDir, id),
+        root,
         running,
         (patch) => {
           const applied = pending.then(() => applyPatch(patch));
@@ -771,18 +841,22 @@ export class JobOrchestrator {
       const current = await this.repo.get(id);
       // A book that was built without its consistency pass is finished, not correct.
       const degraded = degradedReasons(outcome);
+      const unresolvedQuality = await hasRunAttentionReasons(root);
       const completed: PersistedJob = {
         ...current,
-        status: degraded.length ? "needs_attention" : "completed",
+        status: degraded.length || unresolvedQuality ? "needs_attention" : "completed",
         stage: "complete",
         currentDocument: undefined,
         updatedAt: new Date().toISOString(),
       };
       await this.repo.save(completed);
       await writeRunManifest(jobRoot(this.repo.dataDir, id), completed);
-      if (degraded.length)
+      if (degraded.length || unresolvedQuality)
         await this.emit(id, "completed_with_warnings", "Translation completed with warnings", {
-          reasons: degraded.map(redact),
+          reasons: [
+            ...degraded.map(redact),
+            ...(unresolvedQuality ? ["Unresolved high-severity quality findings remain"] : []),
+          ],
         });
       else await this.emit(id, "completed", "Translation completed");
     } catch (error) {

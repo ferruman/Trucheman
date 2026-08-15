@@ -59,6 +59,18 @@ describe("text segments", () => {
     expect(units[0].text).toBe("The Emma, he says, and the Emma's crew. Part 5");
   });
 
+  it("rejoins a capital split from the rest of a word by small-caps markup", () => {
+    const d = parseXml(
+      `<html xmlns="http://www.w3.org/1999/xhtml"><body><p>S<small>OSIAS:</small> I<small>S NOT THIS STRANGE?</small> T<small>HEORUS BECOMING A CROW!</small></p><p>X<small>ANTHIAS:</small> N<small>O.</small></p></body></html>`,
+    );
+    const { units } = mergeLogicalBlocks(extractTextSegments(d, "doc"));
+
+    expect(units.map((unit) => unit.text)).toEqual([
+      "SOSIAS: IS NOT THIS STRANGE? THEORUS BECOMING A CROW!",
+      "XANTHIAS: NO.",
+    ]);
+  });
+
   it("never merges across a line break or a nested block", () => {
     const d = parseXml(
       `<html xmlns="http://www.w3.org/1999/xhtml"><body><p><span>First</span><br/><span>Second</span></p><div>Lead<p>Inner</p>Tail</div></body></html>`,

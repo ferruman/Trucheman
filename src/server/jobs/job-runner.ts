@@ -40,6 +40,24 @@ const SEGMENT_DEFECT_KINDS: SegmentDefectKind[] = [
 /** The report is a diagnostic, not a journal; a broken run must not write a 100k-entry file. */
 const MAX_REPORTED_DEFECTS = 500;
 
+export function buildSegmentScanReport(scanDefects: SegmentDefect[]) {
+  const actionable = scanDefects.filter((defect) => defect.kind !== "source_residue");
+  return {
+    defectSegments: new Set(scanDefects.map((defect) => defect.id)).size,
+    actionableDefectSegments: new Set(actionable.map((defect) => defect.id)).size,
+    advisoryDefectSegments: new Set(
+      scanDefects.filter((defect) => defect.kind === "source_residue").map((defect) => defect.id),
+    ).size,
+    defectsByKind: Object.fromEntries(
+      SEGMENT_DEFECT_KINDS.map((kind) => [
+        kind,
+        scanDefects.filter((defect) => defect.kind === kind).length,
+      ]),
+    ),
+    defects: scanDefects.slice(0, MAX_REPORTED_DEFECTS),
+  };
+}
+
 export type RunnerStage = "translation" | "editing" | "audit" | "repair";
 export type RunnerOptions = {
   root: string;
@@ -152,12 +170,11 @@ function throwIfAborted(signal?: AbortSignal) {
  * the untouched English as the translation and finds it excellent. The scan sees it for
  * free, so it joins the critic's findings instead of only reaching the report.
  *
- * Two defect kinds are routed here. `source_residue` is not one of them: it fires on «Project
+ * Three high-confidence shapes are routed here. `source_residue` is not one of them: it fires on «Project
  * Gutenberg», which the licence requires to stay English, on a kept German line and on a band
- * name, and `length_ratio`/`missing_numbers` are heuristics — paying a rewrite to "fix"
- * correct text is worse than reporting it. `source_interference` is the subset the scan can
- * tell apart with certainty: a source word with target-language words on both sides, which
- * the model left behind in a sentence it did translate.
+ * name. Most `length_ratio` findings and all `missing_numbers` findings remain advisory; only
+ * a long block below 55% is treated as truncation. `source_interference` is the subset the scan
+ * can tell apart with certainty: a source word with target-language words on both sides.
  */
 function untranslatedFindings(
   request: ProviderSegment[],
@@ -165,8 +182,17 @@ function untranslatedFindings(
   targetTag: string | undefined,
 ): QualityFinding[] {
   const editedById = new Map(edited.map((segment) => [segment.id, segment.text]));
-  return scanSegments(request, edited, targetTag)
-    .filter((defect) => defect.kind === "untranslated" || defect.kind === "source_interference")
+  const sourceById = new Map(request.map((segment) => [segment.id, segment.text]));
+  const findings = scanSegments(request, edited, targetTag)
+    .filter((defect) => {
+      if (defect.kind === "untranslated" || defect.kind === "source_interference") return true;
+      if (defect.kind !== "length_ratio") return false;
+      const source = sourceById.get(defect.id) ?? "";
+      const translation = editedById.get(defect.id) ?? "";
+      // A long Russian block below 55% of its English source is not ordinary compression.
+      // The production case had silently dropped three of five sentences at 48%.
+      return source.length >= 200 && translation.length / source.length < 0.55;
+    })
     .map((defect) => ({
       id: defect.id,
       rejectedIssues: 0,
@@ -180,14 +206,45 @@ function untranslatedFindings(
                 reason: "The block is identical to the original: it was never translated.",
               },
             ]
-          : (defect.spans ?? []).map((span) => ({
-              span,
-              type: "source_language_interference" as const,
-              severity: "high" as const,
-              reason: `"${span}" is a source-language word left inside a translated sentence.`,
-            })),
+          : defect.kind === "length_ratio"
+            ? [
+                {
+                  span: (editedById.get(defect.id) ?? "").slice(0, 2000),
+                  type: "semantic_error" as const,
+                  severity: "high" as const,
+                  reason:
+                    "The translated block is less than 55% of a long source block; restore the omitted source content.",
+                },
+              ]
+            : (defect.spans ?? []).map((span) => ({
+                span,
+                type: "source_language_interference" as const,
+                severity: "high" as const,
+                reason: `"${span}" is a source-language word left inside a translated sentence.`,
+              })),
     }))
     .filter((finding) => finding.issues.length);
+  const malformedQuotedEndings = edited.flatMap((segment) => {
+    const spans = [...segment.text.matchAll(/«[^»\n]{1,120}»[а-яё]{1,3}(?!\p{L})/giu)].map(
+      (match) => match[0],
+    );
+    return spans.length
+      ? [
+          {
+            id: segment.id,
+            rejectedIssues: 0,
+            issues: spans.map((span) => ({
+              span,
+              type: "unnatural_language" as const,
+              severity: "high" as const,
+              reason:
+                "A Russian case ending was placed outside the closing guillemet; inflect the title inside the quotation or rephrase with a generic noun.",
+            })),
+          },
+        ]
+      : [];
+  });
+  return mergeFindings(findings, malformedQuotedEndings);
 }
 
 /** Critic findings plus the scan's, merged per block so one id never asks for two repairs. */
@@ -459,12 +516,43 @@ export async function runQualityPipeline(
             options.signal,
           );
           repairs = repaired.result.segments;
+          let attempts = repaired.attempts;
+          const warnings = [...repaired.warnings];
+          const repairById = new Map(repairs.map((segment) => [segment.id, segment]));
+          const unchangedInputs = repairSegments.filter(
+            (segment) => repairById.get(segment.id)?.text === segment.editedTranslation,
+          );
+          if (unchangedInputs.length) {
+            // One focused retry is cheaper than shipping a known defect after paying for the
+            // critic and first repair. It sees only the blocks the first call ignored.
+            const retried = await repairBatch(
+              provider,
+              repairProfile,
+              unchangedInputs,
+              { sourceLanguage: options.sourceLanguage, targetLanguage: options.targetLanguage },
+              [
+                instructions,
+                "The previous repair returned these blocks unchanged. Resolve every listed issue with a concrete edit unless the issue is directly contradicted by the source or exact span.",
+              ]
+                .filter(Boolean)
+                .join("\n\n"),
+              options.glossary,
+              options.signal,
+            );
+            attempts += retried.attempts;
+            warnings.push(...retried.warnings);
+            for (const segment of retried.result.segments) repairById.set(segment.id, segment);
+            repairs = repairSegments.flatMap((segment) => {
+              const replacement = repairById.get(segment.id);
+              return replacement ? [replacement] : [];
+            });
+          }
           await appendJournal(`${options.root}/repairs.ndjson`, {
             batchId: batch.id,
             segments: repairs,
             checkpointKey: expectedRepairKey,
-            attempts: repaired.attempts,
-            warnings: repaired.warnings,
+            attempts,
+            warnings,
             profile: repairProfile.name,
           });
         }
@@ -540,29 +628,31 @@ export async function runQualityPipeline(
     const allFindings = qualityFindings.flatMap(({ batchId, findings }) =>
       findings.map((finding) => ({ batchId, ...finding })),
     );
+    const flagged = allFindings.filter((finding) => finding.issues.length);
+    const repairKey = (value: { batchId: string; id: string }) => `${value.batchId}\0${value.id}`;
+    const unresolvedKeys = new Set([
+      ...rejectedRepairs.map(repairKey),
+      ...unrepaired.map(repairKey),
+    ]);
+    const unresolvedFindings = flagged.filter((finding) => unresolvedKeys.has(repairKey(finding)));
     // Written in both quality modes: the deterministic scan is the only per-segment quality
     // signal a standard run produces, and it costs nothing.
     await writeFile(
       `${options.root}/quality-report.json`,
       JSON.stringify(
         {
-          version: 4,
-          scan: {
-            defectSegments: new Set(scanDefects.map((defect) => defect.id)).size,
-            defectsByKind: Object.fromEntries(
-              SEGMENT_DEFECT_KINDS.map((kind) => [
-                kind,
-                scanDefects.filter((defect) => defect.kind === kind).length,
-              ]),
-            ),
-            defects: scanDefects.slice(0, MAX_REPORTED_DEFECTS),
-          },
+          version: 6,
+          scan: buildSegmentScanReport(scanDefects),
           auditedSegments: allFindings.length,
-          flaggedSegments: allFindings.filter((finding) => finding.issues.length).length,
-          repairedSegments:
-            allFindings.filter((finding) => finding.issues.length).length -
-            rejectedRepairs.length -
-            unrepaired.length,
+          /** Initial critic findings, before repair. Kept for historical comparison. */
+          flaggedSegments: flagged.length,
+          repairedSegments: flagged.length - unresolvedKeys.size,
+          remainingFlaggedSegments: unresolvedKeys.size,
+          repairOutcomes: {
+            changed: flagged.length - unresolvedKeys.size,
+            unchanged: unrepaired.length,
+            rejected: rejectedRepairs.length,
+          },
           auditErrorSegments: allFindings.filter((finding) => finding.auditError).length,
           auditErrorsByKind: {
             malformed_json: allFindings.filter((f) => f.auditError === "malformed_json").length,
@@ -571,6 +661,7 @@ export async function runQualityPipeline(
           rejectedIssues: allFindings.reduce((total, finding) => total + finding.rejectedIssues, 0),
           rejectedRepairs,
           unrepairedSegments: unrepaired,
+          unresolvedFindings,
           cachedCheckpoints,
           findings: allFindings.filter((finding) => finding.issues.length || finding.auditError),
         },
@@ -584,6 +675,7 @@ export async function runQualityPipeline(
     edits,
     cachedCheckpoints,
     rejectedRepairs,
+    unrepairedSegments: unrepaired,
     scanDefects,
     qualityAuditErrors: qualityFindings.reduce(
       (total, batch) =>

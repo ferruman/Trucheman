@@ -394,6 +394,8 @@ function replaceCounted(
 export function normalizeRussianConsistencyMechanics(documents: ConsistencyDocument[]) {
   let applied = 0;
   const rules: Array<[RegExp, (...values: string[]) => string]> = [
+    [/«(?:\s*«)+/gu, () => "«"],
+    [/(?:»\s*)+»/gu, () => "»"],
     [
       /(\d{1,3})\s*°\s*(\d{1,2})\s*[′´']/gu,
       (_match, degrees, minutes) => `${degrees}° ${minutes}′`,
@@ -855,11 +857,18 @@ function replaceVariants(documents: ConsistencyDocument[], replacements: Map<str
   let applied = 0;
   for (const document of documents) {
     for (const segment of document.editedSegments) {
-      segment.text = segment.text.replace(pattern, (match) => {
+      segment.text = segment.text.replace(pattern, (match, offset: number, text: string) => {
         const canonical = replacements.get(match);
         if (canonical === undefined) return match;
         applied++;
-        return canonical;
+        // A quoted canonical may replace a name that already sits inside guillemets. Adding
+        // it verbatim produced ««Пип-о-Рама»» throughout a production book.
+        let replacement = canonical;
+        if (replacement.startsWith("«") && text[offset - 1] === "«")
+          replacement = replacement.slice(1);
+        if (replacement.endsWith("»") && text[offset + match.length] === "»")
+          replacement = replacement.slice(0, -1);
+        return replacement;
       });
     }
   }
@@ -1209,7 +1218,7 @@ export async function runConsistencyPass(options: {
   const { documents } = options;
   const glossary = options.glossary.filter(isGlossaryEntry);
   const errors = [...(options.errors ?? [])];
-  const mechanicalApplied =
+  let mechanicalApplied =
     options.mechanics === "russian" ? normalizeRussianConsistencyMechanics(documents) : 0;
   const resolverReport = buildConsistencyReport(documents, glossary);
   let resolution: ConsistencyResolution = {
@@ -1241,6 +1250,11 @@ export async function runConsistencyPass(options: {
   }
   const glossaryAlignment = alignGlossaryVariants(documents, glossary, options.nameEndings);
   const navigationLabels = alignNavigationLabels(documents, options.navigation);
+  // Replacements run after the first mechanics pass and are another possible source of
+  // malformed punctuation. This defensive pass also cleans cached decisions made by older
+  // versions of the resolver.
+  if (options.mechanics === "russian")
+    mechanicalApplied += normalizeRussianConsistencyMechanics(documents);
   const adherence = measureGlossaryAdherence(documents, glossary);
   const ignoredGlossaryEntries = glossaryAdherenceWarnings(adherence);
   const report = buildConsistencyReport(documents, glossary);

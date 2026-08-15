@@ -20,13 +20,16 @@ import {
 } from "../epub/epubcheck.js";
 import { resolveEpubPath, validateEpubArchive } from "../epub/validate.js";
 import { updateContentLanguage, updatePackageLanguage } from "../epub/localization.js";
+import { repairInvalidParagraphNesting } from "../epub/repair.js";
+import { horizontalizePackage, isJapanese, normalizeJapaneseContent } from "../epub/japanese.js";
 import type { LanguageModelProvider } from "../providers/provider.js";
 import { FakeProvider } from "../providers/fake-provider.js";
 import { DeepSeekProvider } from "../providers/deepseek.js";
 import { resolveProfiles } from "../config/profiles.js";
 import { targetLanguageProfile } from "../config/target-language.js";
 import { LANGUAGES } from "../../shared/languages.js";
-import { runQualityPipeline, type RunnerStage } from "./job-runner.js";
+import { buildSegmentScanReport, runQualityPipeline, type RunnerStage } from "./job-runner.js";
+import { scanSegment, type SegmentDefect } from "./segment-scan.js";
 import { UsageTrackingProvider } from "./usage-service.js";
 import type { PersistedJob } from "../domain/job.js";
 import { atomicJson, syncParentDirectory } from "../storage/atomic-file.js";
@@ -39,6 +42,13 @@ import {
 } from "./consistency-service.js";
 import { formatStyleProfile, resolveStyleProfile } from "./style-profile-service.js";
 import { formatChapterCard, resolveChapterCards } from "./chapter-card-service.js";
+import {
+  applySelectiveRepairs,
+  buildQualityAuditSegments,
+  buildRepairSegments,
+  repairBatch,
+  type QualityFinding,
+} from "./quality-service.js";
 
 export type PreparedDocument = {
   id: string;
@@ -55,6 +65,108 @@ export type PreparedDocument = {
   navigation: "ncx" | "nav" | null;
 };
 export type PreparedBook = { staging: string; packageFile: string; documents: PreparedDocument[] };
+
+async function repairFinalSourceInterference(
+  documents: ConsistencyDocument[],
+  provider: LanguageModelProvider,
+  profile: ReturnType<typeof resolveProfiles>["repair"],
+  sourceLanguage: ReturnType<typeof providerLanguage>,
+  targetLanguage: ReturnType<typeof providerLanguage>,
+  instructions: string,
+  glossary: unknown[],
+  signal?: AbortSignal,
+) {
+  let attempted = 0;
+  let changed = 0;
+  let rejected = 0;
+  let failed = 0;
+  for (const document of documents) {
+    const auditInputs = buildQualityAuditSegments(
+      document.sourceSegments,
+      document.editedSegments,
+      document.editedSegments,
+    );
+    const findings: QualityFinding[] = [];
+    const editedById = new Map(
+      document.editedSegments.map((segment) => [segment.id, segment.text]),
+    );
+    for (const source of document.sourceSegments) {
+      const defects = scanSegment(
+        source.text,
+        editedById.get(source.id) ?? "",
+        source.id,
+        targetLanguage.tag,
+      ).filter((defect) => defect.kind === "source_interference" || defect.kind === "untranslated");
+      if (!defects.length) continue;
+      findings.push({
+        id: source.id,
+        rejectedIssues: 0,
+        issues: defects.flatMap((defect) =>
+          (defect.spans ?? [editedById.get(source.id) ?? ""]).map((span) => ({
+            span,
+            type: "source_language_interference" as const,
+            severity: "high" as const,
+            reason:
+              defect.kind === "untranslated"
+                ? "The final block is still in the source language. Translate it completely."
+                : `The source-language word "${span}" remains inside the final translation. Translate it.`,
+          })),
+        ),
+      });
+    }
+    const inputs = buildRepairSegments(auditInputs, findings);
+    if (!inputs.length) continue;
+    attempted += inputs.length;
+    try {
+      const first = await repairBatch(
+        provider,
+        profile,
+        inputs,
+        { sourceLanguage, targetLanguage },
+        [
+          instructions,
+          "This is the final correctness gate. Replace every listed source-language residue; do not return a flagged block unchanged.",
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+        glossary,
+        signal,
+      );
+      let repairs = first.result.segments;
+      const repairById = new Map(repairs.map((segment) => [segment.id, segment]));
+      const unchanged = inputs.filter(
+        (input) => repairById.get(input.id)?.text === input.editedTranslation,
+      );
+      if (unchanged.length) {
+        const retry = await repairBatch(
+          provider,
+          profile,
+          unchanged,
+          { sourceLanguage, targetLanguage },
+          "Translate the exact flagged source-language spans now. Return a concretely changed target-language block for every input.",
+          glossary,
+          signal,
+        );
+        for (const segment of retry.result.segments) repairById.set(segment.id, segment);
+        repairs = inputs.flatMap((input) => {
+          const replacement = repairById.get(input.id);
+          return replacement ? [replacement] : [];
+        });
+      }
+      const before = new Map(document.editedSegments.map((segment) => [segment.id, segment.text]));
+      const reviewed = applySelectiveRepairs(document.editedSegments, repairs, inputs);
+      document.editedSegments = reviewed.segments;
+      rejected += reviewed.rejected.length;
+      changed += reviewed.segments.filter(
+        (segment) => before.get(segment.id) !== segment.text,
+      ).length;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      failed += inputs.length;
+    }
+  }
+  return { attempted, changed, rejected, failed };
+}
 
 export function providerLanguage(tag: string) {
   const language = LANGUAGES.find((candidate) => candidate.tag === tag);
@@ -85,7 +197,9 @@ export async function prepareBook(root: string): Promise<PreparedBook> {
     if (!item || !/(xhtml|html|x-dtbncx)/i.test(item.mediaType)) continue;
     const path = resolveEpubPath(staging, item.href, posix.dirname(packagePath));
     const documentId = `document-${index + 1}`;
-    const segments = extractTextSegments(parseXml(await readFile(path)), documentId);
+    const dom = parseXml(await readFile(path));
+    if (repairInvalidParagraphNesting(dom)) await writeFile(path, serializeXml(dom));
+    const segments = extractTextSegments(dom, documentId);
     const { units, absorbed } = mergeLogicalBlocks(segments);
     const ncx = /x-dtbncx/i.test(item.mediaType);
     documents.push({
@@ -302,13 +416,6 @@ export async function runPreparedBook(
   // one thing to look at. Every term below is recomputed over the whole book on every run,
   // cached batches included, so this replaces the count rather than adding to it — a resumed
   // run used to report the book's warnings on top of the previous run's, and 48 read as 104.
-  const runWarnings =
-    preflightWarnings +
-    result.qualityAuditErrors +
-    new Set(result.scanDefects.map((defect) => defect.id)).size;
-  if (runWarnings) {
-    await update({ warnings: runWarnings });
-  }
   const consistencyDocuments: ConsistencyDocument[] = prepared.documents.map((document) => ({
     id: document.id,
     sourceSegments: document.units,
@@ -334,13 +441,62 @@ export async function runPreparedBook(
   });
   consistencyErrors.splice(0, consistencyErrors.length, ...consistencyReport.errors);
   await atomicJson(join(root, "consistency-report.json"), consistencyReport);
+  // The consistency resolver is the last model allowed to rewrite book text. Give any
+  // high-confidence source-language leak in that actual final text one focused repair pass;
+  // previously these were detected only after every repair opportunity had already ended.
+  const finalRepair = await repairFinalSourceInterference(
+    consistencyDocuments,
+    provider,
+    repairProfile,
+    sourceLanguage,
+    targetLanguage,
+    instructions,
+    glossary,
+    signal,
+  );
+  // Consistency mutates the text after the quality runner's scan. Scan its actual output so
+  // an introduced quote, omission, or source-language word cannot ship after the last gate.
+  const batchBySegment = new Map(
+    prepared.documents.flatMap((document) =>
+      document.batches.flatMap((batch) => batch.segments.map((segment) => [segment.id, batch.id])),
+    ),
+  );
+  const finalScanDefects: Array<SegmentDefect & { batchId: string }> = [];
+  for (const document of consistencyDocuments) {
+    const edited = new Map(document.editedSegments.map((segment) => [segment.id, segment.text]));
+    for (const source of document.sourceSegments) {
+      for (const defect of scanSegment(
+        source.text,
+        edited.get(source.id) ?? "",
+        source.id,
+        targetLanguage.tag,
+      )) {
+        finalScanDefects.push({ batchId: batchBySegment.get(source.id) ?? document.id, ...defect });
+      }
+    }
+  }
+  const qualityPath = join(root, "quality-report.json");
+  const qualityReport = JSON.parse(await readFile(qualityPath, "utf8"));
+  qualityReport.version = 6;
+  qualityReport.scan = buildSegmentScanReport(finalScanDefects);
+  qualityReport.scanStage = "post_consistency";
+  qualityReport.postConsistencyRepair = finalRepair;
+  await atomicJson(qualityPath, qualityReport);
+  const runWarnings =
+    preflightWarnings +
+    result.qualityAuditErrors +
+    new Set(finalScanDefects.filter((defect) => defect.kind !== "source_residue").map((d) => d.id))
+      .size +
+    new Set(
+      [...result.rejectedRepairs, ...result.unrepairedSegments].map(
+        (item) => `${item.batchId}\0${item.id}`,
+      ),
+    ).size;
   const warningCount =
     consistencyReport.warningCount +
     consistencyReport.errors.length +
     consistencyReport.ignoredGlossaryEntries.length;
-  if (warningCount) {
-    await update({ warnings: runWarnings + warningCount });
-  }
+  await update({ warnings: runWarnings + warningCount });
   for (const document of prepared.documents) {
     const editedDocument = consistencyDocuments.find((candidate) => candidate.id === document.id);
     const values = new Map(
@@ -387,9 +543,21 @@ export async function runPreparedBook(
     if (!epubCheck.ok) {
       report.warnings.push(...epubCheckErrors(epubCheck.output));
     }
-    // The book is built, but a failed consistency pass means it shipped unresolved name
-    // variants. Reporting that as a clean completion is how a 50/50 name split went unseen.
-    return { ...report, degraded: consistencyErrors };
+    // A built file is still downloadable, but it is not a clean completion while the final
+    // correctness scan or an available conformance checker reports a hard defect.
+    const residualDefects = new Set(
+      finalScanDefects
+        .filter((defect) => defect.kind !== "source_residue" && defect.kind !== "missing_numbers")
+        .map((defect) => defect.id),
+    ).size;
+    const degraded = [...consistencyErrors];
+    if (residualDefects)
+      degraded.push(`${residualDefects} segment(s) failed the final correctness scan`);
+    if (epubCheck.available && !epubCheck.ok)
+      degraded.push(
+        `EPUBCheck found ${epubCheck.counts.fatal + epubCheck.counts.error} conformance error(s)`,
+      );
+    return { ...report, degraded };
   } finally {
     await rm(temporary, { force: true });
   }

@@ -252,6 +252,44 @@ describe("job lifecycle orchestration", () => {
     expect(recoveries[1]).toBe(false);
   });
 
+  it("derives outcome and advisory counters from a legacy quality report", async () => {
+    const { repo, job } = await fixture();
+    const root = jobRoot(repo.dataDir, job.id);
+    await mkdir(root, { recursive: true });
+    await writeFile(
+      `${root}/quality-report.json`,
+      JSON.stringify({
+        version: 4,
+        auditedSegments: 1768,
+        flaggedSegments: 107,
+        repairedSegments: 89,
+        rejectedRepairs: [{ batchId: "batch-1", id: "s1" }],
+        unrepairedSegments: Array.from({ length: 17 }, (_, index) => ({
+          batchId: "batch-1",
+          id: `unchanged-${index}`,
+        })),
+        scan: {
+          defectSegments: 5,
+          defects: Array.from({ length: 5 }, (_, index) => ({
+            id: `residue-${index}`,
+            kind: "source_residue",
+          })),
+        },
+      }),
+    );
+
+    const results = await orchestratorFor(repo).results(job.id);
+
+    expect(results.quality).toMatchObject({
+      flaggedSegments: 107,
+      repairedSegments: 89,
+      remainingFlaggedSegments: 18,
+      unchangedRepairs: 17,
+      scanDefectSegments: 0,
+      advisoryScanDefectSegments: 5,
+    });
+  });
+
   it("discards only the stages at or below the invalidation floor", async () => {
     const { repo, job } = await fixture();
     const root = jobRoot(repo.dataDir, job.id);
@@ -351,6 +389,35 @@ describe("job lifecycle orchestration", () => {
     await vi.waitFor(async () => expect((await repo.get(job.id)).status).toBe("completed"), {
       timeout: 5000,
     });
+  });
+
+  it("requires attention when a high semantic critic finding survives repair", async () => {
+    const { repo, job } = await fixture();
+    const root = jobRoot(repo.dataDir, job.id);
+    await mkdir(root, { recursive: true });
+    const orchestrator = orchestratorFor(repo, {
+      runBook: async () => {
+        await writeFile(
+          `${root}/quality-report.json`,
+          JSON.stringify({
+            scan: { defects: [] },
+            unresolvedFindings: [
+              {
+                id: "document-21:aa",
+                issues: [{ type: "semantic_error", severity: "high" }],
+              },
+            ],
+          }),
+        );
+        return { ok: true, degraded: [] };
+      },
+    });
+
+    await orchestrator.start(job.id);
+    await vi.waitFor(async () => expect((await repo.get(job.id)).status).toBe("needs_attention"), {
+      timeout: 5000,
+    });
+    expect((await repo.get(job.id)).stage).toBe("complete");
   });
 
   it("emits a readable, redacted failure event", async () => {

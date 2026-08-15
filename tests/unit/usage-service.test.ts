@@ -142,6 +142,34 @@ describe("model usage tracking", () => {
     expect(await readFile(join(root, "usage.ndjson"), "utf8")).not.toContain("secret");
   });
 
+  it("reports the latest execution without counting an earlier run as retries", async () => {
+    const root = await mkdtemp(join(tmpdir(), "book-usage-rerun-"));
+    roots.push(root);
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        return {
+          segments: request.segments.map((segment) => ({ id: segment.id, text: "ok" })),
+          usage: { promptTokens: 100, completionTokens: 20 },
+        };
+      },
+    };
+    const request: ProviderRequest = {
+      profile: { name: "translator", endpoint: "https://example.test", model: "m" },
+      mode: "translation",
+      sourceLanguage: { tag: "en", name: "English" },
+      targetLanguage: { tag: "ru", name: "Russian" },
+      segments: [{ id: "same-batch", text: "Hello" }],
+    };
+
+    await new UsageTrackingProvider(provider, root, "run-1").complete(request);
+    await new UsageTrackingProvider(provider, root, "run-2").complete(request);
+
+    expect(await readUsageReport(root)).toMatchObject({
+      totals: { requests: 1, logicalOperations: 1, retriedOperations: 0, totalTokens: 120 },
+    });
+    expect((await readFile(join(root, "usage.ndjson"), "utf8")).trim().split("\n")).toHaveLength(2);
+  });
+
   it("counts requests even when a provider omits token usage", () => {
     const report = buildUsageReport([
       record({

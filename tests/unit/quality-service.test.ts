@@ -173,6 +173,15 @@ describe("selective literary quality service", () => {
     expect(result.rejected).toEqual([]);
   });
 
+  it("accepts an adjective followed by its comparative as a repair", () => {
+    expect(
+      reviewRepair(
+        "Жизнь у меня была пустая, дальше некуда.",
+        "Жизнь у меня была пустая, пустее некуда.",
+      ),
+    ).toBeUndefined();
+  });
+
   it("quarantines malformed critic output without sending it to repair", () => {
     const inputs = buildQualityAuditSegments(original, initial, edited);
     const findings = parseQualityFindings(inputs, [{ id: "s1", text: "not json" }]);
@@ -209,6 +218,96 @@ describe("selective literary quality service", () => {
     expect(buildRepairSegments(inputs, findings)).toEqual([]);
   });
 
+  it("rejects self-contradictory production critic findings", () => {
+    const cases = [
+      {
+        span: "«Дан Коу»",
+        reason: "Глоссарий предписывает перевод названия как «Дан Коу».",
+      },
+      {
+        span: "«тридцать восьмой»",
+        reason: "В данном сегменте перевод верен оригиналу.",
+      },
+      {
+        span: "гребаный",
+        reason: "Оснований для исправления нет, кроме стилевого предпочтения.",
+      },
+      {
+        span: "дарованная ему сила",
+        reason: "В тексте отсутствует слово 'сила'.",
+      },
+      {
+        span: "автор сказал: — Смотри!",
+        reason: "После двоеточия требуется тире без пробела.",
+      },
+      {
+        span: "не четвертую",
+        reason: "Я не уверен. Не буду включать сомнительное замечание.",
+      },
+      {
+        span: "Шангри-Ла",
+        reason: "В глоссарии указано «Шангри-Ла», а здесь использовано «Шангри-Ла».",
+      },
+      {
+        span: "— Так ты поможешь мне?",
+        reason: "Не хватает закрывающей кавычки после вопросительного знака.",
+      },
+      {
+        span: "Саяка воскликнула: — Это та самая женщина!",
+        reason: "Сочетание двоеточия и тире некорректно.",
+      },
+      {
+        span: "Идзаёй-кун",
+        reason: "Перед суффиксом опущен дефис.",
+      },
+      {
+        span: "К сожалению.",
+        reason: "Фраза слита с предыдущей через запятую.",
+      },
+    ];
+
+    for (const value of cases) {
+      expect(
+        isActionableQualityIssue({
+          ...value,
+          type: "semantic_error",
+          severity: "medium",
+        }),
+        value.reason,
+      ).toBe(false);
+    }
+  });
+
+  it("rejects a language-neutral Roman-numeral heading", () => {
+    expect(
+      isActionableQualityIssue(
+        {
+          span: "I",
+          type: "context_error",
+          severity: "high",
+          reason: "The chapter heading was left untranslated.",
+        },
+        {
+          id: "heading",
+          original: "I",
+          initialTranslation: "I",
+          editedTranslation: "I",
+        },
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects a high semantic issue whose reason concedes that meaning is preserved", () => {
+    expect(
+      isActionableQualityIssue({
+        span: "из огня да в полымя",
+        type: "semantic_error",
+        severity: "high",
+        reason: "Перевод сохраняет смысл, но кавычки могут быть стилистическим выбором.",
+      }),
+    ).toBe(false);
+  });
+
   it("keeps an actionable reason even when it distinguishes a correct detail", () => {
     const issue = {
       span: "его тёмные крылья",
@@ -219,5 +318,93 @@ describe("selective literary quality service", () => {
     };
 
     expect(isActionableQualityIssue(issue)).toBe(true);
+  });
+
+  it("rejects critic claims contradicted by the exact source or span", () => {
+    const inputs = buildQualityAuditSegments(
+      [
+        {
+          id: "negation",
+          text: "There wasn't anywhere to put it. Stick any worthwhile amount in your mouth and it will kill.",
+        },
+        { id: "quote", text: "They danced below bienvenidos banners." },
+        { id: "punctuation", text: "He asked a question." },
+        { id: "period", text: "He called it a total loss." },
+        { id: "transliteration", text: "It was la Noche de San Lucas." },
+      ],
+      [],
+      [
+        { id: "negation", text: "Засунь дозу в рот — и она убьёт." },
+        { id: "quote", text: "Они танцевали под транспарантами «bienvenidos»." },
+        { id: "punctuation", text: "«Он оставил знак, не так ли?»" },
+        { id: "period", text: "«Полная потеря»." },
+        { id: "transliteration", text: "Это Ла Ночь де Сан-Лукас." },
+      ],
+    );
+    const findings = parseQualityFindings(inputs, [
+      {
+        id: "negation",
+        text: "",
+        issues: [
+          {
+            span: "Засунь дозу в рот",
+            type: "semantic_error",
+            severity: "high",
+            reason: "Опущено отрицание, поэтому смысл изменён на противоположный.",
+          },
+        ],
+      },
+      {
+        id: "quote",
+        text: "",
+        issues: [
+          {
+            span: "bienvenidos",
+            type: "source_language_interference",
+            severity: "high",
+            reason: "Source word was left inside a translated sentence.",
+          },
+        ],
+      },
+      {
+        id: "punctuation",
+        text: "",
+        issues: [
+          {
+            span: "«Он оставил знак, не так ли?»",
+            type: "source_language_interference",
+            severity: "medium",
+            reason: "Вопросительный знак поставлен после закрывающей кавычки.",
+          },
+        ],
+      },
+      {
+        id: "period",
+        text: "",
+        issues: [
+          {
+            span: "«Полная потеря».",
+            type: "semantic_error",
+            severity: "medium",
+            reason: "The period belongs inside the closing guillemet.",
+          },
+        ],
+      },
+      {
+        id: "transliteration",
+        text: "",
+        issues: [
+          {
+            span: "Ла Ночь де Сан-Лукас",
+            type: "source_language_interference",
+            severity: "medium",
+            reason: "Глоссарий требует «Сан», а не смешение испанского и русского.",
+          },
+        ],
+      },
+    ]);
+
+    expect(findings.map((finding) => finding.issues)).toEqual([[], [], [], [], []]);
+    expect(findings.map((finding) => finding.rejectedIssues)).toEqual([1, 1, 1, 1, 1]);
   });
 });

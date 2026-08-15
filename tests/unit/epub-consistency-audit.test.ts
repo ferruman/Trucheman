@@ -22,7 +22,6 @@ describe("EPUB consistency audit", () => {
       expect.arrayContaining([
         expect.stringContaining("unbalanced guillemets"),
         expect.stringContaining("straight double quote"),
-        expect.stringContaining("capitalized-name cluster"),
         expect.stringContaining("street-name conventions"),
         expect.stringContaining("coordinate minute"),
         expect.stringContaining("Package language"),
@@ -91,6 +90,23 @@ describe("EPUB consistency audit", () => {
     expect(report.warnings).toContain('Table of contents entry is corrupted: "Эпилог Эпилог"');
   });
 
+  it("does not treat a heading and the following block as one duplicated fragment", () => {
+    const report = analyzeEpubConsistency(
+      [
+        {
+          id: "copyright",
+          lang: "ru",
+          xmlLang: "ru",
+          text: "ИСТОРИЯ ИЗДАНИЙ\nИздание «Бульвар» / август 1996",
+        },
+      ],
+      "ru",
+      "ru",
+    );
+
+    expect(report.checks.duplicatedFragments).toEqual([]);
+  });
+
   it("keeps a real duplicated name without reporting ordinary Russian word pairs", () => {
     const report = analyzeEpubConsistency(
       [
@@ -128,9 +144,6 @@ describe("EPUB consistency audit", () => {
     );
     const duplicates = report.warnings.filter((warning) => warning.includes("duplicated fragment"));
 
-    expect(duplicates).toEqual([
-      'chapter: duplicated fragment "алерт алерт"',
-      'chapter: duplicated fragment "земле земля"',
-    ]);
+    expect(duplicates).toEqual(['chapter: duplicated fragment "земле земля"']);
   });
 });

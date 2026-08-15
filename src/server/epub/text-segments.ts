@@ -194,11 +194,28 @@ export type LogicalBlocks = {
  */
 const startsNewWord = /^[\p{L}\p{N}(\[{«“„¿¡#$£€]/u;
 
-function joinBlockText(parts: string[]): string {
-  return parts.reduce((joined, part) => {
+function isDecoratedWordContinuation(previous: TextSegment, current: TextSegment): boolean {
+  const left = previous.text.trim();
+  const right = current.text.trim();
+  return (
+    !/\s$/u.test(previous.text) &&
+    !/^\s/u.test(current.text) &&
+    /(?:^|[^\p{L}\p{M}])\p{Lu}$/u.test(left) &&
+    /^\p{Lu}/u.test(right) &&
+    current.format?.split(">").at(-1) === "small"
+  );
+}
+
+function joinBlockText(parts: TextSegment[]): string {
+  return parts.reduce((joined, current, index) => {
+    const part = current.text;
     if (!joined) return part;
-    const spaced = /\s$/u.test(joined) || /^\s/u.test(part) || !startsNewWord.test(part);
-    return spaced ? joined + part : `${joined} ${part}`;
+    const concatenate =
+      /\s$/u.test(joined) ||
+      /^\s/u.test(part) ||
+      !startsNewWord.test(part) ||
+      isDecoratedWordContinuation(parts[index - 1], current);
+    return concatenate ? joined + part : `${joined} ${part}`;
   }, "");
 }
 
@@ -233,7 +250,7 @@ export function mergeLogicalBlocks(segments: TextSegment[]): LogicalBlocks {
     const members = segments.slice(index, end);
     units.push({
       ...first,
-      text: joinBlockText(members.map((member) => member.text)),
+      text: joinBlockText(members),
       trailing: members[members.length - 1].trailing,
     });
     for (const member of members.slice(1)) absorbed.set(member.id, first.id);

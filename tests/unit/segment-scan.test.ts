@@ -152,6 +152,10 @@ describe("scanSegment", () => {
       ["“Wer hat gesiegt!” he cried out.", "— Wer hat gesiegt! — крикнул он."],
       ["Lyle, mein Liebchen, I must ask you", "Лайл, mein Liebchen, я должен просить вас"],
       ["the worst tribute to the Grateful Dead", "худшая дань уважения Grateful Dead в истории"],
+      [
+        "they danced under paper bienvenidos banners",
+        "они танцевали под бумажными транспарантами «bienvenidos» под музыку",
+      ],
     ];
     for (const [source, translation] of preserved) {
       const kinds = scanSegment(source, translation, "s1")
@@ -171,6 +175,20 @@ describe("scanSegment", () => {
     expect(defects.map((defect) => defect.kind)).toEqual(["source_interference"]);
     expect(defects[0].detail).toContain("harbour");
     expect(defects[0].spans).toEqual(["harbour"]);
+    expect(
+      scanSegment(
+        "Ashe Corven was crouching on a narrow cornice.",
+        "Эш Корвен crouched на узком карнизе.",
+        "s2",
+      ),
+    ).toEqual([
+      {
+        id: "s2",
+        kind: "source_interference",
+        detail: "source words left inside the translation: crouched",
+        spans: ["crouched"],
+      },
+    ]);
     // Latin to Latin: a shared word is a name or a cognate, not residue
     expect(kinds("The harbour was quiet.", "Der harbour war ruhig.")).toEqual([]);
     // A capitalized word kept as-is is a name, a brand or a title, and keeping it is right.

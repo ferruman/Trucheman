@@ -3,6 +3,7 @@ export const LANGUAGES = [
   { tag: "ru", name: "Russian" },
   { tag: "de", name: "German" },
   { tag: "pl", name: "Polish" },
+  { tag: "ja", name: "Japanese" },
 ] as const;
 export type LanguageTag = (typeof LANGUAGES)[number]["tag"];
 export function isLanguageTag(value: string): value is LanguageTag {

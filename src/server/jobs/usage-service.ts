@@ -25,6 +25,8 @@ export type UsageRecord = {
   version: 1;
   recordedAt: string;
   callId: string;
+  /** One execution of a job. Prevents a deliberate rerun from looking like a retry. */
+  runId?: string;
   requestId?: string;
   stage: UsageStage;
   operation?: string;
@@ -58,7 +60,7 @@ export type UsageBreakdown = {
 };
 
 export type UsageReport = {
-  version: 1;
+  version: 2;
   generatedAt: string;
   totals: Omit<UsageBreakdown, "stage" | "profile" | "endpoint" | "model">;
   breakdown: UsageBreakdown[];
@@ -75,6 +77,7 @@ function token(value: unknown): number | null {
 function usageRecord(
   request: ProviderRequest,
   response: ProviderResponse,
+  runId: string,
   outcome: UsageOutcome = "ok",
   detail?: string,
 ): UsageRecord {
@@ -93,6 +96,7 @@ function usageRecord(
     detail: detail ? redact(detail).slice(0, 300) : undefined,
     recordedAt: new Date().toISOString(),
     callId: randomUUID(),
+    runId,
     requestId: response.requestId,
     stage: request.mode,
     // Stable across retries of the same batch and distinct between batches, so counting
@@ -183,22 +187,34 @@ export function buildUsageReport(records: UsageRecord[]): UsageReport {
     }),
     emptyNumbers(),
   );
-  return { version: 1, generatedAt: new Date().toISOString(), totals, breakdown };
+  return { version: 2, generatedAt: new Date().toISOString(), totals, breakdown };
 }
 
-export async function readUsageReport(root: string): Promise<UsageReport> {
-  return buildUsageReport(await readJournal<UsageRecord>(join(root, "usage.ndjson")));
+export async function readUsageReport(root: string, runId?: string): Promise<UsageReport> {
+  const records = await readJournal<UsageRecord>(join(root, "usage.ndjson"));
+  // Journals remain an append-only cost history, while the published report describes the
+  // latest execution. Previously a second run doubled tokens and made every reused operation
+  // look like a retry because both executions shared the same operation ids.
+  const selectedRunId =
+    runId ?? [...records].reverse().find((record) => record.runId !== undefined)?.runId;
+  return buildUsageReport(
+    selectedRunId ? records.filter((record) => record.runId === selectedRunId) : records,
+  );
 }
 
 async function recordUsage(
   root: string,
   request: ProviderRequest,
   response: ProviderResponse,
+  runId: string,
   outcome: UsageOutcome = "ok",
   detail?: string,
 ) {
-  await appendJournal(join(root, "usage.ndjson"), usageRecord(request, response, outcome, detail));
-  const report = await readUsageReport(root);
+  await appendJournal(
+    join(root, "usage.ndjson"),
+    usageRecord(request, response, runId, outcome, detail),
+  );
+  const report = await readUsageReport(root, runId);
   await atomicJson(join(root, "usage-report.json"), report);
 }
 
@@ -208,12 +224,13 @@ export class UsageTrackingProvider implements LanguageModelProvider {
   constructor(
     private readonly provider: LanguageModelProvider,
     private readonly root: string,
+    private readonly runId = randomUUID(),
   ) {}
 
   async complete(request: ProviderRequest, signal?: AbortSignal): Promise<ProviderResponse> {
     try {
       const response = await this.provider.complete(request, signal);
-      this.writes = this.writes.then(() => recordUsage(this.root, request, response));
+      this.writes = this.writes.then(() => recordUsage(this.root, request, response, this.runId));
       await this.writes;
       return response;
     } catch (error) {
@@ -232,6 +249,7 @@ export class UsageTrackingProvider implements LanguageModelProvider {
             this.root,
             request,
             { segments: [], usage: error.usage, requestId: error.requestId },
+            this.runId,
             outcome,
             error.message,
           ),

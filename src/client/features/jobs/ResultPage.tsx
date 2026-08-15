@@ -102,6 +102,24 @@ export function ResultPage({
             )}
             {results.quality && results.quality.auditedSegments > 0 && (
               <div>
+                <dt>Literary audit outcome</dt>
+                <dd>
+                  {`${results.quality.flaggedSegments} initially flagged, ${results.quality.repairedSegments} changed, ${results.quality.remainingFlaggedSegments} still unresolved`}
+                  {results.quality.unchangedRepairs > 0 &&
+                    ` (${results.quality.unchangedRepairs} returned unchanged)`}
+                </dd>
+              </div>
+            )}
+            {results.quality && results.quality.advisoryScanDefectSegments > 0 && (
+              <div>
+                <dt>Preserved foreign text</dt>
+                <dd>
+                  {`${results.quality.advisoryScanDefectSegments} segment(s) retained source-script words; review as signs, names, quotations, or established expressions`}
+                </dd>
+              </div>
+            )}
+            {results.quality && results.quality.auditedSegments > 0 && (
+              <div>
                 <dt>Audit failures</dt>
                 <dd>
                   {results.quality.auditErrorSegments === 0

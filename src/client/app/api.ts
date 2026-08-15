@@ -27,11 +27,15 @@ export type JobResults = {
   quality: {
     auditedSegments: number;
     flaggedSegments: number;
+    repairedSegments: number;
+    remainingFlaggedSegments: number;
+    unchangedRepairs: number;
     auditErrorSegments: number;
     auditErrorsByKind: { malformed_json: number; invalid_issues: number };
     rejectedRepairs: number;
     /** Deterministic per-segment findings; produced in both quality modes. */
     scanDefectSegments: number;
+    advisoryScanDefectSegments: number;
     scanDefectsByKind: Record<string, number>;
     /** Batches the last run replayed from a checkpoint instead of paying for again. */
     cachedCheckpoints: { translation: number; editing: number; audit: number; repair: number };

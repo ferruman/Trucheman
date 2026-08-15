@@ -218,14 +218,25 @@ function sourceResidue(source: string, translation: string): string[] {
  * the second kind worth only reporting.
  */
 function isolatedResidue(translation: string, carried: string[]): string[] {
-  if (!carried.length) return [];
   const wanted = new Set(carried.map((word) => word.toLocaleLowerCase()));
-  const words = [...translation.matchAll(/[\p{L}\p{M}]+/gu)].map((match) => match[0]);
-  const cyrillic = (word: string | undefined) => Boolean(word && /\p{Script=Cyrillic}/u.test(word));
+  const words = [...translation.matchAll(/[\p{L}\p{M}]+/gu)];
+  const cyrillic = (word: RegExpExecArray | undefined) =>
+    Boolean(word && /\p{Script=Cyrillic}/u.test(word[0]));
+  const quoted = (word: RegExpExecArray) => {
+    const start = word.index ?? 0;
+    const before = translation.slice(0, start).trimEnd().at(-1);
+    const after = translation.slice(start + word[0].length).trimStart()[0];
+    return (before === "«" && after === "»") || (before === "“" && after === "”");
+  };
   const isolated = new Set<string>();
   for (const [index, word] of words.entries()) {
-    if (!wanted.has(word.toLocaleLowerCase())) continue;
-    if (cyrillic(words[index - 1]) && cyrillic(words[index + 1])) isolated.add(word);
+    const value = word[0];
+    // An inflected leak need not occur verbatim in the source (crouching → crouched). A lone
+    // lowercase Latin word between Cyrillic words is still strong evidence; names and
+    // multi-word foreign expressions remain outside this rule.
+    const sourceShaped = wanted.has(value.toLocaleLowerCase()) || /^[a-z]{4,}$/u.test(value);
+    if (!sourceShaped || quoted(word)) continue;
+    if (cyrillic(words[index - 1]) && cyrillic(words[index + 1])) isolated.add(word[0]);
   }
   return [...isolated];
 }

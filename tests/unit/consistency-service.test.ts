@@ -216,6 +216,26 @@ describe("book-wide consistency", () => {
     expect(buildConsistencyReport(values).documents[0].quotes.balanced).toBe(true);
   });
 
+  it("collapses duplicate guillemets around an already quoted title", () => {
+    const values: ConsistencyDocument[] = [
+      {
+        id: "nested-quotes",
+        sourceSegments: [],
+        editedSegments: [
+          {
+            id: "nested-quotes:0",
+            text: "Он вошёл в ««Пип-о-Рама»». Она читала ««Ад»» Данте.",
+          },
+        ],
+      },
+    ];
+
+    expect(normalizeRussianConsistencyMechanics(values)).toBe(4);
+    expect(values[0].editedSegments[0].text).toBe(
+      "Он вошёл в «Пип-о-Рама». Она читала «Ад» Данте.",
+    );
+  });
+
   it("does not call multi-paragraph direct speech unbalanced", () => {
     const values: ConsistencyDocument[] = [
       {
@@ -262,6 +282,31 @@ describe("book-wide consistency", () => {
     expect(applied).toBe(1);
     expect(values[0].editedSegments[0].text).toContain("Профессор Энджелл");
     expect(values[0].editedSegments[0].text).not.toContain("Канон");
+  });
+
+  it("does not nest a quoted canonical inside existing guillemets", () => {
+    const values: ConsistencyDocument[] = [
+      {
+        id: "quoted-title",
+        sourceSegments: [sourceSegment("quoted-title:0", "He entered the Pip-O-Rama.")],
+        editedSegments: [
+          {
+            id: "quoted-title:0",
+            text: "Он вошёл в «Пип-о-Рама». Затем прочитал «Ад» Данте.",
+          },
+        ],
+      },
+    ];
+
+    const applied = applyConsistencyDecisions(values, [
+      { source: "Pip-O-Rama", canonical: "«Пип-о-Рама»", variants: ["Пип-о-Рама"] },
+      { source: "Inferno", canonical: "«Ад»", variants: ["Ад"] },
+    ]);
+
+    expect(applied).toBe(1);
+    expect(values[0].editedSegments[0].text).toBe(
+      "Он вошёл в «Пип-о-Рама». Затем прочитал «Ад» Данте.",
+    );
   });
 
   it("never lets a decision replace the space around a name", () => {

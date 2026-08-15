@@ -184,15 +184,17 @@ describe("provider prompt contract", () => {
     // The target text is judged on its own before the original is read: a calque matches the
     // original by construction, so checking against it first is how one gets waved through.
     expect(auditPrompt).toContain("Read editedTranslation on its own first");
-    expect(auditPayload.promptVersion).toBe("selective-quality-v4");
+    expect(auditPayload.promptVersion).toBe("selective-quality-v6");
     expect(auditPrompt).toContain("silently try to disprove it");
     expect(auditPrompt).toContain("a correct inflected form is not a glossary inconsistency");
     expect(auditPrompt).toContain("If your analysis says the wording is correct");
+    expect(auditPrompt).toContain("quote the exact source words that carry the negation");
     expect(auditPayload.responseContract.segmentKeys).toEqual(["id", "issues"]);
     // The critic must never be asked to escape a JSON document inside a string again.
     expect(auditPrompt).toContain("never JSON encoded inside a string");
     expect(auditPayload.segments[0]).toEqual(auditSegment);
     expect(repairPrompt).toContain("Fix every listed issue");
+    expect(repairPrompt).toContain("Do not silently ignore a listed issue");
     expect(repairPrompt).toContain("Do not rewrite passages merely to make them different");
     expect(repairPayload.segments[0].issues).toHaveLength(1);
   });

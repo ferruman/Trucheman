@@ -472,9 +472,12 @@ describe("two-pass pipeline", () => {
       auditedSegments: 2,
       flaggedSegments: 1,
       repairedSegments: 1,
+      remainingFlaggedSegments: 0,
+      repairOutcomes: { changed: 1, unchanged: 0, rejected: 0 },
       auditErrorSegments: 1,
       rejectedIssues: 0,
       unrepairedSegments: [],
+      unresolvedFindings: [],
     });
   });
 
@@ -586,8 +589,174 @@ describe("two-pass pipeline", () => {
     expect(report).toMatchObject({
       flaggedSegments: 1,
       repairedSegments: 0,
+      remainingFlaggedSegments: 1,
+      repairOutcomes: { changed: 0, unchanged: 1, rejected: 0 },
       rejectedRepairs: [],
       unrepairedSegments: [{ batchId: "chapter-1-batch-1", id: "chapter-1:0" }],
+      unresolvedFindings: [
+        expect.objectContaining({ batchId: "chapter-1-batch-1", id: "chapter-1:0" }),
+      ],
     });
+  });
+
+  it("retries only blocks that the first repair handed back unchanged", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-retry-noop-repair-`);
+    let repairCalls = 0;
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        if (request.mode === "audit") {
+          return {
+            segments: request.segments.map((input) => ({
+              id: input.id,
+              text: "",
+              issues: [
+                {
+                  span: "crouched",
+                  type: "source_language_interference" as const,
+                  severity: "high" as const,
+                  reason: "An English verb remains in Russian prose.",
+                },
+              ],
+            })),
+          };
+        }
+        if (request.mode === "repair") {
+          repairCalls++;
+          return {
+            segments: request.segments.map((input) => ({
+              id: input.id,
+              text: repairCalls === 1 ? "Эш crouched на карнизе." : "Эш присел на узком карнизе.",
+            })),
+          };
+        }
+        return {
+          segments: request.segments.map((input) => ({
+            id: input.id,
+            text: "Эш crouched на карнизе.",
+          })),
+        };
+      },
+    };
+    const profile = { name: "fake", endpoint: "local", model: "fake" };
+    const result = await runQualityPipeline(
+      [
+        {
+          id: "chapter-1-batch-1",
+          documentId: "chapter-1",
+          segments: [{ ...segment, text: "Ashe was crouching on the ledge." }],
+        },
+      ],
+      provider,
+      {
+        root,
+        translationProfile: profile,
+        editingProfile: profile,
+        qualityMode: "high",
+        ...languages,
+      },
+    );
+
+    expect(repairCalls).toBe(2);
+    expect(result.edits.get("chapter-1-batch-1")?.[0].text).toBe("Эш присел на узком карнизе.");
+    expect(JSON.parse(await readFile(`${root}/quality-report.json`, "utf8"))).toMatchObject({
+      repairedSegments: 1,
+      remainingFlaggedSegments: 0,
+    });
+  });
+
+  it("routes a severe long-block truncation to repair even when the critic misses it", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-truncation-repair-`);
+    const modes: string[] = [];
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        modes.push(request.mode);
+        if (request.mode === "audit") {
+          return {
+            segments: request.segments.map((input) => ({ id: input.id, text: "", issues: [] })),
+          };
+        }
+        return {
+          segments: request.segments.map((input) => ({
+            id: input.id,
+            text:
+              request.mode === "repair"
+                ? "Он посмотрел через улицу, затем снова на собеседника. Рубашка была распахнута, и татуировка хорошо видна. Незнакомец заметил её, улыбнулся и посоветовал не стрелять сгоряча."
+                : "Незнакомец посмотрел и улыбнулся.",
+          })),
+        };
+      },
+    };
+    const profile = { name: "fake", endpoint: "local", model: "fake" };
+    const longSource =
+      "The stranger looked across the street, then looked back at Curve. Curve's shirt was still open and the tattoo was clearly visible. He focused on it and smiled gently. He offered a warning about trying to shoot it away before walking into the building.";
+
+    const result = await runQualityPipeline(
+      [
+        {
+          id: "chapter-1-batch-1",
+          documentId: "chapter-1",
+          segments: [{ ...segment, text: longSource }],
+        },
+      ],
+      provider,
+      {
+        root,
+        translationProfile: profile,
+        editingProfile: profile,
+        qualityMode: "high",
+        ...languages,
+      },
+    );
+
+    expect(modes).toEqual(["translation", "editing", "audit", "repair"]);
+    expect(result.edits.get("chapter-1-batch-1")?.[0].text).toContain("татуировка");
+  });
+
+  it("routes a Russian case ending outside guillemets to repair", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-quoted-ending-repair-`);
+    const modes: string[] = [];
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        modes.push(request.mode);
+        if (request.mode === "audit") {
+          return {
+            segments: request.segments.map((input) => ({ id: input.id, text: "", issues: [] })),
+          };
+        }
+        return {
+          segments: request.segments.map((input) => ({
+            id: input.id,
+            text:
+              request.mode === "repair"
+                ? "Он проводил время в заведении «Пип-о-Рама»."
+                : "Он проводил время в «Пип-о-Рама»е.",
+          })),
+        };
+      },
+    };
+    const profile = { name: "fake", endpoint: "local", model: "fake" };
+
+    const result = await runQualityPipeline(
+      [
+        {
+          id: "chapter-1-batch-1",
+          documentId: "chapter-1",
+          segments: [{ ...segment, text: "He spent his time at the Peep-O-Rama." }],
+        },
+      ],
+      provider,
+      {
+        root,
+        translationProfile: profile,
+        editingProfile: profile,
+        qualityMode: "high",
+        ...languages,
+      },
+    );
+
+    expect(modes).toEqual(["translation", "editing", "audit", "repair"]);
+    expect(result.edits.get("chapter-1-batch-1")?.[0].text).toContain(
+      "в заведении «Пип-о-Рама»",
+    );
   });
 });

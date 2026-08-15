@@ -10,7 +10,7 @@ export const PROMPT_VERSION = "literary-v3.1";
  * per model, so renaming those to signal a rule-text revision would conflate the two axes.
  */
 export const PROMPT_INPUT_VERSION = "structured-v5";
-export const QUALITY_PROMPT_VERSION = "selective-quality-v4";
+export const QUALITY_PROMPT_VERSION = "selective-quality-v6";
 export const PROMPT_VERSIONS = [PROMPT_VERSION, "literary-v3.2.1"] as const;
 export type PromptVersion = (typeof PROMPT_VERSIONS)[number];
 
@@ -152,6 +152,14 @@ Before adding an issue, silently try to disprove it:
 3. If that reading makes the span correct or defensible, or if you are uncertain, output no issue. A glossary target is a lemma and may be inflected naturally; a correct inflected form is not a glossary inconsistency.
 4. If the defect survives, write one concise reason that asserts the defect and why repair is required. Do not include self-correction, alternatives, internal debate, or conclusions such as "not an error", "acceptable", "borderline", or "low confidence".
 
+Evidence rules:
+- Never claim that a negation, word, fact, or clause was omitted unless you can point to that exact element in original. For a missing-negation claim, quote the exact source words that carry the negation in the reason.
+- Foreign-language text intentionally present in original may remain foreign in signs, titles, quotations, names, code-switching, and established expressions. Do not classify it as source-language interference merely because target-language words surround it.
+- Before reporting punctuation, compare the characters in span with the rule you cite. If span already has the punctuation in the required position, output no issue.
+- Apply target-language typography, not English typography. In Russian, a terminal full stop normally follows the closing guillemet («Фраза».); question marks, exclamation marks, and ellipses belonging to the quotation remain inside.
+- In Russian, never append a case ending after the closing guillemet (not «Название»е). Inflect the quoted title inside the guillemets or rephrase with a generic noun.
+- Do not turn a subtle shift of emphasis into a semantic error when the same event, agent, patient, and factual meaning remain clear.
+
 Use high severity only for a demonstrable mistranslation, omission, addition, lost necessary meaning, broken reference, or target-language error that materially changes comprehension. Use medium for a demonstrable but local defect. If neither threshold is met, return no issue.
 
 A segment is one complete logical block — a paragraph, heading, table-of-contents entry, or caption. Judge it as a whole. Never treat a short segment as a defective sentence merely because it is short; headings and list entries are legitimately terse and must not be padded, completed, or expanded.
@@ -162,6 +170,8 @@ Use an empty issues array when no repair is warranted. Do not report low-severit
 Each segment contains the original, initialTranslation, editedTranslation, and a validated list of medium/high issues. Return a corrected final translation.
 
 Fix every listed issue while preserving the editedTranslation everywhere else. Prefer the edited wording whenever it remains faithful, natural, and stylistically appropriate. You may change nearby words only when grammar or coherence requires it. Do not rewrite passages merely to make them different or smoother. A stylistic alternative is not by itself an improvement.
+
+Do not silently ignore a listed issue. Returning editedTranslation unchanged asserts that every supplied issue is contradicted by original or by the quoted span. Otherwise make a concrete correction; when a phrase is semantically incoherent, reconstruct its intended meaning from original rather than preserving it.
 
 A segment is one complete logical block. Return exactly that block, with the same structure and no added, repeated, or completed material. Never append a word already present in the segment, never restate the segment's subject, and never expand a heading or table-of-contents entry into a sentence. If the listed issues cannot be fixed without changing the block's structure, return the editedTranslation unchanged.
 

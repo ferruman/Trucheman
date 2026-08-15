@@ -9,12 +9,41 @@ export type EpubRepairSummary = {
   rewrittenIds: number;
   removedLegacyAttributes: number;
   convertedAnchors: number;
+  restructuredParagraphs: number;
 };
 
 type EntryMapping = { oldPath: string; newPath: string };
 const XML_EXTENSIONS = new Set([".xml", ".opf", ".ncx", ".xhtml", ".html", ".htm", ".svg"]);
 const TEXT_EXTENSIONS = new Set([...XML_EXTENSIONS, ".css"]);
 const RESOURCE_ATTRIBUTES = new Set(["data", "full-path", "href", "poster", "src", "xlink:href"]);
+const PARAGRAPH_BLOCK_ELEMENTS = new Set([
+  "address",
+  "article",
+  "aside",
+  "blockquote",
+  "div",
+  "dl",
+  "fieldset",
+  "figure",
+  "footer",
+  "form",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "header",
+  "hr",
+  "main",
+  "nav",
+  "ol",
+  "p",
+  "pre",
+  "section",
+  "table",
+  "ul",
+]);
 
 function extension(path: string) {
   const match = /\.[^.\/]+$/.exec(path);
@@ -123,6 +152,51 @@ function validXmlId(value: string) {
   return /^[A-Za-z_][A-Za-z0-9._-]*$/.test(value);
 }
 
+function hasParagraphContent(element: Element) {
+  return elements(element).length > 1 || Boolean((element.textContent ?? "").trim());
+}
+
+/**
+ * XHTML follows HTML's content model: a paragraph cannot own headings, lists, tables, or
+ * another block. PDF-derived EPUBs commonly wrap an outline in one giant `<p>`, which XML
+ * parsers accept but EPUBCheck rejects. Split such wrappers while preserving any inline text
+ * before, between, and after their block children.
+ */
+export function repairInvalidParagraphNesting(doc: Document): number {
+  const paragraphs = elements(doc.documentElement!).filter(
+    (element) =>
+      localName(element).toLowerCase() === "p" &&
+      [
+        ...Array.from({ length: element.childNodes.length }, (_, index) =>
+          element.childNodes.item(index),
+        ),
+      ]
+        .filter((child): child is Node => child !== null && child.nodeType === 1)
+        .some((child) => PARAGRAPH_BLOCK_ELEMENTS.has(localName(child).toLowerCase())),
+  );
+  let repaired = 0;
+  for (const paragraph of paragraphs) {
+    const parent = paragraph.parentNode;
+    if (!parent) continue;
+    let inline = paragraph.cloneNode(false) as Element;
+    while (paragraph.firstChild) {
+      const child = paragraph.firstChild;
+      paragraph.removeChild(child);
+      if (child.nodeType === 1 && PARAGRAPH_BLOCK_ELEMENTS.has(localName(child).toLowerCase())) {
+        if (hasParagraphContent(inline)) parent.insertBefore(inline, paragraph);
+        parent.insertBefore(child, paragraph);
+        inline = paragraph.cloneNode(false) as Element;
+      } else {
+        inline.appendChild(child);
+      }
+    }
+    if (hasParagraphContent(inline)) parent.insertBefore(inline, paragraph);
+    parent.removeChild(paragraph);
+    repaired++;
+  }
+  return repaired;
+}
+
 function uniqueId(value: string, used: Set<string>) {
   let base = value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
   if (!/^[A-Za-z_]/.test(base)) base = `id-${base}`;
@@ -145,6 +219,7 @@ function repairXml(doc: Document, summary: EpubRepairSummary) {
 
   const rewritten = new Map<string, string>();
   const isXhtml = localName(root).toLowerCase() === "html";
+  if (isXhtml) summary.restructuredParagraphs += repairInvalidParagraphNesting(doc);
   const isEpub2Package =
     localName(root).toLowerCase() === "package" &&
     !(root.getAttribute("version")?.startsWith("3") ?? false);
@@ -244,6 +319,7 @@ export async function createRepairedEpubWorkspace(
     rewrittenIds: 0,
     removedLegacyAttributes: 0,
     convertedAnchors: 0,
+    restructuredParagraphs: 0,
   };
   for (const document of mappings) {
     if (!TEXT_EXTENSIONS.has(extension(document.newPath))) continue;
