@@ -3,7 +3,13 @@ import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { extractEpub } from "../epub/extract.js";
 import { parseContainer, parsePackage } from "../epub/package-parser.js";
-import { makeBatches, mergeChunkedSegments, type Batch } from "../epub/batcher.js";
+import {
+  batchCharBudget,
+  batchSegmentCap,
+  makeBatches,
+  mergeChunkedSegments,
+  type Batch,
+} from "../epub/batcher.js";
 import {
   extractTextSegments,
   mergeLogicalBlocks,
@@ -64,7 +70,13 @@ export type PreparedDocument = {
   /** Navigation role, if any. The NCX navMap is the authority for TOC labels. */
   navigation: "ncx" | "nav" | null;
 };
-export type PreparedBook = { staging: string; packageFile: string; documents: PreparedDocument[] };
+export type PreparedBook = {
+  staging: string;
+  packageFile: string;
+  documents: PreparedDocument[];
+  /** Written text → its furigana reading, harvested from ruby before it was flattened. */
+  readings?: Record<string, string>;
+};
 
 async function repairFinalSourceInterference(
   documents: ConsistencyDocument[],
@@ -174,7 +186,7 @@ export function providerLanguage(tag: string) {
   return { tag: language.tag, name: language.name };
 }
 
-export async function prepareBook(root: string): Promise<PreparedBook> {
+export async function prepareBook(root: string, sourceLanguage?: string): Promise<PreparedBook> {
   const staging = join(root, "staging");
   await rm(staging, { recursive: true, force: true });
   await mkdir(staging, { recursive: true });
@@ -184,6 +196,15 @@ export async function prepareBook(root: string): Promise<PreparedBook> {
   );
   const packageFile = resolveEpubPath(staging, packagePath);
   const bookPackage = parsePackage(await readFile(packageFile, "utf8"), packagePath);
+  // Japanese books are typeset vertically, page backwards and gloss their kanji. All three are
+  // properties of the original text, not of the translation, so they are undone in staging
+  // before anything is segmented — reinsertion and assembly then need to know nothing about it.
+  const japanese = isJapanese(sourceLanguage);
+  const readings = new Map<string, string>();
+  if (japanese) {
+    const packageDom = parseXml(await readFile(packageFile));
+    if (horizontalizePackage(packageDom)) await writeFile(packageFile, serializeXml(packageDom));
+  }
   const documents: PreparedDocument[] = [];
   const documentIds = [...bookPackage.spine];
   for (const [id, item] of bookPackage.manifest) {
@@ -198,7 +219,9 @@ export async function prepareBook(root: string): Promise<PreparedBook> {
     const path = resolveEpubPath(staging, item.href, posix.dirname(packagePath));
     const documentId = `document-${index + 1}`;
     const dom = parseXml(await readFile(path));
-    if (repairInvalidParagraphNesting(dom)) await writeFile(path, serializeXml(dom));
+    let rewritten = repairInvalidParagraphNesting(dom) > 0;
+    if (japanese) rewritten = normalizeJapaneseContent(dom, readings) || rewritten;
+    if (rewritten) await writeFile(path, serializeXml(dom));
     const segments = extractTextSegments(dom, documentId);
     const { units, absorbed } = mergeLogicalBlocks(segments);
     const ncx = /x-dtbncx/i.test(item.mediaType);
@@ -209,7 +232,7 @@ export async function prepareBook(root: string): Promise<PreparedBook> {
       segments,
       units,
       absorbed: Object.fromEntries(absorbed),
-      batches: makeBatches(units),
+      batches: makeBatches(units, batchCharBudget(sourceLanguage), batchSegmentCap(sourceLanguage)),
       navigation:
         ncx || Boolean(item.properties?.split(/\s+/).includes("nav"))
           ? ncx
@@ -220,7 +243,12 @@ export async function prepareBook(root: string): Promise<PreparedBook> {
   }
   if (!documents.length)
     throw new Error("The EPUB has no eligible reading-order content documents");
-  const prepared = { staging, packageFile, documents };
+  const prepared: PreparedBook = {
+    staging,
+    packageFile,
+    documents,
+    ...(readings.size ? { readings: Object.fromEntries(readings) } : {}),
+  };
   await writeFile(join(root, "prepared.json"), JSON.stringify(prepared));
   return prepared;
 }
@@ -237,7 +265,7 @@ export async function runPreparedBook(
   // Assembly mutates staging documents. Re-extract the source on every run so a
   // retry can safely reuse completed model checkpoints without reinserting into
   // the output of an earlier run.
-  const prepared = await prepareBook(root);
+  const prepared = await prepareBook(root, job.sourceLanguage);
   const batches = prepared.documents.flatMap((document) => document.batches);
   const documentTitles = new Map(
     prepared.documents.map((document) => [document.id, document.title]),
@@ -306,6 +334,7 @@ export async function runPreparedBook(
         signal,
         undefined,
         (done, total) => preflight(`Preflight: glossary ${done}/${total}`),
+        prepared.readings,
       );
       generatedGlossary = registry.entries;
       for (const failure of registry.failedChunks)
@@ -321,6 +350,10 @@ export async function runPreparedBook(
     }
   }
   const glossary = mergeGlossaries(job.glossary, generatedGlossary);
+  // The merged set is what the run actually translated against, and it is the only place the
+  // generated entries survive as finished glossary rows — the registry cache holds raw model
+  // answers. A later book carries this file over rather than paying to rediscover the names.
+  await atomicJson(join(root, "glossary.json"), { entries: glossary });
   const chapterCards = new Map<string, string>();
   if (useExternal) {
     try {

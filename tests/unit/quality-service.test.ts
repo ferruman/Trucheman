@@ -143,6 +143,20 @@ describe("selective literary quality service", () => {
 
     expect(reviewRepair(truncated, restored)).toBe("repair changes the block structure");
     expect(reviewRepair(truncated, restored, source)).toBe(undefined);
+
+    // The block a Japanese book never translated: the text to replace *is* the source, and its
+    // correct Russian runs three times longer. Judged against a Latin expectation this gate
+    // rejected all fourteen such repairs on one volume, every one of them correct, and the
+    // untranslated paragraphs shipped.
+    const japanese =
+      "　男は自衛隊の将校服に身を固めていた。瘦せてひょろ長いが、歩き方で強靭な肉体と分かる。";
+    const russian =
+      "Мужчина был облачён в мундир офицера Сил самообороны. Худой и долговязый, " +
+      "он, однако, уже по одной походке выдавал незаурядную физическую силу.";
+    expect(russian.length).toBeGreaterThan(japanese.length * 2 + 20);
+    expect(reviewRepair(japanese, russian)).toBe(undefined);
+    // Still bounded: a repair that runs away is rejected whatever the script.
+    expect(reviewRepair(japanese, russian.repeat(6))).toBe("repair changes the block structure");
     expect(
       applySelectiveRepairs(
         [{ id: "s", text: truncated }],

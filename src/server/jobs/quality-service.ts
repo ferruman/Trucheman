@@ -13,6 +13,7 @@ import {
   type AuditError,
   type QualityIssue,
 } from "../providers/audit-contract.js";
+import { expectedExpansion } from "../providers/response-validator.js";
 import { processBatch } from "./translation-service.js";
 
 export { QUALITY_ISSUE_TYPES };
@@ -328,7 +329,14 @@ export function reviewRepair(
   // A repair rewords; it does not turn a heading into a sentence. Measured against the source
   // as well as the edit: when the defect *is* a truncated block, the only correct repair is
   // longer than what it replaces, and reading the edit alone rejected exactly those.
-  if (repaired.length > Math.max(edited.length, original.length) * 2 + 20)
+  // Scaled by what the source's script predicts, or the block a Japanese book never translated
+  // can never be repaired: its correct Russian is three times the length of the text it
+  // replaces, and a bound of twice rejected all fourteen of them on one volume — the repair
+  // was generated correctly every time and thrown away at this gate.
+  if (
+    repaired.length >
+    Math.max(edited.length, original.length) * 2 * expectedExpansion(original) + 20
+  )
     return "repair changes the block structure";
   const introduced = adjacentStemRepetitions(repaired) - adjacentStemRepetitions(edited);
   if (introduced > 0) return "repair duplicates an adjacent fragment";

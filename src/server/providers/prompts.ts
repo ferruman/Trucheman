@@ -1,4 +1,5 @@
 import { targetLanguageProfile } from "../config/target-language.js";
+import { sourceLanguageRules } from "../config/source-language.js";
 import type { ProviderInputSegment, ProviderRequest } from "./provider.js";
 
 export const PROMPT_VERSION = "literary-v3.1";
@@ -242,9 +243,18 @@ function targetLanguageRules(targetLanguage: ProviderRequest["targetLanguage"] |
   return rules ? `\n\nTarget-language rules for ${targetLanguage.name}:\n${rules}` : "";
 }
 
+function sourceRules(
+  sourceLanguage: ProviderRequest["sourceLanguage"] | undefined,
+  targetLanguage: ProviderRequest["targetLanguage"] | undefined,
+) {
+  if (!sourceLanguage) return "";
+  const rules = sourceLanguageRules(sourceLanguage.tag, targetLanguage?.tag);
+  return rules ? `\n\nSource-language rules for ${sourceLanguage.name}:\n${rules}` : "";
+}
+
 export function buildPrompt(
   request: Pick<ProviderRequest, "mode" | "promptVersion"> &
-    Partial<Pick<ProviderRequest, "targetLanguage">>,
+    Partial<Pick<ProviderRequest, "sourceLanguage" | "targetLanguage">>,
 ): string {
   const promptVersion = promptVersionForMode(request.mode, request.promptVersion);
   const contract =
@@ -253,7 +263,7 @@ export function buildPrompt(
       : request.mode === "consistency"
         ? CONSISTENCY_OUTPUT_CONTRACT
         : OUTPUT_CONTRACT;
-  return `${COMMON_RULES}\n\nTask: ${modeRules(request.mode, promptVersion)}${targetLanguageRules(request.targetLanguage)}\n\n${contract}`;
+  return `${COMMON_RULES}\n\nTask: ${modeRules(request.mode, promptVersion)}${sourceRules(request.sourceLanguage, request.targetLanguage)}${targetLanguageRules(request.targetLanguage)}\n\n${contract}`;
 }
 
 function enabledGlossary(glossary: unknown[] | undefined): unknown[] {

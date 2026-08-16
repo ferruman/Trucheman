@@ -89,6 +89,16 @@ export async function processBatch(
           }
         }
         const kind = (error as { kind?: string }).kind ?? "invalid_response";
+        // The provider builds this message specifically to tell "the answer was cut off" apart
+        // from "the model wrote something that is not JSON", and every caller above used to
+        // throw it away — a run could spend most of its completion tokens on rejected answers
+        // and say nothing anywhere about why. Retries are invisible in the journals by design;
+        // this is the one line that makes a bad batch diagnosable.
+        console.warn(
+          `[${mode}] attempt ${attempt + 1} rejected (${kind}, ${chunk.length} segment(s), ${
+            chunk[0]?.id ?? "unknown"
+          }): ${error instanceof Error ? error.message : String(error)}`,
+        );
         const decision = retryDecision(
           { kind, status: (error as { status?: number }).status },
           attempt,

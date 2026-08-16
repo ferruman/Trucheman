@@ -1,4 +1,5 @@
 import type { ProviderInputSegment, ProviderSegment } from "../providers/provider.js";
+import { expectedExpansion } from "../providers/response-validator.js";
 
 /**
  * Deterministic per-segment defects, found by comparing a translation with its original.
@@ -26,7 +27,11 @@ export type SegmentDefect = {
 /** Below this a heading, a name, or a date is legitimately identical or lopsided. */
 const MIN_COMPARABLE = 80;
 const MIN_IDENTICAL = 40;
-/** Russian runs longer than English, Polish shorter; outside this a block was lost or padded. */
+/**
+ * How far either side of the expected length a translation may fall before the block was lost
+ * or padded. Russian runs longer than English and Polish shorter, so the tolerance is what is
+ * fixed here and the expectation is what varies by script.
+ */
 const MIN_RATIO = 0.5;
 const MAX_RATIO = 2;
 const MAX_REPORTED_EXAMPLES = 3;
@@ -174,12 +179,23 @@ function isSpelledOut(value: string, translation: string, targetTag: string | un
   return stems.length > 0 && stems.every((stem) => new RegExp(stem, "iu").test(translation));
 }
 
-/** Latin against Cyrillic is the only script split the supported languages can produce. */
+const cjkPattern = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu;
+
+/**
+ * Which script a text is written in, decided by counting. The source language is not passed
+ * in on purpose: a Japanese book carries English epigraphs and a Latin one carries Japanese
+ * names, and every rule keyed on this wants the answer for the segment in hand.
+ */
 function dominantScript(text: string) {
-  const latin = text.match(/\p{Script=Latin}/gu)?.length ?? 0;
-  const cyrillic = text.match(/\p{Script=Cyrillic}/gu)?.length ?? 0;
-  if (latin === cyrillic) return "none";
-  return latin > cyrillic ? "latin" : "cyrillic";
+  const counts = {
+    latin: text.match(/\p{Script=Latin}/gu)?.length ?? 0,
+    cyrillic: text.match(/\p{Script=Cyrillic}/gu)?.length ?? 0,
+    cjk: text.match(cjkPattern)?.length ?? 0,
+  };
+  const [[winner, top], [, runnerUp]] = Object.entries(counts).sort(
+    ([, left], [, right]) => right - left,
+  );
+  return top === runnerUp ? "none" : winner;
 }
 
 /**
@@ -194,6 +210,14 @@ function dominantScript(text: string) {
 function sourceResidue(source: string, translation: string): string[] {
   const sourceScript = dominantScript(source);
   if (sourceScript === "none" || dominantScript(translation) !== "cyrillic") return [];
+  // Japanese needs none of the care Latin does. There is no case to filter on and no cognate
+  // to spare: a run of kana or kanji standing in Russian prose was not translated, full stop.
+  if (sourceScript === "cjk")
+    return [
+      ...new Set(
+        translation.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}ー]+/gu) ?? [],
+      ),
+    ];
   if (sourceScript !== "latin") return [];
   const sourceWords = new Set(
     (source.match(/\p{Script=Latin}{4,}/gu) ?? [])
@@ -263,9 +287,44 @@ export function scanSegment(
     // Identical text trivially fails the ratio and residue checks too; one finding is enough.
     return defects;
   }
+  /**
+   * A block still written in the source's own writing system was not translated, whatever the
+   * two texts differ by. Identity alone misses it: the editing pass runs over the untouched
+   * source and normalizes its spacing, after which the strings no longer match — six Japanese
+   * paragraphs reached a finished book that way, invisible to every gate. Residue misses it
+   * too, and for the worst possible reason: `sourceResidue` gives up unless the *translation*
+   * is dominantly Cyrillic, so a block that is entirely source text is the one case it skips.
+   *
+   * Scoped to the scripts that cannot be confused with a target language's own: a Latin run
+   * inside a Latin-alphabet translation is a name or a kept quotation, which `sourceResidue`
+   * already judges with the care that needs.
+   */
+  if (
+    dominantScript(result) === "cjk" &&
+    dominantScript(original) === "cjk" &&
+    // Length is the wrong question for a whole block written entirely in the source's script:
+    // a chapter heading typeset one character per span merges into a unit of thirteen, under
+    // any floor calibrated on Latin, and «四　式神に質す» reached a finished book that way. A
+    // block carrying no target-script character at all was not translated, at any length —
+    // while a lone kanji glossing a term inside Russian prose, «они (鬼)», sits in a block
+    // that is dominantly Cyrillic and is never in question here.
+    (!/\p{Script=Cyrillic}|\p{Script=Latin}/u.test(result) ||
+      result.length >= MIN_IDENTICAL / expectedExpansion(result))
+  ) {
+    defects.push({
+      id,
+      kind: "untranslated",
+      detail: "translation is still written in the source's script",
+    });
+    // Identical text trivially fails the ratio and residue checks too; one finding is enough.
+    return defects;
+  }
   if (original.length >= MIN_COMPARABLE) {
     const ratio = result.length / original.length;
-    if (ratio < MIN_RATIO || ratio > MAX_RATIO)
+    // Centring on the expansion the source predicts keeps exactly the tolerance above: a
+    // Japanese block still has to fall below half, or exceed twice, what its length predicts.
+    const expected = expectedExpansion(original);
+    if (ratio < MIN_RATIO * expected || ratio > MAX_RATIO * expected)
       defects.push({
         id,
         kind: "length_ratio",

@@ -1,7 +1,46 @@
 import type { TextSegment } from "./text-segments.js";
+import { isJapanese } from "./japanese.js";
 export type Batch = { id: string; documentId: string; segments: TextSegment[] };
 
 export const MAX_BATCH_SEGMENTS = 20;
+export const MAX_BATCH_CHARS = 12000;
+
+/**
+ * The budget is in characters, but what it is really rationing is context. A Japanese
+ * character carries roughly what three English ones do and costs about one token by itself,
+ * so a batch measured in Latin characters asks for several times the intended window — and
+ * the Russian it comes back as is longer again than the source.
+ */
+export function batchCharBudget(sourceLanguage?: string): number {
+  return isJapanese(sourceLanguage) ? 4000 : MAX_BATCH_CHARS;
+}
+
+/**
+ * Which of the two limits actually binds depends on the language, and for Japanese it is this
+ * one: a volume of 帝都物語 filled 255 of its 281 batches to the segment cap at a median of 920
+ * characters, so the character budget never came near. Twenty Japanese paragraphs average
+ * forty-odd characters each, and asking one answer to carry twenty fragments that short made
+ * the model lose count — eight of the first thirteen translation requests came back invalid,
+ * while every half of a split batch parsed. Ten is what the halving recovery was already
+ * doing successfully, done up front instead of after three paid attempts.
+ */
+export function batchSegmentCap(sourceLanguage?: string): number {
+  return isJapanese(sourceLanguage) ? 10 : MAX_BATCH_SEGMENTS;
+}
+
+/**
+ * Sentence ends, for splitting a text node that overruns the budget on its own. Japanese
+ * writes no space after 。, so requiring whitespace found no boundary at all and handed the
+ * provider the whole oversized node; a closing 」 belongs to the sentence it ends.
+ */
+const sentenceEnd = /(?<=[.!?])\s+|(?<=[。！？])(?![」』）】\s])/u;
+
+const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u;
+/** Japanese runs together; joining its chunks with a space invents word boundaries. */
+function joiner(left: string, right: string) {
+  if (!left) return "";
+  return CJK.test(left.slice(-1)) || CJK.test(right.slice(0, 1)) ? "" : " ";
+}
 
 /**
  * A text node larger than the batch budget is split across batches. Chunks carry a
@@ -36,7 +75,7 @@ export function mergeChunkedSegments<T extends { id: string; text: string }>(seg
 
 export function makeBatches(
   segments: TextSegment[],
-  maxChars = 12000,
+  maxChars = MAX_BATCH_CHARS,
   maxSegments = MAX_BATCH_SEGMENTS,
 ): Batch[] {
   const out: Batch[] = [];
@@ -65,7 +104,7 @@ export function makeBatches(
     if (segment.text.length > maxChars) {
       const documentId = segment.id.split(":")[0];
       // Trailing whitespace yields an empty tail piece that would append a stray space.
-      const sentences = segment.text.split(/(?<=[.!?])\s+/).filter(Boolean);
+      const sentences = segment.text.split(sentenceEnd).filter(Boolean);
       const chunks: string[] = [];
       let chunk = "";
       for (const sentence of sentences) {
@@ -73,7 +112,7 @@ export function makeBatches(
           chunks.push(chunk);
           chunk = "";
         }
-        chunk += `${chunk ? " " : ""}${sentence}`;
+        chunk += `${joiner(chunk, sentence)}${sentence}`;
       }
       if (chunk) chunks.push(chunk);
       for (const [index, text] of chunks.entries()) {

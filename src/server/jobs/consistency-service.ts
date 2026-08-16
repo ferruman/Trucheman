@@ -32,6 +32,8 @@ export type EntityEvidence = {
   source: string;
   occurrences: number;
   contexts: Array<{ source: string; target?: string }>;
+  /** Furigana for this entity, when the book glossed it. Only Japanese sources carry one. */
+  reading?: string;
 };
 
 export type GlossaryEntry = {
@@ -106,6 +108,47 @@ const sourceNamePattern = /(?<![\p{L}\p{N}])\p{Lu}[\p{L}\p{M}'’.-]{2,}/gu;
 const sourcePlacePattern =
   /(?<![\p{L}\p{N}])\p{Lu}[\p{L}\p{M}'’-]{2,}\s+(?:Street|St\.|Avenue|Ave\.|Road|Rd\.|Lane|Square|Place)(?![\p{L}\p{N}])/gu;
 const wordPattern = /[\p{L}\p{M}]*[её][\p{L}\p{M}]*/giu;
+/** Sentence ends, for telling a name from a word that merely opened a sentence. */
+const sentenceEnd = /[.!?。！？]/u;
+
+/**
+ * Japanese has neither capitals nor spaces, so every signal the patterns above run on is
+ * absent and a Japanese book yields no candidates at all — the registry resolves nothing and
+ * each stage invents its own Като. These three replace them.
+ *
+ * A name is a short run of kanji or a run of katakana. That over-generates badly on its own —
+ * 自分 and 時間 look exactly like 加藤 — which is what the two high-confidence patterns are
+ * for: an honorific or a title binds to a personal name as tightly as "Street" binds to a
+ * place, and a place suffix is part of the name it ends.
+ */
+const japaneseNamePattern = /\p{Script=Han}{2,4}|[\p{Script=Katakana}ー]{2,}/gu;
+const japaneseHonorificPattern =
+  /[\p{Script=Han}\p{Script=Katakana}ー]{2,6}(?=さん|さま|様|ちゃん|くん|君|氏|先生|博士|教授|大佐|中佐|少佐|大尉|中尉|少尉|大将|中将|少将|元帥|夫人|伯爵|男爵|子爵|侯爵|公爵)/gu;
+const japanesePlacePattern =
+  /[\p{Script=Han}\p{Script=Katakana}ー]{1,5}(?:神社|神宮|寺院|寺|城|邸|町|村|市|区|県|府|駅|山|川|島|橋|坂|通り|大学|学校|病院|銀行|新聞社|会社)/gu;
+/**
+ * The compounds a novel repeats hundreds of times without ever naming anything. Without them
+ * the 250 candidate slots fill with 自分 and 二人 before the first character is reached.
+ *
+ * ponytail: hand-written list, and it only has to cover what outranks a real name by frequency.
+ * A morphological analyzer (kuromoji) would settle it properly if the noise ever survives the
+ * model's own filtering.
+ */
+const japaneseStopWords = new Set(
+  `自分 自身 相手 彼女 彼等 貴女 貴方 二人 三人 一人 人間 人々 人物 人影 群衆
+   男女 女性 男性 子供 大人 老人 老婆 若者 少年 少女 青年 母親 父親 兄弟 姉妹 家族 夫婦
+   兵士 将校 軍人 憲兵 病人 市民 紳士 下士官兵
+   今日 昨日 明日 今朝 今夜 今度 今回 最初 最後 時間 時代 瞬間 場合 場所 世界 世間
+   意味 理由 問題 事実 状態 状況 関係 感じ 気持 様子 表情 言葉 声音 説明 返事 質問
+   本当 実際 当然 結局 結果 以上 以下 以前 以後 全部 全体 一部 部分 方法 必要 可能
+   大丈夫 不思議 突然 一体 何度 何人 何事 自然 普通 特別 中心 中央 内部 外部
+   周囲 全身 両手 両足 全員 数人 奇妙 異様 巨大 強力 危険 不気味 同時 一瞬 一気 一礼
+   二度 三度 絶叫 悲鳴 沈黙 微笑 気分 光景 風景 秘密 計画 命令 行動 組織 事件 見開
+   発生 確認 実現 報告 出来 開始 終了 破壊 攻撃 侵入 爆撃 爆弾 振動 明滅 兵器 電波
+   地上 地下 都市 建物 階段 部屋 天井 椅子 電話 電車 自動車 会館 最上階 紫色 宝石`
+    .split(/\s+/)
+    .filter(Boolean),
+);
 // A capitalized word is not an entity just because a sentence started with it. The registry
 // spent a production run resolving "She" and "The"; that noise is what timed the resolver out.
 const sourceStopWords = new Set(
@@ -228,11 +271,17 @@ export type EntityEvidenceStats = {
   kept: number;
 };
 
-export function extractRepeatedSourceEntities(documents: ConsistencyDocument[]): EntityEvidence[] {
-  return extractEntityEvidence(documents).entities;
+export function extractRepeatedSourceEntities(
+  documents: ConsistencyDocument[],
+  readings?: Record<string, string>,
+): EntityEvidence[] {
+  return extractEntityEvidence(documents, readings).entities;
 }
 
-export function extractEntityEvidence(documents: ConsistencyDocument[]): {
+export function extractEntityEvidence(
+  documents: ConsistencyDocument[],
+  readings?: Record<string, string>,
+): {
   entities: EntityEvidence[];
   stats: EntityEvidenceStats;
 } {
@@ -249,7 +298,7 @@ export function extractEntityEvidence(documents: ConsistencyDocument[]): {
       }
       for (const match of segment.text.matchAll(sourceNamePattern)) {
         const preceding = segment.text.slice(0, match.index).trimEnd().at(-1);
-        if (!preceding || /[.!?]/u.test(preceding)) continue;
+        if (!preceding || sentenceEnd.test(preceding)) continue;
         const key = match[0].toLocaleLowerCase();
         capitalizedMidSentence.set(key, (capitalizedMidSentence.get(key) ?? 0) + 1);
       }
@@ -290,18 +339,19 @@ export function extractEntityEvidence(documents: ConsistencyDocument[]): {
   for (const document of documents) {
     const edited = new Map(document.editedSegments.map((segment) => [segment.id, segment.text]));
     for (const segment of document.sourceSegments) {
+      const matches = (pattern: RegExp, highConfidence: boolean) =>
+        [...segment.text.matchAll(pattern)].map((match) => ({
+          value: match[0],
+          index: match.index ?? 0,
+          highConfidence,
+        }));
       const candidates = [
-        ...[...segment.text.matchAll(sourcePlacePattern)].map((match) => ({
-          value: match[0],
-          index: match.index ?? 0,
-          highConfidence: true,
-        })),
+        ...matches(sourcePlacePattern, true),
         ...capitalizedPhrases(segment.text).map((phrase) => ({ ...phrase, highConfidence: false })),
-        ...[...segment.text.matchAll(sourceNamePattern)].map((match) => ({
-          value: match[0],
-          index: match.index ?? 0,
-          highConfidence: false,
-        })),
+        ...matches(sourceNamePattern, false),
+        ...matches(japaneseHonorificPattern, true),
+        ...matches(japanesePlacePattern, true),
+        ...matches(japaneseNamePattern, false),
       ];
       for (const { value, index, highConfidence } of candidates) {
         // Kyra’s is Kyra. Keeping them apart split one entity's evidence in two and spent
@@ -320,7 +370,7 @@ export function extractEntityEvidence(documents: ConsistencyDocument[]): {
           .replace(/\s+/gu, " ");
         const key = source.toLocaleLowerCase();
         if (!found.has(key)) stats.candidates++;
-        if (sourceStopWords.has(key)) {
+        if (sourceStopWords.has(key) || japaneseStopWords.has(key)) {
           if (!found.has(key)) stats.stopWords++;
           continue;
         }
@@ -340,7 +390,7 @@ export function extractEntityEvidence(documents: ConsistencyDocument[]): {
         entry.occurrences++;
         entry.highConfidence ||= highConfidence;
         const preceding = segment.text.slice(0, index).trimEnd().at(-1);
-        if (preceding && !/[.!?]/u.test(preceding)) entry.nonInitialOccurrences++;
+        if (preceding && !sentenceEnd.test(preceding)) entry.nonInitialOccurrences++;
         const withoutCandidate = `${segment.text.slice(0, index)}${segment.text.slice(
           index + value.length,
         )}`.replace(/[\s"'«»„“”()[\].,:;!?—-]/gu, "");
@@ -366,7 +416,12 @@ export function extractEntityEvidence(documents: ConsistencyDocument[]): {
         isolatedOccurrences: _isolatedOccurrences,
         highConfidence: _highConfidence,
         ...entry
-      }) => entry,
+      }) => {
+        // The book's own furigana is the reading the transliteration has to follow. Without it
+        // 加藤保憲 is a guess the model makes once per chunk, and it does not make the same one.
+        const reading = readings?.[entry.source];
+        return reading ? { ...entry, reading } : entry;
+      },
     )
     .sort(
       (left, right) =>
@@ -751,11 +806,14 @@ export async function resolveEntityRegistry(
   chunkSize = CONSISTENCY_CHUNK_SIZE,
   /** Preflight runs for minutes with no batch to report. Say which chunk it is on. */
   onProgress?: (done: number, total: number) => Promise<void> | void,
+  /** Furigana harvested while preparing the book, keyed by the written form it glossed. */
+  readings?: Record<string, string>,
 ): Promise<EntityRegistry> {
-  const entities = extractRepeatedSourceEntities(documents).map(
-    ({ source, occurrences, contexts }) => ({
+  const entities = extractRepeatedSourceEntities(documents, readings).map(
+    ({ source, occurrences, contexts, reading }) => ({
       source,
       occurrences,
+      ...(reading ? { reading } : {}),
       contexts: contexts.map((context) => context.source),
     }),
   );

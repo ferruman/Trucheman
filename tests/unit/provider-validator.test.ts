@@ -40,6 +40,7 @@ describe("provider response validation", () => {
 
 describe("segment alignment", () => {
   const long = (marker: string, length: number) => marker.repeat(length);
+  const kana = (length: number) => "帝都物語".repeat(Math.ceil(length / 4)).slice(0, length);
 
   it("finds answers that carry the next segment's text", () => {
     // The shape taken from job 9c6c4e7c, batch document-10-batch-8: a sentence split over two
@@ -57,6 +58,40 @@ describe("segment alignment", () => {
       { id: "d", text: long("x", 100) },
     ];
     expect(misalignedSegmentIds(expected, shifted)).toEqual(["b", "c"]);
+  });
+
+  it("does not mistake a faithful Japanese translation for a run-on", () => {
+    // The shape of document-9-batch-17: short Japanese paragraphs whose Russian is three times
+    // as long, and a neighbour about twice the length of its own segment. Measured against a
+    // Latin expectation the answer looks exactly like a glued pair, and the rule rejected some
+    // sixty per cent of a Japanese book's translation requests — paying for each good answer
+    // it threw away.
+    const expected = [
+      { id: "a", text: kana(60) },
+      { id: "b", text: kana(120) },
+      { id: "c", text: kana(70) },
+    ];
+    const faithful = [
+      { id: "a", text: long("я", 180) },
+      { id: "b", text: long("я", 360) },
+      { id: "c", text: long("я", 210) },
+    ];
+    expect(misalignedSegmentIds(expected, faithful)).toEqual([]);
+  });
+
+  it("still catches a Japanese answer that really did swallow its neighbour", () => {
+    const expected = [
+      { id: "a", text: kana(60) },
+      { id: "b", text: kana(60) },
+      { id: "c", text: kana(60) },
+    ];
+    // Three times its own length is expected; six times, matching the pair, is the bug.
+    const glued = [
+      { id: "a", text: long("я", 360) },
+      { id: "b", text: long("я", 180) },
+      { id: "c", text: long("я", 180) },
+    ];
+    expect(misalignedSegmentIds(expected, glued)).toContain("a");
   });
 
   it("accepts an aligned batch, short segments and lopsided neighbours included", () => {

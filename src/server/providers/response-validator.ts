@@ -46,6 +46,23 @@ function comparisonText(segment: ProviderInputSegment): string {
   return segment.draft;
 }
 
+const cjkPattern = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu;
+
+/**
+ * How much longer than its source a faithful translation of this text is expected to be.
+ *
+ * Every length rule below and in `jobs/segment-scan.ts` was calibrated between languages that
+ * write about as much as each other, where the answer is the same size as its input. Japanese
+ * is not one of those: it says in one character about what three Latin ones do, so a correct
+ * Russian answer is roughly three times its source and trips a rule whose widest bound is 2.2.
+ * That is not a theoretical drift — it rejected some sixty per cent of the translation
+ * requests of a Japanese book, each rejection paying for an answer that was perfectly good.
+ */
+export function expectedExpansion(source: string): number {
+  const cjk = source.match(cjkPattern)?.length ?? 0;
+  return cjk * 2 > source.length ? 3 : 1;
+}
+
 /** Below this a heading, a name or a date is legitimately lopsided against its neighbour. */
 const MIN_ALIGNMENT_TEXT = 40;
 /** Wider than any language pair drifts: outside it the text belongs to another segment. */
@@ -91,9 +108,12 @@ export function misalignedSegmentIds(
     ) {
       continue;
     }
-    const ownRatio = answer.length / own.length;
-    const neighbourRatio = answer.length / neighbour.length;
-    const pairRatio = answer.length / (own.length + neighbour.length);
+    // Measure the answer against what its source predicts, so every bound below keeps the
+    // meaning it was calibrated with instead of being re-tuned per language pair.
+    const scaled = answer.length / expectedExpansion(own + neighbour);
+    const ownRatio = scaled / own.length;
+    const neighbourRatio = scaled / neighbour.length;
+    const pairRatio = scaled / (own.length + neighbour.length);
     const shifted =
       (ownRatio < OWN_RATIO.min || ownRatio > OWN_RATIO.max) &&
       neighbourRatio >= NEIGHBOUR_RATIO.min &&
