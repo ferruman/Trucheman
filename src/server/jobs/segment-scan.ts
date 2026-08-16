@@ -241,16 +241,37 @@ function sourceResidue(source: string, translation: string): string[] {
  * on one side or the other, which is what makes the first kind worth paying a repair for and
  * the second kind worth only reporting.
  */
+/**
+ * Words, with a CJK run counting as one of its own. Japanese writes no space, so a kanji run
+ * left in Russian prose fuses with the word beside it — «Ведь大多数 унтер-офицеров» tokenized as
+ * one word «Ведь大多数» — and could never look isolated between two Cyrillic neighbours. Four
+ * such leaks reached a finished volume: a character's name, a number, and two common words,
+ * every one of them reported as advisory residue instead of routed into a repair.
+ */
+const CJK_CLASS = "\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}";
+const wordPattern = new RegExp(`[${CJK_CLASS}ー]+|(?:(?![${CJK_CLASS}])[\\p{L}\\p{M}])+`, "gu");
+
 function isolatedResidue(translation: string, carried: string[]): string[] {
   const wanted = new Set(carried.map((word) => word.toLocaleLowerCase()));
-  const words = [...translation.matchAll(/[\p{L}\p{M}]+/gu)];
+  const words = [...translation.matchAll(wordPattern)];
   const cyrillic = (word: RegExpExecArray | undefined) =>
     Boolean(word && /\p{Script=Cyrillic}/u.test(word[0]));
   const quoted = (word: RegExpExecArray) => {
     const start = word.index ?? 0;
     const before = translation.slice(0, start).trimEnd().at(-1);
     const after = translation.slice(start + word[0].length).trimStart()[0];
-    return (before === "«" && after === "»") || (before === "“" && after === "”");
+    // Brackets mark a gloss the same way quotes mark a citation: «собираются они — о́ни (鬼)»
+    // spells the term out in Russian and shows the original beside it, and the translation is
+    // poorer without it. Repairing that away is the one thing this rule must not do.
+    const pairs: Array<[string, string]> = [
+      ["«", "»"],
+      ["“", "”"],
+      ["(", ")"],
+      ["（", "）"],
+      ["[", "]"],
+      ["【", "】"],
+    ];
+    return pairs.some(([open, close]) => before === open && after === close);
   };
   const isolated = new Set<string>();
   for (const [index, word] of words.entries()) {

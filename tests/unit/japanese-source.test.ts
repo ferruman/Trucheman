@@ -175,6 +175,42 @@ describe("scanning a Japanese source", () => {
     ).toEqual([]);
   });
 
+  it("separates a kanji run from the Russian word it fuses with", () => {
+    // Japanese writes no space, so «Ведь大多数 унтер-офицеров» tokenized as one word and the
+    // leak could never look isolated between two Cyrillic neighbours. Four reached a finished
+    // volume that way — a character's name, a number and two common words — reported as
+    // advisory residue instead of routed into a repair.
+    const source = "大多数の下士官兵は将校の命令に従っただけだ。".repeat(3);
+    const leaked =
+      "Ведь大多数 унтер-офицеров и солдат просто подчинялись приказам офицеров. " +
+      "Поэтому приказ был отдан именно так, а не иначе.";
+    const defects = scanSegment(source, leaked, "s1", "ru");
+    expect(defects.map((d) => d.kind)).toContain("source_interference");
+    expect(defects.find((d) => d.kind === "source_interference")?.spans).toEqual(["大多数"]);
+  });
+
+  it("leaves a glossed original alone, in brackets as well as in quotes", () => {
+    // «собираются они — о́ни (鬼)» spells the term out in Russian and shows the original beside
+    // it. Repairing that away is the one thing the rule above must not do.
+    const gloss = scanSegment(
+      "陰の気に大いなる愛を注ぐがゆえに鬼が集まるのである。".repeat(3),
+      "Именно эту энергию инь великую любовь питают и, привлечённые ею, собираются они — " +
+        "о́ни (鬼). Поэтому верно было бы думать, что энергия инь дурна не сама по себе.",
+      "s1",
+      "ru",
+    );
+    expect(gloss.map((d) => d.kind)).not.toContain("source_interference");
+
+    const quoted = scanSegment(
+      "日本の軍人はメーソンを魔孫と書いた。".repeat(4),
+      "Записывая это слово иероглифами «魔孫» — «дьявольский внук», военные выдавали " +
+        "свою одержимость тайными обществами.",
+      "s1",
+      "ru",
+    );
+    expect(quoted.map((d) => d.kind)).not.toContain("source_interference");
+  });
+
   it("reports kana and kanji left standing in Russian prose", () => {
     const source = "加藤は帝都の空を見上げた。".repeat(8);
     const left = `Като посмотрел на небо 帝都 над городом. ${"Он долго молчал и не двигался. ".repeat(6)}`;
