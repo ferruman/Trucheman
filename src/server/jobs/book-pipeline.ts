@@ -518,6 +518,7 @@ export async function runPreparedBook(
   const runWarnings =
     preflightWarnings +
     result.qualityAuditErrors +
+    result.failedRepairs.length +
     new Set(finalScanDefects.filter((defect) => defect.kind !== "source_residue").map((d) => d.id))
       .size +
     new Set(

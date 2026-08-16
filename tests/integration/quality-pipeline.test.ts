@@ -102,6 +102,59 @@ describe("two-pass pipeline", () => {
     expect(stages).toEqual(["translation", "editing"]);
   });
 
+  it("finishes the book when a repair is one the provider cannot answer", async () => {
+    // Four malformed answers to a single-segment repair threw away 420 of a volume's 503
+    // batches: a chunk of one has no half to fall back on, so the error ended the run. The
+    // edit a repair was going to improve is already acceptable, and now stands.
+    const root = await mkdtemp(`${tmpdir()}/book-repair-failure-`);
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        if (request.mode === "repair")
+          throw new ProviderError(
+            "invalid_response",
+            "Provider returned malformed structured output",
+          );
+        if (request.mode === "audit")
+          return {
+            segments: request.segments.map((item) => ({
+              id: item.id,
+              text: "",
+              issues: [
+                { span: "Правка", type: "semantic_error", severity: "high", reason: "Не то слово" },
+              ],
+            })),
+            finishReason: "stop",
+          };
+        return {
+          segments: request.segments.map((item) => ({ id: item.id, text: "Правка" })),
+          finishReason: "stop",
+        };
+      },
+    };
+    const profile = { name: "fake", endpoint: "local", model: "fake" };
+
+    const result = await runQualityPipeline(
+      [{ id: "batch-1", documentId: "chapter-1", segments: [segment] }],
+      provider,
+      {
+        root,
+        translationProfile: profile,
+        editingProfile: profile,
+        criticProfile: profile,
+        repairProfile: profile,
+        qualityMode: "high",
+        ...languages,
+      },
+    );
+
+    expect(result.failedRepairs).toHaveLength(1);
+    expect(result.failedRepairs[0].batchId).toBe("batch-1");
+    // The edit survived rather than the book dying with it.
+    expect(result.edits.get("batch-1")?.[0].text).toBe("Правка");
+    const report = JSON.parse(await readFile(`${root}/quality-report.json`, "utf8"));
+    expect(report.repairOutcomes.failed).toBe(1);
+  });
+
   it("reuses only checkpoints produced from the same inputs and provider profile", async () => {
     const root = await mkdtemp(`${tmpdir()}/book-resume-`);
     const provider = new FakeProvider();
@@ -755,8 +808,6 @@ describe("two-pass pipeline", () => {
     );
 
     expect(modes).toEqual(["translation", "editing", "audit", "repair"]);
-    expect(result.edits.get("chapter-1-batch-1")?.[0].text).toContain(
-      "в заведении «Пип-о-Рама»",
-    );
+    expect(result.edits.get("chapter-1-batch-1")?.[0].text).toContain("в заведении «Пип-о-Рама»");
   });
 });

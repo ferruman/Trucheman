@@ -344,6 +344,8 @@ export async function runQualityPipeline(
   const rejectedRepairsByBatch: Array<Array<RepairRejection & { batchId: string }>> = [];
   /** Sent to repair and came back unchanged: flagged, paid for, and still defective. */
   const unrepairedByBatch: Array<Array<{ batchId: string; id: string }>> = [];
+  /** Repairs the provider could not answer at all; the edited text stands. */
+  const failedRepairs: Array<{ batchId: string; reason: string }> = [];
   const scanDefectsByBatch: Array<Array<SegmentDefect & { batchId: string }>> = [];
   const cachedCheckpoints = { translation: 0, editing: 0, audit: 0, repair: 0 };
   const runBatch = async (batch: Batch, index: number) => {
@@ -506,55 +508,70 @@ export async function runQualityPipeline(
         let repairs = savedRepair?.segments;
         if (!repairs) {
           await options.onStage?.("repair", batch);
-          const repaired = await repairBatch(
-            provider,
-            repairProfile,
-            repairSegments,
-            { sourceLanguage: options.sourceLanguage, targetLanguage: options.targetLanguage },
-            instructions,
-            options.glossary,
-            options.signal,
-          );
-          repairs = repaired.result.segments;
-          let attempts = repaired.attempts;
-          const warnings = [...repaired.warnings];
-          const repairById = new Map(repairs.map((segment) => [segment.id, segment]));
-          const unchangedInputs = repairSegments.filter(
-            (segment) => repairById.get(segment.id)?.text === segment.editedTranslation,
-          );
-          if (unchangedInputs.length) {
-            // One focused retry is cheaper than shipping a known defect after paying for the
-            // critic and first repair. It sees only the blocks the first call ignored.
-            const retried = await repairBatch(
+          try {
+            const repaired = await repairBatch(
               provider,
               repairProfile,
-              unchangedInputs,
+              repairSegments,
               { sourceLanguage: options.sourceLanguage, targetLanguage: options.targetLanguage },
-              [
-                instructions,
-                "The previous repair returned these blocks unchanged. Resolve every listed issue with a concrete edit unless the issue is directly contradicted by the source or exact span.",
-              ]
-                .filter(Boolean)
-                .join("\n\n"),
+              instructions,
               options.glossary,
               options.signal,
             );
-            attempts += retried.attempts;
-            warnings.push(...retried.warnings);
-            for (const segment of retried.result.segments) repairById.set(segment.id, segment);
-            repairs = repairSegments.flatMap((segment) => {
-              const replacement = repairById.get(segment.id);
-              return replacement ? [replacement] : [];
+            repairs = repaired.result.segments;
+            let attempts = repaired.attempts;
+            const warnings = [...repaired.warnings];
+            const repairById = new Map(repairs.map((segment) => [segment.id, segment]));
+            const unchangedInputs = repairSegments.filter(
+              (segment) => repairById.get(segment.id)?.text === segment.editedTranslation,
+            );
+            if (unchangedInputs.length) {
+              // One focused retry is cheaper than shipping a known defect after paying for the
+              // critic and first repair. It sees only the blocks the first call ignored.
+              const retried = await repairBatch(
+                provider,
+                repairProfile,
+                unchangedInputs,
+                { sourceLanguage: options.sourceLanguage, targetLanguage: options.targetLanguage },
+                [
+                  instructions,
+                  "The previous repair returned these blocks unchanged. Resolve every listed issue with a concrete edit unless the issue is directly contradicted by the source or exact span.",
+                ]
+                  .filter(Boolean)
+                  .join("\n\n"),
+                options.glossary,
+                options.signal,
+              );
+              attempts += retried.attempts;
+              warnings.push(...retried.warnings);
+              for (const segment of retried.result.segments) repairById.set(segment.id, segment);
+              repairs = repairSegments.flatMap((segment) => {
+                const replacement = repairById.get(segment.id);
+                return replacement ? [replacement] : [];
+              });
+            }
+            await appendJournal(`${options.root}/repairs.ndjson`, {
+              batchId: batch.id,
+              segments: repairs,
+              checkpointKey: expectedRepairKey,
+              attempts,
+              warnings,
+              profile: repairProfile.name,
             });
+          } catch (error) {
+            // Pausing must still pause; anything else is one batch's polish, not the book.
+            if (options.signal?.aborted) throw error;
+            // A repair the provider cannot answer used to end the run: a single segment has no
+            // half to fall back on, so four malformed answers to one block threw away 420 of a
+            // volume's 503 batches. The edited text this repair was going to improve is already
+            // known to be acceptable — `reviewRepair` keeps it for every other rejection — so
+            // the batch keeps it here too and the book finishes.
+            failedRepairs.push({
+              batchId: batch.id,
+              reason: error instanceof Error ? error.message : "unknown error",
+            });
+            repairs = [];
           }
-          await appendJournal(`${options.root}/repairs.ndjson`, {
-            batchId: batch.id,
-            segments: repairs,
-            checkpointKey: expectedRepairKey,
-            attempts,
-            warnings,
-            profile: repairProfile.name,
-          });
         }
         const beforeRepair = editedSegments;
         const reviewed = applySelectiveRepairs(editedSegments, repairs, repairSegments);
@@ -652,7 +669,10 @@ export async function runQualityPipeline(
             changed: flagged.length - unresolvedKeys.size,
             unchanged: unrepaired.length,
             rejected: rejectedRepairs.length,
+            /** Batches whose repair the provider never answered; their edit stands. */
+            failed: failedRepairs.length,
           },
+          failedRepairs,
           auditErrorSegments: allFindings.filter((finding) => finding.auditError).length,
           auditErrorsByKind: {
             malformed_json: allFindings.filter((f) => f.auditError === "malformed_json").length,
@@ -674,6 +694,7 @@ export async function runQualityPipeline(
     drafts,
     edits,
     cachedCheckpoints,
+    failedRepairs,
     rejectedRepairs,
     unrepairedSegments: unrepaired,
     scanDefects,
