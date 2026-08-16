@@ -1,5 +1,14 @@
 import type { InvalidationStage, JobView } from "../../shared/domain/job";
 
+export type GlossaryEntry = {
+  id: string;
+  source: string;
+  target: string;
+  category: string;
+  note?: string;
+  enabled: boolean;
+};
+
 export type StyleProfile = {
   genre?: string;
   narrativeVoice?: string;
@@ -143,6 +152,7 @@ export const jobActions = {
   styleProfile: (id: string) =>
     request<{ profile: StyleProfile | null }>(`/jobs/${id}/style-profile`),
   runManifest: (id: string) => request<RunManifest>(`/jobs/${id}/run-manifest`),
+  glossary: (id: string) => request<{ entries: GlossaryEntry[] }>(`/jobs/${id}/glossary`),
   saveStyleProfile: (id: string, profile: StyleProfile) =>
     request<{ profile: StyleProfile }>(`/jobs/${id}/style-profile`, {
       method: "PUT",

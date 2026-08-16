@@ -26,6 +26,14 @@ export const persistedJobSchema = z.object({
   instructions: z.string().default(""),
   glossary: z.array(z.unknown()).default([]),
   qualityMode: z.enum(["standard", "high"]).default("standard"),
+  /**
+   * A conformance repair has been accepted for this job's output. The repair works in an
+   * isolated copy so it never touches the staging the checkpoints address, which means a plain
+   * rebuild would zip the unrepaired tree and silently undo it — thirty-one EPUBCheck errors
+   * came back that way. Remembering it here lets `rebuild` reproduce the artifact the job
+   * actually published, in either order.
+   */
+  epubRepaired: z.boolean().default(false),
 });
 export type PersistedJob = z.infer<typeof persistedJobSchema>;
 export function validateJob(value: unknown): PersistedJob {

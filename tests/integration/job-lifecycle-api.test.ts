@@ -1,11 +1,13 @@
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseJobConfig } from "../../src/server/api/jobs.js";
 import type { PersistedJob } from "../../src/server/domain/job.js";
 import { JobOrchestrator } from "../../src/server/jobs/job-orchestrator.js";
 import { JobRepository } from "../../src/server/storage/job-repository.js";
 import { jobRoot } from "../../src/server/storage/job-paths.js";
+import { extractEpub } from "../../src/server/epub/extract.js";
 
 const roots: string[] = [];
 const orchestrators: JobOrchestrator[] = [];
@@ -42,10 +44,118 @@ async function fixture(status = "ready") {
     instructions: "",
     glossary: [],
     qualityMode: "standard",
+    epubRepaired: false,
   };
   await repo.save(job);
   return { repo, job };
 }
+
+describe("rebuilding an EPUB whose conformance was repaired", () => {
+  const scripted = `<html xmlns="http://www.w3.org/1999/xhtml"><head><script type="text/javascript" src="js/reader.js"/></head><body><p>Text</p></body></html>`;
+
+  async function stagedJob() {
+    const { repo, job } = await fixture("needs_attention");
+    const staging = join(jobRoot(repo.dataDir, job.id), "staging");
+    await mkdir(join(staging, "META-INF"), { recursive: true });
+    await mkdir(join(staging, "OEBPS"), { recursive: true });
+    await writeFile(join(staging, "mimetype"), "application/epub+zip");
+    await writeFile(
+      join(staging, "META-INF", "container.xml"),
+      `<?xml version="1.0"?><container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>`,
+    );
+    await writeFile(
+      join(staging, "OEBPS", "content.opf"),
+      `<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="pub-id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="pub-id">urn:uuid:real</dc:identifier><dc:title>Fixture</dc:title><dc:language>ru</dc:language></metadata><manifest><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine toc="ncx"><itemref idref="chapter"/></spine></package>`,
+    );
+    await writeFile(join(staging, "OEBPS", "chapter.xhtml"), scripted);
+    await writeFile(
+      join(staging, "OEBPS", "toc.ncx"),
+      `<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/"><head><meta name="dtb:uid" content="urn:uuid:stale"/></head><navMap/></ncx>`,
+    );
+    await repo.save({ ...job, stage: "complete" });
+    return { repo, job };
+  }
+
+  const opfOf = async (dataDir: string, id: string) => {
+    const out = await mkdtemp(join(tmpdir(), "rebuilt-"));
+    roots.push(out);
+    await extractEpub(join(jobRoot(dataDir, id), "output.epub"), out);
+    return readFile(join(out, "OEBPS", "content.opf"), "utf8");
+  };
+
+  it("publishes the unrepaired staging when no repair was accepted", async () => {
+    const { repo, job } = await stagedJob();
+    const orchestrator = orchestratorFor(repo, { runBook: async () => undefined });
+
+    await orchestrator.rebuild(job.id);
+
+    const opf = await opfOf(repo.dataDir, job.id);
+    expect(opf).not.toContain("scripted");
+    expect(opf).toContain("urn:uuid:real");
+  });
+
+  it("reproduces the repair instead of undoing it", async () => {
+    // The repair works in an isolated copy so it never touches the staging the checkpoints
+    // address. A plain rebuild therefore zipped the unrepaired tree and put thirty-one
+    // EPUBCheck errors back into a book that had none.
+    const { repo, job } = await stagedJob();
+    await repo.save({ ...(await repo.get(job.id)), epubRepaired: true });
+    const orchestrator = orchestratorFor(repo, { runBook: async () => undefined });
+
+    await orchestrator.rebuild(job.id);
+
+    const opf = await opfOf(repo.dataDir, job.id);
+    expect(opf).toContain('properties="scripted"');
+    // The staging the checkpoints address is still the untouched one.
+    const staged = await readFile(
+      join(jobRoot(repo.dataDir, job.id), "staging", "OEBPS", "content.opf"),
+      "utf8",
+    );
+    expect(staged).not.toContain("scripted");
+  });
+});
+
+describe("carrying a glossary between books", () => {
+  it("answers with the job's own terms until a run has merged the generated ones", async () => {
+    const { repo, job } = await fixture("created");
+    await repo.save({
+      ...job,
+      glossary: [{ id: "g1", source: "加藤", target: "Като", category: "person", enabled: true }],
+    });
+    const orchestrator = orchestratorFor(repo, { runBook: async () => undefined });
+
+    expect(await orchestrator.glossary(job.id)).toEqual([
+      { id: "g1", source: "加藤", target: "Като", category: "person", enabled: true },
+    ]);
+
+    // What the run actually translated against — user terms plus everything the registry
+    // resolved — is the set a later volume of the same series has to reuse.
+    await writeFile(
+      `${jobRoot(repo.dataDir, job.id)}/glossary.json`,
+      JSON.stringify({
+        entries: [
+          { id: "g1", source: "加藤", target: "Като", category: "person", enabled: true },
+          {
+            id: "generated-entity-1",
+            source: "辰宮",
+            target: "Тацумия",
+            category: "person",
+            enabled: true,
+          },
+        ],
+      }),
+    );
+
+    expect(await orchestrator.glossary(job.id)).toHaveLength(2);
+    expect((await orchestrator.glossary(job.id)).at(1)).toMatchObject({ target: "Тацумия" });
+  });
+
+  it("refuses a job that does not exist rather than inventing an empty glossary", async () => {
+    const { repo } = await fixture();
+    const orchestrator = orchestratorFor(repo, { runBook: async () => undefined });
+    await expect(orchestrator.glossary("00000000-0000-4000-8000-000000000000")).rejects.toThrow();
+  });
+});
 
 describe("job lifecycle orchestration", () => {
   it("coalesces concurrent starts and durably pauses and resumes one task", async () => {

@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LANGUAGES } from "../../../shared/languages";
 import { api, jobActions, uploadSource } from "../../app/api";
+import type { JobView } from "../../../shared/domain/job";
 
 type GlossaryDraft = {
   source: string;
@@ -9,6 +10,14 @@ type GlossaryDraft = {
   note: string;
   enabled: boolean;
 };
+
+/**
+ * The categories worth carrying between books. A generated glossary is mostly `term`, because
+ * the entity extractor casts wide on purpose: over a volume of 帝都物語 the rule that would have
+ * dropped 地面 and 視線 also dropped 加藤保憲, 東京 and 銀座, so the noise is kept and filtered
+ * here instead — by then the model has labelled every row and the labels can be trusted.
+ */
+const NAMED_CATEGORIES = new Set(["person", "place", "organization", "work", "ship"]);
 
 const emptyGlossaryEntry = (): GlossaryDraft => ({
   source: "",
@@ -29,6 +38,64 @@ export function NewJobPage() {
   const [createdJobId, setCreatedJobId] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [jobs, setJobs] = useState<JobView[]>([]);
+  const [importFrom, setImportFrom] = useState("");
+  const [importNote, setImportNote] = useState("");
+  const [namesOnly, setNamesOnly] = useState(true);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    // Advisory: the page creates books with or without an earlier one to borrow from.
+    api.list({ signal: controller.signal }).then(setJobs, () => undefined);
+    return () => controller.abort();
+  }, []);
+
+  /**
+   * A glossary is only meaningful for the pair it was resolved for: an en→ru rendering of a
+   * name answers nothing about the same book in ja→ru.
+   */
+  const borrowable = jobs.filter(
+    (job) => job.sourceLanguage === source && job.targetLanguage === target,
+  );
+
+  async function importGlossary() {
+    const job = borrowable.find((candidate) => candidate.id === importFrom);
+    if (!job) return;
+    setBusy(true);
+    setError("");
+    try {
+      const { entries } = await jobActions.glossary(job.id);
+      const existing = new Set(glossary.map((entry) => entry.source.toLocaleLowerCase()));
+      const wanted = entries.filter((entry) => !namesOnly || NAMED_CATEGORIES.has(entry.category));
+      const added = wanted
+        .filter((entry) => !existing.has(entry.source.toLocaleLowerCase()))
+        .map((entry) => ({
+          source: entry.source,
+          target: entry.target,
+          category: entry.category,
+          note: entry.note ?? "",
+          enabled: entry.enabled,
+        }));
+      const skipped = [
+        entries.length - wanted.length && `${entries.length - wanted.length} common term(s)`,
+        wanted.length - added.length && `${wanted.length - added.length} already listed`,
+      ].filter(Boolean);
+      setGlossary((current) => [...current, ...added]);
+      setImportNote(
+        added.length
+          ? `Added ${added.length} term(s) from “${job.title}”${
+              skipped.length ? `, skipping ${skipped.join(" and ")}` : ""
+            }.`
+          : `“${job.title}” has nothing to add${
+              skipped.length ? ` — ${skipped.join(" and ")}` : ""
+            }.`,
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to read that book's glossary");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function prepare(jobId: string, selectedFile: File) {
     await jobActions.configure(jobId, {
@@ -166,6 +233,47 @@ export function NewJobPage() {
               Add terms whose translations should stay consistent throughout the book.
             </p>
           </div>
+          {borrowable.length > 0 && (
+            <div className="glossary-import">
+              <label>
+                Reuse a glossary
+                <select
+                  disabled={busy}
+                  value={importFrom}
+                  onChange={(event) => setImportFrom(event.target.value)}
+                >
+                  <option value="">Choose an earlier book…</option>
+                  {borrowable.map((job) => (
+                    <option key={job.id} value={job.id}>
+                      {job.title}
+                    </option>
+                  ))}
+                </select>
+                <small className="field-help">
+                  Copies the terms that book translated against, generated ones included, so the
+                  next volume of a series renders every name the same way.
+                </small>
+              </label>
+              <label className="checkbox-label">
+                <input
+                  checked={namesOnly}
+                  disabled={busy}
+                  type="checkbox"
+                  onChange={(event) => setNamesOnly(event.target.checked)}
+                />
+                Names, places and organizations only
+              </label>
+              <button
+                className="secondary"
+                disabled={busy || !importFrom}
+                type="button"
+                onClick={importGlossary}
+              >
+                Import terms
+              </button>
+              {importNote && <p role="status">{importNote}</p>}
+            </div>
+          )}
           {glossary.length > 0 && (
             <div className="table-wrap">
               <table>

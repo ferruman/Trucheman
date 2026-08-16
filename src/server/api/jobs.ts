@@ -78,6 +78,7 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
         instructions: "",
         glossary: [],
         qualityMode: "standard",
+        epubRepaired: false,
       };
       await repo.save(job);
       res.status(201).json(toJobView(job));
@@ -153,6 +154,13 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
   router.get("/:id/style-profile", async (req, res) => {
     try {
       res.json({ profile: await orchestrator.styleProfile(req.params.id) });
+    } catch (error) {
+      problemResponse(res, error, req);
+    }
+  });
+  router.get("/:id/glossary", async (req, res) => {
+    try {
+      res.json({ entries: await orchestrator.glossary(req.params.id) });
     } catch (error) {
       problemResponse(res, error, req);
     }

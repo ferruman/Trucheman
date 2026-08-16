@@ -226,7 +226,7 @@ export class JobOrchestrator {
           await this.repo.save(analyzing);
           await this.emit(id, "analysis_started", "Reading and preparing the EPUB");
           try {
-            const prepared = await prepareBook(jobRoot(this.repo.dataDir, id));
+            const prepared = await prepareBook(jobRoot(this.repo.dataDir, id), job.sourceLanguage);
             if (controller.signal.aborted) throw controller.signal.reason;
             const total = prepared.documents.reduce(
               (sum, document) => sum + document.batches.length,
@@ -484,6 +484,17 @@ export class JobOrchestrator {
     return parsed.success ? parsed.data : null;
   }
 
+  /**
+   * The glossary a finished job translated against, for carrying to the next book in a series.
+   * A job that never ran has no merged file, so its own entries are the answer — that is what
+   * "reuse this book's glossary" means before the registry has ever contributed to it.
+   */
+  async glossary(id: string): Promise<unknown[]> {
+    const job = await this.repo.get(id);
+    const merged = await readJsonReport(join(jobRoot(this.repo.dataDir, id), "glossary.json"));
+    return Array.isArray(merged?.entries) ? merged.entries : job.glossary;
+  }
+
   async runManifest(id: string): Promise<RunManifest> {
     const job = await this.repo.get(id);
     return writeRunManifest(jobRoot(this.repo.dataDir, id), job);
@@ -525,17 +536,23 @@ export class JobOrchestrator {
     const root = jobRoot(this.repo.dataDir, id),
       staging = join(root, "staging"),
       output = join(root, "output.epub"),
-      temporary = `${output}.${process.pid}.${randomUUID()}.tmp`;
+      temporary = `${output}.${process.pid}.${randomUUID()}.tmp`,
+      repairRoot = join(root, `.epub-rebuild-${randomUUID()}`);
+    // A job whose output was repaired is rebuilt from a repaired copy, or this would publish
+    // the unrepaired staging and undo it.
+    const repairing = job.epubRepaired;
     try {
       const builtAt = new Date();
+      if (repairing) await createRepairedEpubWorkspace(staging, repairRoot);
+      const source = repairing ? repairRoot : staging;
       const packagePath = parseContainer(
-        await readFile(join(staging, "META-INF", "container.xml"), "utf8"),
+        await readFile(join(source, "META-INF", "container.xml"), "utf8"),
       );
-      const packageFile = resolveEpubPath(staging, packagePath);
+      const packageFile = resolveEpubPath(source, packagePath);
       const packageDom = parseXml(await readFile(packageFile));
       updatePackageLanguage(packageDom, job.targetLanguage, builtAt);
       await writeFile(packageFile, serializeXml(packageDom));
-      await buildEpub(staging, temporary, builtAt);
+      await buildEpub(source, temporary, builtAt);
       const handle = await open(temporary, "r");
       try {
         await handle.sync();
@@ -575,6 +592,7 @@ export class JobOrchestrator {
       return { job: next, validation, epubCheck };
     } finally {
       await rm(temporary, { force: true });
+      await rm(repairRoot, { recursive: true, force: true });
     }
   }
 
@@ -629,6 +647,7 @@ export class JobOrchestrator {
       await persistEpubCheckResult(root, epubCheckResult);
       const next: PersistedJob = {
         ...job,
+        epubRepaired: true,
         status:
           (await hasRunAttentionReasons(root)) || (epubCheckResult.available && !epubCheckResult.ok)
             ? "needs_attention"
