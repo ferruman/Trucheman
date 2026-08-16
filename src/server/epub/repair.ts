@@ -10,6 +10,12 @@ export type EpubRepairSummary = {
   removedLegacyAttributes: number;
   convertedAnchors: number;
   restructuredParagraphs: number;
+  /** Manifest items whose document runs a script and never said so. */
+  declaredScripted: number;
+  /** `dtb:uid` rewritten to the identifier the package actually publishes. */
+  alignedNcxIdentifier: number;
+  /** `refines` metadata pointing at an id no longer in the package. */
+  droppedDanglingRefines: number;
 };
 
 type EntryMapping = { oldPath: string; newPath: string };
@@ -280,6 +286,25 @@ function repairXml(doc: Document, summary: EpubRepairSummary) {
     }
   }
 
+  if (localName(root).toLowerCase() === "package") {
+    // Kobo and calibre rename the element an EBPAJ package refines and leave the pointer
+    // behind: `refines="#creator01"` against a `<dc:creator id="id-1">`. What it refines no
+    // longer exists, so the metadata describes nothing and EPUBCheck rejects the book over it.
+    // Repointing is not available — the surviving id usually carries the same property already.
+    const ids = new Set(
+      elements(root).flatMap((element) => {
+        const value = element.getAttribute("id");
+        return value ? [value] : [];
+      }),
+    );
+    for (const element of elements(root)) {
+      const refines = element.getAttribute("refines");
+      if (!refines?.startsWith("#") || ids.has(refines.slice(1))) continue;
+      element.parentNode?.removeChild(element);
+      summary.droppedDanglingRefines++;
+    }
+  }
+
   if (!rewritten.size) return;
   for (const element of elements(root)) {
     for (let index = 0; index < element.attributes.length; index++) {
@@ -295,6 +320,95 @@ function repairXml(doc: Document, summary: EpubRepairSummary) {
       }
     }
   }
+}
+
+/**
+ * The two conformance errors that cannot be seen from inside a single file.
+ *
+ * A reader-produced EPUB ships `js/kobo.js` in every page and never declares it, which is one
+ * OPF-014 per content document — twenty-five of the thirty errors left on one book. And a
+ * package rebuilt by one tool and paginated by another ends up with an NCX announcing a
+ * different `dtb:uid` than the identifier the package publishes. Both are mechanical: the
+ * manifest is simply describing its own files wrongly, and this pass makes it describe them
+ * as they are rather than changing anything a reader sees.
+ */
+async function repairPackageDeclarations(destination: string, summary: EpubRepairSummary) {
+  let packagePath: string;
+  try {
+    const container = parseXml(await readFile(join(destination, "META-INF/container.xml"), "utf8"));
+    const rootfile = elements(container.documentElement!).find(
+      (element) => localName(element).toLowerCase() === "rootfile",
+    );
+    packagePath = rootfile?.getAttribute("full-path") ?? "";
+  } catch {
+    return;
+  }
+  if (!packagePath) return;
+  const packageFile = join(destination, packagePath);
+  let dom: Document;
+  try {
+    dom = parseXml(await readFile(packageFile, "utf8"));
+  } catch {
+    return;
+  }
+  const all = elements(dom.documentElement!);
+  const items = all.filter((element) => localName(element).toLowerCase() === "item");
+  const base = posix.dirname(packagePath);
+
+  for (const item of items) {
+    const href = item.getAttribute("href");
+    const mediaType = item.getAttribute("media-type") ?? "";
+    if (!href || href.includes("://") || !/(xhtml|html)/i.test(mediaType)) continue;
+    const properties = (item.getAttribute("properties") ?? "").split(/\s+/).filter(Boolean);
+    if (properties.includes("scripted")) continue;
+    let markup: string;
+    try {
+      markup = await readFile(
+        join(destination, posix.join(base, decodeURIComponent(href))),
+        "utf8",
+      );
+    } catch {
+      continue;
+    }
+    if (!/<script[\s>]/i.test(markup)) continue;
+    item.setAttribute("properties", [...properties, "scripted"].join(" "));
+    summary.declaredScripted++;
+  }
+
+  const uniqueId = dom.documentElement!.getAttribute("unique-identifier");
+  const identifier = all
+    .find(
+      (element) =>
+        localName(element).toLowerCase() === "identifier" &&
+        (!uniqueId || element.getAttribute("id") === uniqueId),
+    )
+    ?.textContent?.trim();
+  const ncxItem = items.find(
+    (item) =>
+      /x-dtbncx/i.test(item.getAttribute("media-type") ?? "") ||
+      item.getAttribute("href")?.toLowerCase().endsWith(".ncx"),
+  );
+  const ncxHref = ncxItem?.getAttribute("href");
+  if (identifier && ncxHref) {
+    const ncxPath = join(destination, posix.join(base, decodeURIComponent(ncxHref)));
+    try {
+      const ncx = parseXml(await readFile(ncxPath, "utf8"));
+      const uid = elements(ncx.documentElement!).find(
+        (element) =>
+          localName(element).toLowerCase() === "meta" &&
+          element.getAttribute("name")?.toLowerCase() === "dtb:uid",
+      );
+      if (uid && uid.getAttribute("content") !== identifier) {
+        uid.setAttribute("content", identifier);
+        await writeFile(ncxPath, serializeXml(ncx));
+        summary.alignedNcxIdentifier++;
+      }
+    } catch {
+      // An unreadable NCX is the archive validator's finding, not this pass's to force.
+    }
+  }
+
+  if (summary.declaredScripted) await writeFile(packageFile, serializeXml(dom));
 }
 
 /** Copy staging into an isolated, repaired workspace without mutating translation checkpoints. */
@@ -320,6 +434,9 @@ export async function createRepairedEpubWorkspace(
     removedLegacyAttributes: 0,
     convertedAnchors: 0,
     restructuredParagraphs: 0,
+    declaredScripted: 0,
+    alignedNcxIdentifier: 0,
+    droppedDanglingRefines: 0,
   };
   for (const document of mappings) {
     if (!TEXT_EXTENSIONS.has(extension(document.newPath))) continue;
@@ -346,5 +463,6 @@ export async function createRepairedEpubWorkspace(
     }
     if (value !== original) await writeFile(path, value);
   }
+  await repairPackageDeclarations(destination, summary);
   return summary;
 }
