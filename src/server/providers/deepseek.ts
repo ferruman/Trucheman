@@ -319,6 +319,16 @@ export class DeepSeekProvider implements LanguageModelProvider {
             res.status,
           );
         }
+        // 402 is a state of the account, not of the moment: no amount of waiting turns it into
+        // a success. Retrying it burned six attempts against a wall on every batch in flight
+        // and reported "temporarily unavailable" for a book that had simply run out of credit.
+        if (res.status === 402) {
+          throw new ProviderError(
+            "configuration",
+            "Provider credit is exhausted (402); top up the account and resume the job",
+            res.status,
+          );
+        }
         const pause = retryAfterMs(res.headers.get("retry-after"));
         if (pause) this.cooldownUntil = Math.max(this.cooldownUntil, Date.now() + pause);
         throw new ProviderError(

@@ -21,6 +21,28 @@ describe("DeepSeek provider", () => {
     ).rejects.toMatchObject({ kind: "configuration" });
   });
 
+  it("stops on an exhausted account instead of retrying it", async () => {
+    // 402 is a state of the account, not of the moment. Classified as temporary it burned six
+    // attempts against a wall on every batch in flight and reported the book as "temporarily
+    // unavailable" when it had simply run out of credit.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("{}", { status: 402 })),
+    );
+    const failure = await new DeepSeekProvider()
+      .complete({
+        profile: { name: "x", endpoint: "https://example.invalid", model: "x", apiKey: "k" },
+        mode: "translation",
+        ...languages,
+        segments: [{ id: "s1", text: "Hello" }],
+      })
+      .catch((error: ProviderError) => error);
+
+    expect(failure).toBeInstanceOf(ProviderError);
+    expect(failure).toMatchObject({ kind: "configuration", status: 402 });
+    expect((failure as ProviderError).message).toMatch(/credit is exhausted/i);
+  });
+
   it("sends rules and book data in separate messages", async () => {
     let requestBody: Record<string, unknown> | undefined;
     vi.stubGlobal(
