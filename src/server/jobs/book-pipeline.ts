@@ -27,7 +27,12 @@ import {
 import { resolveEpubPath, validateEpubArchive } from "../epub/validate.js";
 import { updateContentLanguage, updatePackageLanguage } from "../epub/localization.js";
 import { repairInvalidParagraphNesting } from "../epub/repair.js";
-import { horizontalizePackage, isJapanese, normalizeJapaneseContent } from "../epub/japanese.js";
+import {
+  horizontalizePackage,
+  isJapanese,
+  latinizeStagedStylesheets,
+  normalizeJapaneseContent,
+} from "../epub/japanese.js";
 import type { LanguageModelProvider } from "../providers/provider.js";
 import { FakeProvider } from "../providers/fake-provider.js";
 import { DeepSeekProvider } from "../providers/deepseek.js";
@@ -204,6 +209,7 @@ export async function prepareBook(root: string, sourceLanguage?: string): Promis
   if (japanese) {
     const packageDom = parseXml(await readFile(packageFile));
     if (horizontalizePackage(packageDom)) await writeFile(packageFile, serializeXml(packageDom));
+    await latinizeStagedStylesheets(staging);
   }
   const documents: PreparedDocument[] = [];
   const documentIds = [...bookPackage.spine];

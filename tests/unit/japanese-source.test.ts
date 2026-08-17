@@ -3,6 +3,8 @@ import {
   flattenRuby,
   horizontalizeContent,
   horizontalizePackage,
+  latinizeFontStack,
+  latinizeStylesheet,
 } from "../../src/server/epub/japanese.js";
 import { parseXml, serializeXml } from "../../src/server/epub/xml-dom.js";
 import { extractTextSegments } from "../../src/server/epub/text-segments.js";
@@ -89,6 +91,67 @@ describe("writing direction", () => {
     expect(serializeXml(doc)).toContain('class="hltr"');
     // already horizontal pages are left alone
     expect(horizontalizeContent(xhtml("<p>本文</p>", "hltr"))).toBe(0);
+  });
+
+  it("loads the horizontal stylesheet instead of the vertical one", () => {
+    // The class was only half the switch. These books ship one stylesheet per direction and
+    // choose with `rel`: the vertical sheet is preferred, the horizontal one is `alternate`,
+    // which a reader does not apply. Four finished volumes were delivered still running their
+    // lines down the page because the sheet setting vertical-rl was the one being loaded.
+    const doc = parseXml(
+      `<html xmlns="http://www.w3.org/1999/xhtml" class="vrtl"><head>` +
+        `<link rel="stylesheet" href="book-style.css"/>` +
+        `<link class="vertical" rel="stylesheet" href="v.css" title="縦組"/>` +
+        `<link class="horizontal" rel="alternate stylesheet" href="h.css" title="横組"/>` +
+        `</head><body><p>本文</p></body></html>`,
+    );
+
+    expect(horizontalizeContent(doc)).toBe(3);
+
+    const out = serializeXml(doc);
+    expect(out).toMatch(/class="vertical" rel="alternate stylesheet"/);
+    expect(out).toMatch(/class="horizontal" rel="stylesheet"/);
+    // The page's ordinary stylesheet is not one of the pair and stays as it is.
+    expect(out).toContain('<link rel="stylesheet" href="book-style.css"/>');
+    expect(out).toContain('class="hltr"');
+  });
+
+  it("recognises the pair by its Japanese titles when the classes are absent", () => {
+    const doc = parseXml(
+      `<html xmlns="http://www.w3.org/1999/xhtml"><head>` +
+        `<link rel="stylesheet" href="v.css" title="縦組"/>` +
+        `<link rel="alternate stylesheet" href="h.css" title="横組"/>` +
+        `</head><body/></html>`,
+    );
+    expect(horizontalizeContent(doc)).toBe(2);
+    expect(serializeXml(doc)).toMatch(/rel="stylesheet" href="h\.css"/);
+  });
+
+  it("takes the book's Cyrillic out of a Japanese face", () => {
+    // Cyrillic exists in Mincho and Gothic but is drawn full-width, one letter per CJK em box,
+    // so a translated volume read with enormous gaps between its letters. Nothing is embedded:
+    // the families name system fonts and the aliases resolve to local("ＭＳ 明朝").
+    expect(
+      latinizeFontStack(
+        '"Hiragino Mincho ProN","ヒラギノ明朝 Pro W3","MS Mincho","ＭＳ 明朝",serif',
+      ),
+    ).toBe("serif");
+    // A vertical-writing stack (the @ prefix) reaching for a sans face lands on sans-serif.
+    expect(
+      latinizeFontStack('"@HiraKakuProN-W3","@ヒラギノ角ゴ Pro W3","MS Gothic",sans-serif'),
+    ).toBe("sans-serif");
+    expect(latinizeFontStack("serif-ja, serif")).toBe("serif");
+    // A stack with nothing Japanese in it is the book's own choice and is left alone.
+    expect(latinizeFontStack('Georgia, "Times New Roman", serif')).toBe(
+      'Georgia, "Times New Roman", serif',
+    );
+
+    const sheet = latinizeStylesheet(
+      `body { font-family: "MS Mincho",serif; }\n.g { font-family: "MS Gothic",sans-serif !important; }`,
+    );
+    expect(sheet.changes).toBe(2);
+    expect(sheet.value).toContain("font-family: serif;");
+    expect(sheet.value).toContain("font-family: sans-serif !important;");
   });
 
   it("turns the spine forwards", () => {
