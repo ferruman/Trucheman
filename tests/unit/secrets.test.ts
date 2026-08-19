@@ -44,4 +44,23 @@ describe("secret boundaries", () => {
       criticThinking: "disabled",
     });
   });
+
+  it("prefers Trucheman variables while accepting legacy variables", async () => {
+    const root = await mkdtemp(`${tmpdir()}/trucheman-secrets-`);
+    roots.push(root);
+    const path = join(root, ".env.local");
+    await writeFile(
+      path,
+      [
+        "TRUCHEMAN_TRANSLATION_API_KEY=current-key",
+        "BOOK_TRANSLATOR_TRANSLATION_API_KEY=legacy-key",
+        "BOOK_TRANSLATOR_EDITING_API_KEY=legacy-editor-key",
+      ].join("\n"),
+    );
+
+    expect(loadSecrets(path)).toMatchObject({
+      translationApiKey: "current-key",
+      editingApiKey: "legacy-editor-key",
+    });
+  });
 });

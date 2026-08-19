@@ -1,6 +1,19 @@
 # Trucheman
 
+[![CI](https://github.com/ferruman/Trucheman/actions/workflows/ci.yml/badge.svg)](https://github.com/ferruman/Trucheman/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Trucheman is a local-first web application for translating DRM-free EPUB 2 and EPUB 3 books. It keeps job state and intermediate results on the local filesystem while sending eligible text segments to a configured external language provider.
+
+> **Project status:** pre-1.0 and under active development. Back up source books and local job data
+> before upgrading.
+
+## Highlights
+
+- Local-first job state with interruption recovery and deterministic offline development.
+- Separate translation and literary-editing passes with glossary and book-wide consistency support.
+- Conservative EPUB extraction, rebuilding, and output validation.
+- Optional high-quality critic and targeted repair pipeline with durable usage reporting.
 
 ## Development
 
@@ -14,6 +27,8 @@ npm run build
 npm run dev
 ```
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a change.
+
 The server binds to `127.0.0.1` by default. Copy `.env.example` to `.env.local` or configure `.env`; `.env.local` takes precedence. Add provider credentials only to a server-side environment file. Credentials are never sent to the browser or written to job state.
 
 ## Using the application
@@ -26,27 +41,27 @@ The server binds to `127.0.0.1` by default. Copy `.env.example` to `.env.local` 
 Without credentials, the application uses the deterministic local provider so the complete flow can be exercised safely. To use DeepSeek, place both translation and editing credentials in `.env.local`:
 
 ```dotenv
-BOOK_TRANSLATOR_TRANSLATION_API_KEY=your-key
-BOOK_TRANSLATOR_EDITING_API_KEY=your-key
-BOOK_TRANSLATOR_TRANSLATION_MODEL=deepseek-v4-flash
-BOOK_TRANSLATOR_EDITING_MODEL=deepseek-v4-flash
-BOOK_TRANSLATOR_CRITIC_MODEL=deepseek-v4-flash
-BOOK_TRANSLATOR_CONSISTENCY_MODEL=deepseek-v4-flash
+TRUCHEMAN_TRANSLATION_API_KEY=your-key
+TRUCHEMAN_EDITING_API_KEY=your-key
+TRUCHEMAN_TRANSLATION_MODEL=deepseek-v4-flash
+TRUCHEMAN_EDITING_MODEL=deepseek-v4-flash
+TRUCHEMAN_CRITIC_MODEL=deepseek-v4-flash
+TRUCHEMAN_CONSISTENCY_MODEL=deepseek-v4-flash
 ```
 
 Translation and editing models are configured independently. The editing pass can also select an
 evaluated prompt independently of the translation pass. The OpenAI Terra editing model
-(`BOOK_TRANSLATOR_EDITING_MODEL=gpt-5.6-terra`) automatically selects the evaluated
-`literary-v3.2.1` prompt. Set `BOOK_TRANSLATOR_EDITING_PROMPT_VERSION` only to override the
+(`TRUCHEMAN_EDITING_MODEL=gpt-5.6-terra`) automatically selects the evaluated
+`literary-v3.2.1` prompt. Set `TRUCHEMAN_EDITING_PROMPT_VERSION` only to override the
 model-specific default; other models continue to use `literary-v3.1` unless explicitly configured.
 
 External-provider runs also make up to two cached DeepSeek consistency requests: one builds a
 book-wide entity registry before translation, and one resolves detected variants after editing.
 The model returns decisions only; exact replacements are validated and applied by code. Mechanical
 quote and `ё` diagnostics are saved as `consistency-report.json` in the local job directory.
-The consistency profile is configured with `BOOK_TRANSLATOR_CONSISTENCY_API_KEY`,
-`BOOK_TRANSLATOR_CONSISTENCY_ENDPOINT`, `BOOK_TRANSLATOR_CONSISTENCY_MODEL`, and
-`BOOK_TRANSLATOR_CONSISTENCY_THINKING`. Its API key, endpoint, and model fall back to the translation
+The consistency profile is configured with `TRUCHEMAN_CONSISTENCY_API_KEY`,
+`TRUCHEMAN_CONSISTENCY_ENDPOINT`, `TRUCHEMAN_CONSISTENCY_MODEL`, and
+`TRUCHEMAN_CONSISTENCY_THINKING`. Its API key, endpoint, and model fall back to the translation
 profile when omitted.
 
 Each book has a quality mode:
@@ -60,9 +75,9 @@ High mode always adds audit inference for every eligible segment. Repair inferen
 its additional cost depends on how many concrete defects the critic finds. Audit and repair results
 are checkpointed in `audits.ndjson` and `repairs.ndjson`; the local `quality-report.json` records the
 flagged spans and applied repair count. Switching quality modes keeps completed translation and
-editing checkpoints. Configure the audit profile with `BOOK_TRANSLATOR_CRITIC_API_KEY`,
-`BOOK_TRANSLATOR_CRITIC_ENDPOINT`, `BOOK_TRANSLATOR_CRITIC_MODEL`, and
-`BOOK_TRANSLATOR_CRITIC_THINKING`; omitted values inherit the editing profile. Targeted repair
+editing checkpoints. Configure the audit profile with `TRUCHEMAN_CRITIC_API_KEY`,
+`TRUCHEMAN_CRITIC_ENDPOINT`, `TRUCHEMAN_CRITIC_MODEL`, and
+`TRUCHEMAN_CRITIC_THINKING`; omitted values inherit the editing profile. Targeted repair
 continues to use the editing model.
 
 Every successful provider response is recorded in the append-only `usage.ndjson` ledger. The
@@ -93,3 +108,14 @@ To exercise corpus loading, reporting, and scoring without making external reque
 - Drafts and edits are stored in separate append-only journals.
 - The final build uses edited text only and is validated before output promotion.
 - The browser displays only sanitized job state and progress events.
+
+## Security and privacy
+
+Trucheman is a single-user local application and should not be exposed directly to the public
+internet. External-provider mode sends eligible book text to the configured API. Use only books you
+have the right to process, review the provider's terms, and never commit `.env` files or local job
+data. Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
+
+## License
+
+Trucheman is available under the [MIT License](LICENSE).

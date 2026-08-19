@@ -39,25 +39,27 @@ export function loadSecrets(path?: string): SecretStore {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
     if (m) values[m[1]] = m[2].replace(/^['"]|['"]$/g, "");
   }
+  const value = (name: string) =>
+    values[`TRUCHEMAN_${name}`] || values[`BOOK_TRANSLATOR_${name}`] || undefined;
   return Object.freeze({
-    translationApiKey: values.BOOK_TRANSLATOR_TRANSLATION_API_KEY || undefined,
-    editingApiKey: values.BOOK_TRANSLATOR_EDITING_API_KEY || undefined,
-    criticApiKey: values.BOOK_TRANSLATOR_CRITIC_API_KEY || undefined,
-    consistencyApiKey: values.BOOK_TRANSLATOR_CONSISTENCY_API_KEY || undefined,
-    translationEndpoint: values.BOOK_TRANSLATOR_TRANSLATION_ENDPOINT || undefined,
-    editingEndpoint: values.BOOK_TRANSLATOR_EDITING_ENDPOINT || undefined,
-    criticEndpoint: values.BOOK_TRANSLATOR_CRITIC_ENDPOINT || undefined,
-    consistencyEndpoint: values.BOOK_TRANSLATOR_CONSISTENCY_ENDPOINT || undefined,
-    translationModel: values.BOOK_TRANSLATOR_TRANSLATION_MODEL || undefined,
-    editingModel: values.BOOK_TRANSLATOR_EDITING_MODEL || undefined,
-    criticModel: values.BOOK_TRANSLATOR_CRITIC_MODEL || undefined,
-    criticThinking: values.BOOK_TRANSLATOR_CRITIC_THINKING || undefined,
-    repairModel: values.BOOK_TRANSLATOR_REPAIR_MODEL || undefined,
-    repairThinking: values.BOOK_TRANSLATOR_REPAIR_THINKING || undefined,
-    consistencyModel: values.BOOK_TRANSLATOR_CONSISTENCY_MODEL || undefined,
-    consistencyThinking: values.BOOK_TRANSLATOR_CONSISTENCY_THINKING || undefined,
-    editingPromptVersion: values.BOOK_TRANSLATOR_EDITING_PROMPT_VERSION || undefined,
-    concurrency: values.BOOK_TRANSLATOR_CONCURRENCY || undefined,
-    timeoutMs: values.BOOK_TRANSLATOR_TIMEOUT_MS || undefined,
+    translationApiKey: value("TRANSLATION_API_KEY"),
+    editingApiKey: value("EDITING_API_KEY"),
+    criticApiKey: value("CRITIC_API_KEY"),
+    consistencyApiKey: value("CONSISTENCY_API_KEY"),
+    translationEndpoint: value("TRANSLATION_ENDPOINT"),
+    editingEndpoint: value("EDITING_ENDPOINT"),
+    criticEndpoint: value("CRITIC_ENDPOINT"),
+    consistencyEndpoint: value("CONSISTENCY_ENDPOINT"),
+    translationModel: value("TRANSLATION_MODEL"),
+    editingModel: value("EDITING_MODEL"),
+    criticModel: value("CRITIC_MODEL"),
+    criticThinking: value("CRITIC_THINKING"),
+    repairModel: value("REPAIR_MODEL"),
+    repairThinking: value("REPAIR_THINKING"),
+    consistencyModel: value("CONSISTENCY_MODEL"),
+    consistencyThinking: value("CONSISTENCY_THINKING"),
+    editingPromptVersion: value("EDITING_PROMPT_VERSION"),
+    concurrency: value("CONCURRENCY"),
+    timeoutMs: value("TIMEOUT_MS"),
   });
 }

@@ -68,6 +68,17 @@ describe("settings API boundary", () => {
     ).toBe("terra");
   });
 
+  it("prefers Trucheman provider variables while accepting the legacy prefix", () => {
+    const profiles = resolveProfiles(
+      { TRUCHEMAN_EDITING_MODEL: "current", BOOK_TRANSLATOR_EDITING_MODEL: "legacy" },
+      {},
+    );
+    expect(profiles.editing.model).toBe("current");
+    expect(resolveProfiles({ BOOK_TRANSLATOR_EDITING_MODEL: "legacy" }, {}).editing.model).toBe(
+      "legacy",
+    );
+  });
+
   it("falls back to the deterministic provider when credentials are absent", () => {
     const profiles = resolveProfiles({ BOOK_TRANSLATOR_PROVIDER: "deterministic" });
     expect(profiles.useExternal).toBe(false);
@@ -92,7 +103,7 @@ describe("settings API boundary", () => {
     ).toBe(2);
     for (const value of ["0", "-1", "2.5", "many", "99"])
       expect(() => resolveProfiles({ BOOK_TRANSLATOR_CONCURRENCY: value }, {})).toThrow(
-        /BOOK_TRANSLATOR_CONCURRENCY/,
+        /TRUCHEMAN_CONCURRENCY/,
       );
   });
 
@@ -116,7 +127,7 @@ describe("settings API boundary", () => {
     ).toBe(90000);
     for (const value of ["0", "999", "1.5", "soon", "600001"])
       expect(() => resolveProfiles({ BOOK_TRANSLATOR_TIMEOUT_MS: value }, {})).toThrow(
-        /BOOK_TRANSLATOR_TIMEOUT_MS/,
+        /TRUCHEMAN_TIMEOUT_MS/,
       );
   });
 

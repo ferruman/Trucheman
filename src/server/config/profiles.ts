@@ -5,6 +5,10 @@ const DEEPSEEK_ENDPOINT = "https://api.deepseek.com/chat/completions";
 const DEEPSEEK_MODEL = "deepseek-v4-flash";
 const TERRA_MODEL = "gpt-5.6-terra";
 
+function envValue(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  return env[`TRUCHEMAN_${name}`] ?? env[`BOOK_TRANSLATOR_${name}`];
+}
+
 export type ResolvedProfiles = {
   useExternal: boolean;
   /** Opt-in second critic pass over repaired blocks. Off unless explicitly enabled. */
@@ -43,7 +47,7 @@ function batchConcurrency(value: string | undefined): number {
   if (value === undefined || value.trim() === "") return DEFAULT_CONCURRENCY;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_CONCURRENCY)
-    throw new Error(`BOOK_TRANSLATOR_CONCURRENCY must be an integer from 1 to ${MAX_CONCURRENCY}`);
+    throw new Error(`TRUCHEMAN_CONCURRENCY must be an integer from 1 to ${MAX_CONCURRENCY}`);
   return parsed;
 }
 
@@ -58,7 +62,7 @@ function requestTimeout(value: string | undefined): number {
   if (value === undefined || value.trim() === "") return DEFAULT_TIMEOUT_MS;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1000 || parsed > MAX_TIMEOUT_MS)
-    throw new Error(`BOOK_TRANSLATOR_TIMEOUT_MS must be an integer from 1000 to ${MAX_TIMEOUT_MS}`);
+    throw new Error(`TRUCHEMAN_TIMEOUT_MS must be an integer from 1000 to ${MAX_TIMEOUT_MS}`);
   return parsed;
 }
 
@@ -76,32 +80,32 @@ export function resolveProfiles(
   secrets: SecretStore = loadSecrets(),
 ): ResolvedProfiles {
   const useExternal =
-    env.BOOK_TRANSLATOR_PROVIDER !== "deterministic" &&
+    envValue(env, "PROVIDER") !== "deterministic" &&
     Boolean(secrets.translationApiKey && secrets.editingApiKey);
   const translationEndpoint =
-    secrets.translationEndpoint ?? env.BOOK_TRANSLATOR_TRANSLATION_ENDPOINT ?? DEEPSEEK_ENDPOINT;
+    secrets.translationEndpoint ?? envValue(env, "TRANSLATION_ENDPOINT") ?? DEEPSEEK_ENDPOINT;
   const editingEndpoint =
-    secrets.editingEndpoint ?? env.BOOK_TRANSLATOR_EDITING_ENDPOINT ?? DEEPSEEK_ENDPOINT;
+    secrets.editingEndpoint ?? envValue(env, "EDITING_ENDPOINT") ?? DEEPSEEK_ENDPOINT;
   const criticEndpoint =
-    secrets.criticEndpoint ?? env.BOOK_TRANSLATOR_CRITIC_ENDPOINT ?? editingEndpoint;
+    secrets.criticEndpoint ?? envValue(env, "CRITIC_ENDPOINT") ?? editingEndpoint;
   const consistencyEndpoint =
-    secrets.consistencyEndpoint ?? env.BOOK_TRANSLATOR_CONSISTENCY_ENDPOINT ?? translationEndpoint;
-  const editingModel = secrets.editingModel ?? env.BOOK_TRANSLATOR_EDITING_MODEL ?? DEEPSEEK_MODEL;
+    secrets.consistencyEndpoint ?? envValue(env, "CONSISTENCY_ENDPOINT") ?? translationEndpoint;
+  const editingModel = secrets.editingModel ?? envValue(env, "EDITING_MODEL") ?? DEEPSEEK_MODEL;
   const editingPromptVersion =
-    secrets.editingPromptVersion ?? env.BOOK_TRANSLATOR_EDITING_PROMPT_VERSION;
-  const timeoutMs = requestTimeout(secrets.timeoutMs ?? env.BOOK_TRANSLATOR_TIMEOUT_MS);
+    secrets.editingPromptVersion ?? envValue(env, "EDITING_PROMPT_VERSION");
+  const timeoutMs = requestTimeout(secrets.timeoutMs ?? envValue(env, "TIMEOUT_MS"));
   const translation: ProviderProfile = {
     name: useExternal ? "deepseek-translation" : "deterministic-local",
     endpoint: translationEndpoint,
-    model: secrets.translationModel ?? env.BOOK_TRANSLATOR_TRANSLATION_MODEL ?? DEEPSEEK_MODEL,
+    model: secrets.translationModel ?? envValue(env, "TRANSLATION_MODEL") ?? DEEPSEEK_MODEL,
     apiKey: secrets.translationApiKey,
     thinking: translationEndpoint.includes("api.deepseek.com") ? "disabled" : undefined,
     timeoutMs,
   };
   return {
     useExternal,
-    postRepairAudit: env.BOOK_TRANSLATOR_POST_REPAIR_AUDIT === "1",
-    concurrency: batchConcurrency(secrets.concurrency ?? env.BOOK_TRANSLATOR_CONCURRENCY),
+    postRepairAudit: envValue(env, "POST_REPAIR_AUDIT") === "1",
+    concurrency: batchConcurrency(secrets.concurrency ?? envValue(env, "CONCURRENCY")),
     translation,
     editing: {
       name: useExternal ? "deepseek-editing" : "deterministic-local",
@@ -115,24 +119,24 @@ export function resolveProfiles(
     critic: {
       name: useExternal ? "critic" : "deterministic-local",
       endpoint: criticEndpoint,
-      model: secrets.criticModel ?? env.BOOK_TRANSLATOR_CRITIC_MODEL ?? editingModel,
+      model: secrets.criticModel ?? envValue(env, "CRITIC_MODEL") ?? editingModel,
       apiKey: secrets.criticApiKey ?? secrets.editingApiKey,
       thinking: thinkingMode(
-        secrets.criticThinking ?? env.BOOK_TRANSLATOR_CRITIC_THINKING,
+        secrets.criticThinking ?? envValue(env, "CRITIC_THINKING"),
         criticEndpoint,
-        "BOOK_TRANSLATOR_CRITIC_THINKING",
+        "TRUCHEMAN_CRITIC_THINKING",
       ),
       timeoutMs,
     },
     repair: {
       name: useExternal ? "deepseek-repair" : "deterministic-local",
       endpoint: editingEndpoint,
-      model: secrets.repairModel ?? env.BOOK_TRANSLATOR_REPAIR_MODEL ?? editingModel,
+      model: secrets.repairModel ?? envValue(env, "REPAIR_MODEL") ?? editingModel,
       apiKey: secrets.editingApiKey,
       thinking: thinkingMode(
-        secrets.repairThinking ?? env.BOOK_TRANSLATOR_REPAIR_THINKING,
+        secrets.repairThinking ?? envValue(env, "REPAIR_THINKING"),
         editingEndpoint,
-        "BOOK_TRANSLATOR_REPAIR_THINKING",
+        "TRUCHEMAN_REPAIR_THINKING",
       ),
       promptVersion: editingPromptVersion || defaultEditingPromptVersion(editingModel),
       timeoutMs,
@@ -140,12 +144,12 @@ export function resolveProfiles(
     consistency: {
       name: useExternal ? "consistency" : "deterministic-local",
       endpoint: consistencyEndpoint,
-      model: secrets.consistencyModel ?? env.BOOK_TRANSLATOR_CONSISTENCY_MODEL ?? translation.model,
+      model: secrets.consistencyModel ?? envValue(env, "CONSISTENCY_MODEL") ?? translation.model,
       apiKey: secrets.consistencyApiKey ?? secrets.translationApiKey,
       thinking: thinkingMode(
-        secrets.consistencyThinking ?? env.BOOK_TRANSLATOR_CONSISTENCY_THINKING,
+        secrets.consistencyThinking ?? envValue(env, "CONSISTENCY_THINKING"),
         consistencyEndpoint,
-        "BOOK_TRANSLATOR_CONSISTENCY_THINKING",
+        "TRUCHEMAN_CONSISTENCY_THINKING",
       ),
       timeoutMs,
     },
