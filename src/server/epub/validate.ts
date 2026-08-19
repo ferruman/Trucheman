@@ -88,7 +88,7 @@ export async function validateEpub(root: string): Promise<ValidationReport> {
 
 /** Validate the bytes that will actually be published, not merely their source tree. */
 export async function validateEpubArchive(archivePath: string): Promise<ValidationReport> {
-  const extracted = await mkdtemp(join(tmpdir(), "book-translator-validation-"));
+  const extracted = await mkdtemp(join(tmpdir(), "trucheman-validation-"));
   try {
     await extractEpub(archivePath, extracted);
     return await validateEpub(extracted);

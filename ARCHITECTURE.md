@@ -1,8 +1,8 @@
-# Book Translator — Architecture
+# Trucheman — Architecture
 
 ## Overview
 
-**Book Translator** is a local-first web application for translating EPUB books using LLM providers. It runs as a single Node.js process (Express + React SPA), stores all state in the local filesystem, and requires no external database.
+**Trucheman** is a local-first web application for translating EPUB books using LLM providers. It runs as a single Node.js process (Express + React SPA), stores all state in the local filesystem, and requires no external database.
 
 - **Tech stack:** Node.js 24+, TypeScript 6, Express 5, React 19, Vite 8, Zod 4
 - **Runtime:** `npm run dev` builds the client, then starts a server at `127.0.0.1:4173`

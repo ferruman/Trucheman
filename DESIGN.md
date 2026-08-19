@@ -1,5 +1,5 @@
 ---
-name: Book Translator
+name: Trucheman
 description: A focused command workbench for local book-translation jobs.
 colors:
   canvas: "#0b0e14"
@@ -112,13 +112,13 @@ components:
     padding: "16px"
 ---
 
-# Design System: Book Translator
+# Design System: Trucheman
 
 ## Overview
 
 **Creative North Star: "The Command Workbench"**
 
-Book Translator should feel like a precise local tool operated by one person, not a public SaaS dashboard and not a theatrical terminal simulation. Its visual language borrows the legibility, compactness, explicit state, and keyboard confidence of excellent command-line tools while preserving familiar web controls.
+Trucheman should feel like a precise local tool operated by one person, not a public SaaS dashboard and not a theatrical terminal simulation. Its visual language borrows the legibility, compactness, explicit state, and keyboard confidence of excellent command-line tools while preserving familiar web controls.
 
 The interface is dark, quiet, and information-forward. Hierarchy comes from topology, labels, borders, and typographic contrast rather than cards, illustration, or ornamental effects.
 

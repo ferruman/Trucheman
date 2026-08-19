@@ -6,7 +6,7 @@ export function problemResponse(res: Response, error: unknown, req?: Request) {
     .status(e.status)
     .type("application/problem+json")
     .json({
-      type: `https://book-translator.local/problems/${e.code}`,
+      type: `https://trucheman.local/problems/${e.code}`,
       title: e.code,
       status: e.status,
       detail: e.message,

@@ -46,7 +46,7 @@ describe("EPUB localization", () => {
     expect(output).toContain("<dc:date>1999</dc:date>");
     expect(output).toContain("<dc:language>ru</dc:language>");
     expect(output).toContain('property="dcterms:modified">2026-08-11T10:09:08Z</meta>');
-    expect(output).toContain('name="generator" content="Book Translator"');
+    expect(output).toContain('name="generator" content="Trucheman"');
   });
 
   it("sets HTML language attributes and only xml:lang on NCX", () => {

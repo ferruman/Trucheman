@@ -1,4 +1,4 @@
-# Book Translator Product Requirements
+# Trucheman Product Requirements
 
 **Version:** 1.0 (local-first MVP)  
 **Status:** Ready for implementation  
@@ -6,7 +6,7 @@
 
 ## 1. Product summary
 
-Book Translator is a local web application for translating DRM-free EPUB books through an external language-model API. The first pass creates a complete draft translation. The second pass edits every draft against the original, correcting meaning, language, style, and glossary consistency. The application preserves EPUB structure, markup, images, links, footnotes, and service files; proposes a glossary of proper names; shows durable progress; and resumes unfinished work after interruption.
+Trucheman is a local web application for translating DRM-free EPUB books through an external language-model API. The first pass creates a complete draft translation. The second pass edits every draft against the original, correcting meaning, language, style, and glossary consistency. The application preserves EPUB structure, markup, images, links, footnotes, and service files; proposes a glossary of proper names; shows durable progress; and resumes unfinished work after interruption.
 
 The application runs on the user's computer and is opened in a desktop browser. It has no accounts, cloud storage, public deployment, collaboration, or online job queue.
 

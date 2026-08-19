@@ -6,15 +6,11 @@ export function App() {
   return (
     <div className="app-shell">
       <aside className="command-rail">
-        <a className="brand" href="/" aria-label="Book Translator home">
+        <a className="brand" href="/" aria-label="Trucheman home">
           <span className="brand-mark" aria-hidden="true">
-            BT
+            T
           </span>
-          <span>
-            Book
-            <br />
-            Translator
-          </span>
+          <span>Trucheman</span>
         </a>
         <nav aria-label="Primary navigation">
           <a className={path === "/" || path.startsWith("/jobs/") ? "active" : ""} href="/">

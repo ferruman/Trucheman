@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Book Translator Local API
+  title: Trucheman Local API
   version: 0.1.0
   description: >-
     Loopback-only API for the local-first MVP. The persisted job state is the

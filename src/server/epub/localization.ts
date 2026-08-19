@@ -3,7 +3,7 @@ import { localName } from "./xml-dom.js";
 
 const DC_NAMESPACE = "http://purl.org/dc/elements/1.1/";
 const XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace";
-const FILE_GENERATOR = "Book Translator";
+const FILE_GENERATOR = "Trucheman";
 
 function walkElements(node: Node, visit: (element: Element) => void) {
   if (node.nodeType === 1) visit(node as Element);

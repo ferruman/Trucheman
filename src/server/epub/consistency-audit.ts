@@ -373,7 +373,7 @@ export async function auditExtractedEpub(root: string, expectedLanguage = "ru") 
 }
 
 export async function auditEpubArchive(archivePath: string, expectedLanguage = "ru") {
-  const extracted = await mkdtemp(join(tmpdir(), "book-translator-audit-"));
+  const extracted = await mkdtemp(join(tmpdir(), "trucheman-audit-"));
   try {
     await extractEpub(archivePath, extracted);
     return await auditExtractedEpub(extracted, expectedLanguage);

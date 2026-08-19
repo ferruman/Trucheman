@@ -12,7 +12,7 @@ The primary user is the developer-owner, running the tool locally to translate D
 
 ## Product Purpose
 
-Book Translator turns a source ebook into a translated book while preserving a usable book file and making the translation workflow observable and recoverable. Success means completing the process locally—from upload and analysis through translation, editing, validation, and download—without relying on hosted application infrastructure.
+Trucheman turns a source ebook into a translated book while preserving a usable book file and making the translation workflow observable and recoverable. Success means completing the process locally—from upload and analysis through translation, editing, validation, and download—without relying on hosted application infrastructure.
 
 ## Positioning
 

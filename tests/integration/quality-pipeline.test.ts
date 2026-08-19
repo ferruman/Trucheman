@@ -21,7 +21,7 @@ const segment = {
 
 describe("two-pass pipeline", () => {
   it("persists drafts before edits in chapter order", async () => {
-    const root = await mkdtemp(`${tmpdir()}/book-translator-`);
+    const root = await mkdtemp(`${tmpdir()}/trucheman-`);
     const provider = new FakeProvider();
     const profile = { name: "fake", endpoint: "local", model: "fake" };
     await runQualityPipeline(

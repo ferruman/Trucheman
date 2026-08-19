@@ -7,7 +7,7 @@ import { buildFixtureEpub } from "../fixtures/build-epubs.js";
 let fixtureRoot: string;
 let fixturePath: string;
 test.beforeAll(async () => {
-  fixtureRoot = await mkdtemp(join(tmpdir(), "book-translator-e2e-"));
+  fixtureRoot = await mkdtemp(join(tmpdir(), "trucheman-e2e-"));
   fixturePath = await buildFixtureEpub(join(fixtureRoot, "fixture.epub"));
 });
 test.afterAll(async () => {

@@ -6,7 +6,7 @@
 
 **Status**: Ready for implementation
 
-**Input**: Product requirements in `docs/book-translator-prd.md` for a local-first EPUB translation application.
+**Input**: Product requirements in `docs/trucheman-prd.md` for a local-first EPUB translation application.
 
 ## User Scenarios & Testing _(mandatory)_
 
