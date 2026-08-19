@@ -29,7 +29,7 @@
     "eval:literary:review:build": "node --import tsx/esm src/server/evals/run-literary-review-build.ts"
   },
   "dependencies": {
-    "@xmldom/xmldom": "^0.9.10",
+    "@xmldom/xmldom": "^0.9.11",
     "busboy": "^1.6.0",
     "express": "^5.2.1",
     "react": "^19.2.0",
