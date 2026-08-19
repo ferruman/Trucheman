@@ -88,18 +88,6 @@ token usage only and intentionally do not estimate currency costs.
 
 Restart the server after changing `.env.local` or `.env`. The external-provider mode sends eligible book text to the configured service.
 
-## Literary editor evaluation
-
-The committed regression corpus exercises the editing pass without translating an entire EPUB. It includes calques, collocations, dialogue, nonfiction, period prose, and multiple language pairs. With an editing credential configured, run:
-
-```sh
-npm run eval:literary
-```
-
-Use `-- --limit 3` for a smaller paid smoke run, `-- --offset 1` to resume after the first case, or `-- --output path/to/report.json` to choose the report location. Test a non-production prompt with `-- --prompt-version literary-v3.2.1`; the production default remains unchanged. Compare models explicitly with `-- --model deepseek-v4-pro --thinking disabled --temperature 0`; supplied prompt, generation settings, and corpus selection are recorded in the report. Omit `--temperature` unless the selected model supports it. Reports are written under the ignored `eval-results/` directory by default. Automated checks reject known bad constructions without requiring one exact literary translation; the report also includes empty human-review fields for semantic fidelity, native-language naturalness, lexical/idiomatic naturalness, and voice preservation.
-
-To exercise corpus loading, reporting, and scoring without making external requests, run `npm run eval:literary -- --provider deterministic`.
-
 ## Design boundaries
 
 - EPUB archives are checked for unsafe paths, encryption, unsupported compression, and expansion limits before processing.

@@ -86,7 +86,11 @@ async function evaluateCandidate(
 }
 
 async function main() {
-  const corpusPath = resolve(argument("--corpus") ?? "evals/literary-editor/cases.json");
+  const corpusArgument = argument("--corpus");
+  if (!corpusArgument) {
+    throw new Error("--corpus is required; Trucheman does not bundle evaluation book text");
+  }
+  const corpusPath = resolve(corpusArgument);
   const limitValue = argument("--limit");
   const offsetValue = argument("--offset");
   const providerName = argument("--provider") ?? "deepseek";
