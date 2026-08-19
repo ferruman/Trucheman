@@ -28,7 +28,9 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
-      - run: npm test
+      # Several integration tests exercise their own concurrency and fixed timing boundaries.
+      # One Vitest worker keeps shared GitHub runners from distorting those boundaries.
+      - run: npm test -- --maxWorkers=1
       - run: npm run build
 
   dependency-review:
