@@ -140,15 +140,13 @@ describe("book pipeline instructions", () => {
       qualityMode: "standard",
     };
     const fake = new FakeProvider();
-    // Uneven but fixed latency, so the workers finish out of the order they started in and
-    // do so the same way every run. With a random delay the first batch was the last to
-    // close about one run in four; the frontier then legitimately never advanced past its
-    // document, and the test failed on a correct result.
-    const latencies = [20, 5, 30, 10, 25, 15];
-    let call = 0;
+    // Delay by document identity, not concurrent call order: scheduling can change which worker
+    // calls first, especially on shared CI runners. The first document now deterministically
+    // closes before later documents, so the frontier must visibly advance without rewinding.
     const provider: LanguageModelProvider = {
       async complete(request, signal) {
-        const delay = latencies[call++ % latencies.length];
+        const documentNumber = Number(request.segments[0]?.id.match(/^document-(\d+)/)?.[1] ?? 1);
+        const delay = documentNumber * 40;
         await new Promise((resolve) => setTimeout(resolve, delay));
         return fake.complete(request, signal);
       },
