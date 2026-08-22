@@ -1,45 +1,131 @@
-# Trucheman
+<p align="center">
+  <img src="docs/assets/trucheman-hero.webp" alt="An interpreter carrying a book across a bridge between two editions" width="1200">
+</p>
 
-[![CI](https://github.com/ferruman/Trucheman/actions/workflows/ci.yml/badge.svg)](https://github.com/ferruman/Trucheman/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+<h1 align="center">Trucheman</h1>
 
-Trucheman is a local-first web application for translating DRM-free EPUB 2 and EPUB 3 books. It keeps job state and intermediate results on the local filesystem while sending eligible text segments to a configured external language provider.
+<p align="center">
+  <strong>Translate books, not just strings.</strong><br>
+  A local-first EPUB translation studio with literary editing, consistency control,<br>
+  resumable jobs, and validated output.
+</p>
 
-> **Project status:** pre-1.0 and under active development. Back up source books and local job data
-> before upgrading.
+<p align="center">
+  <a href="https://github.com/ferruman/Trucheman/actions/workflows/ci.yml"><img src="https://github.com/ferruman/Trucheman/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://github.com/ferruman/Trucheman/actions/workflows/container.yml"><img src="https://github.com/ferruman/Trucheman/actions/workflows/container.yml/badge.svg" alt="Container status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f2c14e" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/Node.js-24%2B-5fa04e" alt="Node.js 24 or newer">
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ed?logo=docker&logoColor=white" alt="Docker Compose">
+</p>
 
-## Highlights
+> [!IMPORTANT]
+> Trucheman is pre-1.0 and under active development. Keep backups of source books and local job
+> data when upgrading.
 
-- Local-first job state with interruption recovery and deterministic offline development.
-- Separate translation and literary-editing passes with glossary and book-wide consistency support.
-- Conservative EPUB extraction, rebuilding, and output validation.
-- Optional high-quality critic and targeted repair pipeline with durable usage reporting.
+## See it in action
 
-## Quick start with Docker
+<p align="center">
+  <img src="docs/assets/trucheman-demo.gif" alt="Trucheman importing, translating, validating, and reporting usage for an EPUB" width="960">
+</p>
 
-Requirements: Docker Desktop or Docker Engine with Compose.
+The demo uses the deterministic local provider: no API key, network request, or staged mockup. It
+runs the same import, translation, editing, build, validation, and reporting flow used by a live
+provider.
+
+## Why Trucheman?
+
+|                         |                                                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------------------------------- |
+| **EPUB-aware**          | Preserves book structure and formatting instead of treating an EPUB as one giant text file.          |
+| **Literary pipeline**   | Separates translation, editing, consistency, optional critique, and targeted repair.                 |
+| **Local-first**         | Keeps source books, checkpoints, reports, and generated EPUBs on your machine.                       |
+| **Safe to interrupt**   | Resumes durable jobs without paying for completed provider calls twice.                              |
+| **Standard or Batch**   | Runs immediately through Chat Completions or asynchronously through the OpenAI Batch API.            |
+| **Validated output**    | Checks archive safety, rebuilt structure, untranslated fragments, consistency, and EPUB conformance. |
+| **Visible model usage** | Reports request and token totals for every pipeline stage and exact model.                           |
+
+## Quick start
+
+You need Docker Desktop or Docker Engine with the Compose plugin.
 
 ```sh
 git clone https://github.com/ferruman/Trucheman.git
 cd Trucheman
 cp .env.example .env
-```
-
-Add provider keys and models to `.env`, then start Trucheman:
-
-```sh
 docker compose up -d
 ```
 
-Open `http://127.0.0.1:4173`. Job data survives container replacement in the
-`trucheman-data` volume, and provider configuration is mounted as a Docker secret rather than
-copied into the image. The service runs as a non-root user, exposes only the loopback interface,
-and includes a healthcheck.
+Open [http://127.0.0.1:4173](http://127.0.0.1:4173). Without provider credentials, Trucheman uses
+its deterministic local provider, so you can safely explore the complete workflow first.
 
-Use `docker compose logs -f` to follow startup, `docker compose down` to stop without deleting
-books, and `docker compose pull && docker compose up -d` to update. Do not use
-`docker compose down -v` unless you intend to delete all Trucheman job data. See the complete
-[Docker operations guide](docs/docker.md), including backup and restore commands.
+For live translation, add your provider keys and models to `.env`, then restart:
+
+```sh
+docker compose restart
+```
+
+Job data survives container replacement in the `trucheman-data` volume. Keys are mounted through
+Docker Compose secrets, the service runs as a non-root user, and the port is exposed only on the
+loopback interface.
+
+```sh
+docker compose logs -f                 # follow startup and jobs
+docker compose pull && docker compose up -d  # update
+docker compose down                    # stop without deleting books
+```
+
+Do not run `docker compose down -v` unless you intend to delete all local Trucheman data. The
+[Docker guide](docs/docker.md) covers installation, updates, backup, and restore.
+
+## The pipeline
+
+```text
+Import → Inspect → Translate → Literary edit → Consistency → Build → Validate
+                               ↘ Critic → selective repair ↗
+```
+
+- **Standard quality** translates, edits, and applies book-wide consistency decisions.
+- **High quality** additionally audits every edited segment and repairs only validated medium- or
+  high-severity findings.
+- **Standard processing** starts provider requests immediately.
+- **Batch processing** submits durable asynchronous work to the official OpenAI Batch API, which
+  can reduce provider cost at the expense of latency.
+
+Pausing or restarting Trucheman preserves completed checkpoints and submitted batch identifiers.
+Changing a quality mode keeps reusable work whenever the pipeline boundary allows it.
+
+<details>
+<summary><strong>Provider configuration</strong></summary>
+
+Translation, literary editing, critique, and consistency can use independently configured
+OpenAI-compatible profiles. A minimal DeepSeek configuration looks like this:
+
+```dotenv
+TRUCHEMAN_TRANSLATION_API_KEY=your-key
+TRUCHEMAN_EDITING_API_KEY=your-key
+TRUCHEMAN_TRANSLATION_MODEL=deepseek-v4-flash
+TRUCHEMAN_EDITING_MODEL=deepseek-v4-flash
+TRUCHEMAN_CRITIC_MODEL=deepseek-v4-flash
+TRUCHEMAN_CONSISTENCY_MODEL=deepseek-v4-flash
+```
+
+Omitted critic settings inherit the editing profile. Omitted consistency settings inherit the
+translation profile. Restart the service after editing `.env`.
+
+Batch mode requires the official `https://api.openai.com/v1/chat/completions` endpoint for every
+configured profile and compatible OpenAI models. Trucheman rejects other endpoints before
+uploading book text.
+
+</details>
+
+## Privacy and boundaries
+
+Trucheman is a single-user local application. It stores books and job state locally, but a live
+provider run sends eligible book text to the APIs you configure. It does not provide authentication
+and must not be exposed directly to the public internet.
+
+Use only DRM-free books you have the right to process. Never commit `.env`, source books, or local
+job data. Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 
 ## Development
 
@@ -53,96 +139,17 @@ npm run build
 npm run dev
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a change.
+The development server listens on `127.0.0.1:4173`. Copy `.env.example` to `.env.local` for local
+provider credentials; `.env.local` takes precedence over `.env`.
 
-The server binds to `127.0.0.1` by default. Copy `.env.example` to `.env.local` or configure `.env`; `.env.local` takes precedence. Add provider credentials only to a server-side environment file. Credentials are never sent to the browser or written to job state.
+## Project docs
 
-## Using the application
-
-1. Open `http://127.0.0.1:4173`.
-2. Choose **New book**, select an EPUB, choose different source and target languages, and select **Upload and analyze**.
-3. Review the prepared job and choose **Start translation**.
-4. Wait for the job to reach `completed`, then choose **Download translated EPUB**.
-
-Without credentials, the application uses the deterministic local provider so the complete flow can be exercised safely. To use DeepSeek, place both translation and editing credentials in `.env.local`:
-
-```dotenv
-TRUCHEMAN_TRANSLATION_API_KEY=your-key
-TRUCHEMAN_EDITING_API_KEY=your-key
-TRUCHEMAN_TRANSLATION_MODEL=deepseek-v4-flash
-TRUCHEMAN_EDITING_MODEL=deepseek-v4-flash
-TRUCHEMAN_CRITIC_MODEL=deepseek-v4-flash
-TRUCHEMAN_CONSISTENCY_MODEL=deepseek-v4-flash
-```
-
-Translation and editing models are configured independently. The editing pass can also select an
-evaluated prompt independently of the translation pass. The OpenAI Terra editing model
-(`TRUCHEMAN_EDITING_MODEL=gpt-5.6-terra`) automatically selects the evaluated
-`literary-v3.2.1` prompt. Set `TRUCHEMAN_EDITING_PROMPT_VERSION` only to override the
-model-specific default; other models continue to use `literary-v3.1` unless explicitly configured.
-
-External-provider runs also make up to two cached DeepSeek consistency requests: one builds a
-book-wide entity registry before translation, and one resolves detected variants after editing.
-The model returns decisions only; exact replacements are validated and applied by code. Mechanical
-quote and `ё` diagnostics are saved as `consistency-report.json` in the local job directory.
-The consistency profile is configured with `TRUCHEMAN_CONSISTENCY_API_KEY`,
-`TRUCHEMAN_CONSISTENCY_ENDPOINT`, `TRUCHEMAN_CONSISTENCY_MODEL`, and
-`TRUCHEMAN_CONSISTENCY_THINKING`. Its API key, endpoint, and model fall back to the translation
-profile when omitted.
-
-Each book has a quality mode:
-
-- **Standard** runs translation and literary editing, followed by book-wide consistency.
-- **High** adds a conservative audit after editing. The audit sees the original, initial
-  translation, and edited translation, but cannot rewrite. Only segments with validated medium or
-  high-severity findings are sent through targeted repair; unflagged edits are preserved exactly.
-
-High mode always adds audit inference for every eligible segment. Repair inference is selective, so
-its additional cost depends on how many concrete defects the critic finds. Audit and repair results
-are checkpointed in `audits.ndjson` and `repairs.ndjson`; the local `quality-report.json` records the
-flagged spans and applied repair count. Switching quality modes keeps completed translation and
-editing checkpoints. Configure the audit profile with `TRUCHEMAN_CRITIC_API_KEY`,
-`TRUCHEMAN_CRITIC_ENDPOINT`, `TRUCHEMAN_CRITIC_MODEL`, and
-`TRUCHEMAN_CRITIC_THINKING`; omitted values inherit the editing profile. Targeted repair
-continues to use the editing model.
-
-Each book also has a processing mode. **Standard** sends requests immediately through the
-configured OpenAI-compatible Chat Completions endpoint. **Batch** submits the same validated
-pipeline through the official OpenAI Batch API. Each submitted batch task is asynchronous and can
-take up to 24 hours; because a book has dependent translation, editing, and optional audit stages,
-the complete run can take longer. OpenAI prices Batch API work at a discount. Submitted batch
-identifiers and downloaded results are kept inside the local job directory, so pausing or
-restarting Trucheman does not submit the same request again.
-
-Batch mode requires every configured endpoint to be
-`https://api.openai.com/v1/chat/completions`. Configure the translation, editing, critic, and
-consistency models for OpenAI before selecting it; omitted critic and consistency credentials still
-fall back to the editing and translation keys. A non-OpenAI endpoint is rejected before book text is
-uploaded. See the [official OpenAI Batch API reference](https://developers.openai.com/api/reference/resources/batches).
-
-Every successful provider response is recorded in the append-only `usage.ndjson` ledger. The
-derived `usage-report.json` and the completed-job result page group request counts, input tokens,
-cached input tokens, output tokens, and total tokens by pipeline stage and exact model. Checkpoint
-reuse does not create another usage record; a genuinely repeated provider call does. Reports contain
-token usage only and intentionally do not estimate currency costs.
-
-Restart the server after changing `.env.local` or `.env`. The external-provider mode sends eligible book text to the configured service.
-
-## Design boundaries
-
-- EPUB archives are checked for unsafe paths, encryption, unsupported compression, and expansion limits before processing.
-- Translation and editing use separate provider profiles and exact segment identifiers.
-- Book-wide entity choices are cached and reused across retries; user glossary entries take priority.
-- Drafts and edits are stored in separate append-only journals.
-- The final build uses edited text only and is validated before output promotion.
-- The browser displays only sanitized job state and progress events.
-
-## Security and privacy
-
-Trucheman is a single-user local application and should not be exposed directly to the public
-internet. External-provider mode sends eligible book text to the configured API. Use only books you
-have the right to process, review the provider's terms, and never commit `.env` files or local job
-data. Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
+- [Product overview](PRODUCT.md)
+- [Architecture](ARCHITECTURE.md)
+- [Docker operations](docs/docker.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Support](SUPPORT.md)
 
 ## License
 
