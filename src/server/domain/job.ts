@@ -26,6 +26,7 @@ export const persistedJobSchema = z.object({
   instructions: z.string().default(""),
   glossary: z.array(z.unknown()).default([]),
   qualityMode: z.enum(["standard", "high"]).default("standard"),
+  executionMode: z.enum(["standard", "batch"]).default("standard"),
   /**
    * A conformance repair has been accepted for this job's output. The repair works in an
    * isolated copy so it never touches the staging the checkpoints address, which means a plain
@@ -60,5 +61,6 @@ export function toJobView(job: PersistedJob) {
     currentDocument: job.currentDocument,
     warnings: job.warnings,
     qualityMode: job.qualityMode,
+    executionMode: job.executionMode,
   });
 }

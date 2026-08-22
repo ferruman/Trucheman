@@ -30,6 +30,8 @@ export const INVALIDATION_STAGES = ["translation", "editing", "audit"] as const;
 export type InvalidationStage = (typeof INVALIDATION_STAGES)[number];
 export const QUALITY_MODES = ["standard", "high"] as const;
 export type QualityMode = (typeof QUALITY_MODES)[number];
+export const EXECUTION_MODES = ["standard", "batch"] as const;
+export type ExecutionMode = (typeof EXECUTION_MODES)[number];
 export type Progress = { translated: number; edited: number; total: number; failed: number };
 export type JobView = {
   id: string;
@@ -44,6 +46,7 @@ export type JobView = {
   currentDocument?: string;
   warnings: number;
   qualityMode: QualityMode;
+  executionMode: ExecutionMode;
 };
 export function progressFor(
   translated: number,

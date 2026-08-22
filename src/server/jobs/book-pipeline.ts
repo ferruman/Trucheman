@@ -36,6 +36,7 @@ import {
 import type { LanguageModelProvider } from "../providers/provider.js";
 import { FakeProvider } from "../providers/fake-provider.js";
 import { DeepSeekProvider } from "../providers/deepseek.js";
+import { assertOpenAiBatchProfile, OpenAiBatchProvider } from "../providers/openai-batch.js";
 import { resolveProfiles } from "../config/profiles.js";
 import { targetLanguageProfile } from "../config/target-language.js";
 import { LANGUAGES } from "../../shared/languages.js";
@@ -287,8 +288,25 @@ export async function runPreparedBook(
     consistency: consistencyProfile,
   } = resolveProfiles();
   const useExternal = overrides?.useExternal ?? resolvedUseExternal;
+  const batchMode = job.executionMode === "batch" && !overrides?.provider;
+  if (batchMode) {
+    for (const profile of [
+      translationProfile,
+      editingProfile,
+      criticProfile,
+      repairProfile,
+      consistencyProfile,
+    ]) {
+      assertOpenAiBatchProfile(profile);
+    }
+  }
   const provider = new UsageTrackingProvider(
-    overrides?.provider ?? (resolvedUseExternal ? new DeepSeekProvider() : new FakeProvider()),
+    overrides?.provider ??
+      (resolvedUseExternal
+        ? batchMode
+          ? new OpenAiBatchProvider(root)
+          : new DeepSeekProvider()
+        : new FakeProvider()),
     root,
   );
   const sourceLanguage = providerLanguage(job.sourceLanguage),

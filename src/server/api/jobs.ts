@@ -27,6 +27,7 @@ const configSchema = z
     instructions: z.string().max(100_000).optional(),
     glossary: z.array(glossaryEntrySchema).max(10_000).optional(),
     qualityMode: z.enum(["standard", "high"]).optional(),
+    executionMode: z.enum(["standard", "batch"]).optional(),
   })
   .strict();
 /** Every field reaches every prompt of every batch, so each one is bounded. */
@@ -78,6 +79,7 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
         instructions: "",
         glossary: [],
         qualityMode: "standard",
+        executionMode: "standard",
         epubRepaired: false,
       };
       await repo.save(job);
@@ -117,6 +119,7 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
         instructions: body.instructions ?? base.instructions,
         glossary: body.glossary ?? base.glossary,
         qualityMode: body.qualityMode ?? base.qualityMode,
+        executionMode: body.executionMode ?? base.executionMode,
         updatedAt: new Date().toISOString(),
       };
       assertLanguagePair(next.sourceLanguage, next.targetLanguage);

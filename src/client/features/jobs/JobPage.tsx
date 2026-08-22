@@ -199,6 +199,10 @@ export function JobPage({ id }: { id: string }) {
                   <dd>{job.status.replace("_", " ")}</dd>
                 </div>
                 <div>
+                  <dt>Processing</dt>
+                  <dd>{job.executionMode === "batch" ? "OpenAI Batch" : "Standard"}</dd>
+                </div>
+                <div>
                   <dt>Current document</dt>
                   <dd>
                     <code>{job.currentDocument ?? "Waiting for work"}</code>

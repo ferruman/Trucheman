@@ -34,6 +34,7 @@ export function NewJobPage() {
   const [file, setFile] = useState<File>();
   const [instructions, setInstructions] = useState("");
   const [qualityMode, setQualityMode] = useState<"standard" | "high">("standard");
+  const [executionMode, setExecutionMode] = useState<"standard" | "batch">("standard");
   const [glossary, setGlossary] = useState<GlossaryDraft[]>([]);
   const [createdJobId, setCreatedJobId] = useState("");
   const [error, setError] = useState("");
@@ -101,6 +102,7 @@ export function NewJobPage() {
     await jobActions.configure(jobId, {
       instructions,
       qualityMode,
+      executionMode,
       glossary: glossary.map((entry, index) => ({
         ...entry,
         id: `glossary-${index + 1}`,
@@ -224,6 +226,22 @@ export function NewJobPage() {
           <small className="field-help">
             High quality audits every edited segment, then pays for another model call only for
             segments with a concrete medium or high-severity defect.
+          </small>
+        </label>
+        <label>
+          Processing mode
+          <select
+            disabled={busy}
+            value={executionMode}
+            onChange={(event) => setExecutionMode(event.target.value as "standard" | "batch")}
+          >
+            <option value="standard">Standard — starts immediately</option>
+            <option value="batch">Batch — lower cost, completes asynchronously</option>
+          </select>
+          <small className="field-help">
+            Each OpenAI batch task may take up to 24 hours, and the full multi-stage book can take
+            longer. Official OpenAI endpoints are required for every configured model; pausing or
+            restarting Trucheman keeps submitted work available for resume.
           </small>
         </label>
         <section className="glossary-editor" aria-labelledby="glossary-heading">

@@ -7,9 +7,9 @@ export default defineConfig({
     url: "http://127.0.0.1:4174",
     reuseExistingServer: false,
     env: {
-      BOOK_TRANSLATOR_PROVIDER: "deterministic",
-      BOOK_TRANSLATOR_PORT: "4174",
-      BOOK_TRANSLATOR_DATA_DIR: "./test-results/e2e-data",
+      TRUCHEMAN_PROVIDER: "deterministic",
+      TRUCHEMAN_PORT: "4174",
+      TRUCHEMAN_DATA_DIR: "./test-results/e2e-data",
     },
   },
 });

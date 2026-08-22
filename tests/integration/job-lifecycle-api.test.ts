@@ -270,6 +270,11 @@ describe("job lifecycle orchestration", () => {
     expect(() => parseJobConfig({ qualityMode: "maximum" })).toThrow();
   });
 
+  it("accepts only supported processing modes", () => {
+    expect(parseJobConfig({ executionMode: "batch" })).toEqual({ executionMode: "batch" });
+    expect(() => parseJobConfig({ executionMode: "discount" })).toThrow();
+  });
+
   it("re-decides entity renderings only when the whole job is invalidated", async () => {
     const { repo, job } = await fixture();
     const root = jobRoot(repo.dataDir, job.id);

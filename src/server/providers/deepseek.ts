@@ -19,6 +19,22 @@ function withTransportIds(request: ProviderRequest): ProviderRequest {
   };
 }
 
+/** The request body shared by synchronous chat completions and OpenAI Batch API jobs. */
+export function chatCompletionRequestBody(request: ProviderRequest) {
+  const transportRequest = withTransportIds(request);
+  return {
+    model: request.profile.model,
+    messages: buildPromptMessages(transportRequest),
+    response_format: { type: "json_object" },
+    temperature: request.profile.temperature,
+    thinking:
+      request.profile.thinking && !request.profile.endpoint.includes("api.openai.com")
+        ? { type: request.profile.thinking }
+        : undefined,
+    stream: false,
+  };
+}
+
 function normalizeResponseSegments(
   value: unknown,
   mode: ProviderRequest["mode"],
@@ -256,6 +272,128 @@ function auditResponse(
   };
 }
 
+/** Parse the common OpenAI-compatible chat-completion envelope into Trucheman's contract. */
+export function parseChatCompletionBody(
+  body: unknown,
+  request: ProviderRequest,
+  requestId?: string,
+): ProviderResponse {
+  const envelope = body as {
+    usage?: {
+      prompt_tokens?: number;
+      prompt_tokens_details?: { cached_tokens?: number };
+      prompt_cache_hit_tokens?: number;
+      completion_tokens?: number;
+    };
+    choices?: Array<{ finish_reason?: string; message?: { content?: string } }>;
+  };
+  const transportRequest = withTransportIds(request);
+  const usage: ProviderResponse["usage"] = {
+    promptTokens: envelope.usage?.prompt_tokens,
+    cachedPromptTokens:
+      envelope.usage?.prompt_tokens_details?.cached_tokens ??
+      envelope.usage?.prompt_cache_hit_tokens,
+    completionTokens: envelope.usage?.completion_tokens,
+  };
+  const content = envelope.choices?.[0]?.message?.content;
+  if (typeof content !== "string" || !content.trim()) {
+    throw new ProviderError(
+      "invalid_response",
+      "Provider returned an empty response",
+      undefined,
+      usage,
+      requestId,
+    );
+  }
+
+  let parsed: any;
+  try {
+    parsed = parseStructuredContent(content);
+  } catch (parseError) {
+    throw new ProviderError(
+      "invalid_response",
+      `Provider returned malformed structured output (${Buffer.byteLength(content)} bytes, ${
+        envelope.choices?.[0]?.finish_reason ?? "no finish reason"
+      }: ${
+        parseError instanceof Error ? parseError.message : "unparseable"
+      })${parseErrorContext(content, parseError)}`,
+      undefined,
+      usage,
+      requestId,
+    );
+  }
+
+  if (request.mode === "consistency" && !Array.isArray(parsed?.segments)) {
+    parsed = { segments: [{ id: transportRequest.segments[0]?.id, text: parsed }] };
+  }
+
+  if (request.mode === "audit") {
+    if (!Array.isArray(parsed?.segments) || parsed.segments.length !== request.segments.length) {
+      throw new ProviderError(
+        "invalid_response",
+        `Audit response must contain ${request.segments.length} segments`,
+        undefined,
+        usage,
+        requestId,
+      );
+    }
+    return auditResponse(
+      parsed,
+      request,
+      transportRequest.segments.map((segment) => segment.id),
+      usage,
+      requestId,
+    );
+  }
+
+  const candidate: ProviderResponse = {
+    segments: preserveInputForEmptyEdits(
+      normalizeResponseSegments(parsed.segments, request.mode),
+      transportRequest,
+    ),
+    finishReason: envelope.choices?.[0]?.finish_reason,
+    requestId,
+    usage,
+  };
+  try {
+    const validated = validateProviderResponse(candidate, transportRequest.segments);
+    const answer = {
+      ...validated,
+      segments: validated.segments.map((segment, index) => ({
+        ...segment,
+        id: request.segments[index].id,
+      })),
+    };
+    if (request.mode === "translation" || request.mode === "editing") {
+      const misaligned = misalignedSegmentIds(request.segments, answer.segments);
+      if (misaligned.length) {
+        throw new Error(
+          `Provider answer runs into the next segment at ${misaligned.slice(0, 3).join(", ")}`,
+        );
+      }
+    }
+    return answer;
+  } catch (error) {
+    const fields = responseFieldSummary(parsed.segments);
+    throw new ProviderError(
+      "invalid_response",
+      `${error instanceof Error ? error.message : "Invalid provider response"}${
+        fields ? ` (received fields: ${fields})` : ""
+      }`,
+      undefined,
+      usage,
+      requestId,
+      {
+        ...candidate,
+        segments: candidate.segments.map((segment, index) => ({
+          ...segment,
+          id: request.segments[index]?.id ?? segment.id,
+        })),
+      },
+    );
+  }
+}
+
 /**
  * `Retry-After` as milliseconds: the header is either delta-seconds or an HTTP date.
  * A pause longer than the cap is treated as no pause — the caller's bounded backoff and
@@ -285,13 +423,11 @@ export class DeepSeekProvider implements LanguageModelProvider {
     const cooldown = this.cooldownUntil - Date.now();
     if (cooldown > 0) await abortableDelay(cooldown, signal);
 
-    const transportRequest = withTransportIds(request);
     // The job-level signal outlives every batch, so a per-request listener on it would
     // accumulate for the whole run. AbortSignal.any owns that wiring and releases it.
     const timeout = AbortSignal.timeout(request.profile.timeoutMs ?? 60000);
     const aborted = signal ? AbortSignal.any([signal, timeout]) : timeout;
     let observedRequestId: string | undefined;
-    let observedUsage: ProviderResponse["usage"];
 
     try {
       const res = await fetch(request.profile.endpoint, {
@@ -300,14 +436,7 @@ export class DeepSeekProvider implements LanguageModelProvider {
           "content-type": "application/json",
           authorization: `Bearer ${request.profile.apiKey}`,
         },
-        body: JSON.stringify({
-          model: request.profile.model,
-          messages: buildPromptMessages(transportRequest),
-          response_format: { type: "json_object" },
-          temperature: request.profile.temperature,
-          thinking: request.profile.thinking ? { type: request.profile.thinking } : undefined,
-          stream: false,
-        }),
+        body: JSON.stringify(chatCompletionRequestBody(request)),
         signal: aborted,
       });
       observedRequestId = res.headers.get("x-request-id") ?? undefined;
@@ -351,119 +480,7 @@ export class DeepSeekProvider implements LanguageModelProvider {
           )})`,
         );
       }
-      observedUsage = {
-        promptTokens: body.usage?.prompt_tokens,
-        cachedPromptTokens:
-          body.usage?.prompt_tokens_details?.cached_tokens ?? body.usage?.prompt_cache_hit_tokens,
-        completionTokens: body.usage?.completion_tokens,
-      };
-      const content = body?.choices?.[0]?.message?.content;
-      if (typeof content !== "string" || !content.trim()) {
-        throw new ProviderError(
-          "invalid_response",
-          "Provider returned an empty response",
-          undefined,
-          observedUsage,
-          observedRequestId,
-        );
-      }
-
-      let parsed: any;
-      try {
-        parsed = parseStructuredContent(content);
-      } catch (parseError) {
-        throw new ProviderError(
-          "invalid_response",
-          // The parser message and the size are the difference between "the answer was cut
-          // off" and "the model wrote something that is not JSON" — without them a batch
-          // that fails four times in a row says nothing about why.
-          `Provider returned malformed structured output (${Buffer.byteLength(content)} bytes, ${
-            body?.choices?.[0]?.finish_reason ?? "no finish reason"
-          }: ${
-            parseError instanceof Error ? parseError.message : "unparseable"
-          })${parseErrorContext(content, parseError)}`,
-          undefined,
-          observedUsage,
-          observedRequestId,
-        );
-      }
-
-      // The consistency contract asks for the answer alone, so put it back in the envelope
-      // the rest of this code speaks. A model that wrapped it anyway is left as it is.
-      if (request.mode === "consistency" && !Array.isArray(parsed?.segments)) {
-        parsed = { segments: [{ id: transportRequest.segments[0]?.id, text: parsed }] };
-      }
-
-      if (request.mode === "audit") {
-        if (
-          !Array.isArray(parsed?.segments) ||
-          parsed.segments.length !== request.segments.length
-        ) {
-          throw new ProviderError(
-            "invalid_response",
-            `Audit response must contain ${request.segments.length} segments`,
-            undefined,
-            observedUsage,
-            observedRequestId,
-          );
-        }
-        return auditResponse(
-          parsed,
-          request,
-          transportRequest.segments.map((segment) => segment.id),
-          observedUsage,
-          observedRequestId,
-        );
-      }
-
-      const candidate: ProviderResponse = {
-        segments: preserveInputForEmptyEdits(
-          normalizeResponseSegments(parsed.segments, request.mode),
-          transportRequest,
-        ),
-        finishReason: body.choices?.[0]?.finish_reason,
-        requestId: observedRequestId,
-        usage: observedUsage,
-      };
-      try {
-        const validated = validateProviderResponse(candidate, transportRequest.segments);
-        const answer = {
-          ...validated,
-          segments: validated.segments.map((segment, index) => ({
-            ...segment,
-            id: request.segments[index].id,
-          })),
-        };
-        // Only these two modes send consecutive prose, which is what makes a neighbour's
-        // length a meaningful comparison; repair sends the flagged segments alone.
-        if (request.mode === "translation" || request.mode === "editing") {
-          const misaligned = misalignedSegmentIds(request.segments, answer.segments);
-          if (misaligned.length) {
-            throw new Error(
-              `Provider answer runs into the next segment at ${misaligned.slice(0, 3).join(", ")}`,
-            );
-          }
-        }
-        return answer;
-      } catch (error) {
-        const fields = responseFieldSummary(parsed.segments);
-        throw new ProviderError(
-          "invalid_response",
-          `${error instanceof Error ? error.message : "Invalid provider response"}${
-            fields ? ` (received fields: ${fields})` : ""
-          }`,
-          undefined,
-          observedUsage,
-          observedRequestId,
-          {
-            ...candidate,
-            segments: candidate.segments.map((segment, index) => ({
-              ...segment,
-              id: request.segments[index]?.id ?? segment.id,
-            })),
-          },
-        );
-      }
+      return parseChatCompletionBody(body, request, observedRequestId);
     } catch (error) {
       if (error instanceof ProviderError) throw error;
       // A paused job must propagate its own reason: wrapping it as "temporary" would

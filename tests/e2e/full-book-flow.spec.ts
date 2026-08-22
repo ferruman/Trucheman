@@ -32,6 +32,7 @@ test("uploads, analyzes, translates, and exposes the EPUB download", async ({ pa
   await page.getByRole("button", { name: "Upload and analyze" }).click();
   const submittedConfig = JSON.parse((await configRequest).postData() ?? "{}");
   expect(submittedConfig.qualityMode).toBe("high");
+  expect(submittedConfig.executionMode).toBe("standard");
   expect(submittedConfig.glossary).toEqual([
     expect.objectContaining({
       source: "Cthulhu",
@@ -42,7 +43,11 @@ test("uploads, analyzes, translates, and exposes the EPUB download", async ({ pa
   ]);
   await expect(page.getByText("Status: ready.")).toBeVisible({ timeout: 15000 });
   await page.getByRole("button", { name: "Start translation" }).click();
-  await expect(page.getByText("Status: completed.")).toBeVisible({ timeout: 15000 });
+  // EPUBCheck is optional. When it is installed locally, this deliberately tiny fixture may
+  // finish as needs_attention while still producing the downloadable artifact this flow tests.
+  await expect(page.getByText(/Status: (completed|needs_attention)\./)).toBeVisible({
+    timeout: 15000,
+  });
   await expect(page.getByRole("link", { name: "Download translated EPUB" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Tokens by pipeline stage" })).toBeVisible();
   const usageTable = page.getByRole("table");

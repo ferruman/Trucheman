@@ -80,6 +80,20 @@ editing checkpoints. Configure the audit profile with `TRUCHEMAN_CRITIC_API_KEY`
 `TRUCHEMAN_CRITIC_THINKING`; omitted values inherit the editing profile. Targeted repair
 continues to use the editing model.
 
+Each book also has a processing mode. **Standard** sends requests immediately through the
+configured OpenAI-compatible Chat Completions endpoint. **Batch** submits the same validated
+pipeline through the official OpenAI Batch API. Each submitted batch task is asynchronous and can
+take up to 24 hours; because a book has dependent translation, editing, and optional audit stages,
+the complete run can take longer. OpenAI prices Batch API work at a discount. Submitted batch
+identifiers and downloaded results are kept inside the local job directory, so pausing or
+restarting Trucheman does not submit the same request again.
+
+Batch mode requires every configured endpoint to be
+`https://api.openai.com/v1/chat/completions`. Configure the translation, editing, critic, and
+consistency models for OpenAI before selecting it; omitted critic and consistency credentials still
+fall back to the editing and translation keys. A non-OpenAI endpoint is rejected before book text is
+uploaded. See the [official OpenAI Batch API reference](https://developers.openai.com/api/reference/resources/batches).
+
 Every successful provider response is recorded in the append-only `usage.ndjson` ledger. The
 derived `usage-report.json` and the completed-job result page group request counts, input tokens,
 cached input tokens, output tokens, and total tokens by pipeline stage and exact model. Checkpoint
