@@ -16,8 +16,7 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --omit=dev --ignore-scripts && \
-    npm cache clean --force
+    npm ci --omit=dev --ignore-scripts
 
 FROM node:24-bookworm-slim AS runtime
 
