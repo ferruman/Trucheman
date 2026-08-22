@@ -4,3 +4,11 @@ dist/
 .env*
 data/
 coverage/
+test-results/
+eval-results/
+*.log
+.codebase-memory/
+.agents/
+.vscode/
+.idea/
+.DS_Store

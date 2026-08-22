@@ -23,9 +23,13 @@ export type SecretStore = Readonly<{
 }>;
 export function loadSecrets(path?: string): SecretStore {
   let text = "";
+  const configuredPath =
+    process.env.TRUCHEMAN_SECRETS_FILE ?? process.env.BOOK_TRANSLATOR_SECRETS_FILE;
   for (const candidate of path
     ? [path]
-    : [resolve(process.cwd(), ".env.local"), resolve(process.cwd(), ".env")]) {
+    : [configuredPath, resolve(process.cwd(), ".env.local"), resolve(process.cwd(), ".env")].filter(
+        (value): value is string => Boolean(value),
+      )) {
     try {
       text = readFileSync(candidate, "utf8");
       break;

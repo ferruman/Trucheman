@@ -1,12 +1,13 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { redact } from "../../src/server/domain/redaction.js";
 import { loadSecrets } from "../../src/server/config/secrets.js";
 
 const roots: string[] = [];
 afterEach(async () => {
+  vi.unstubAllEnvs();
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 
@@ -61,6 +62,25 @@ describe("secret boundaries", () => {
     expect(loadSecrets(path)).toMatchObject({
       translationApiKey: "current-key",
       editingApiKey: "legacy-editor-key",
+    });
+  });
+
+  it("loads a Docker-mounted secret file without exposing values as container environment", async () => {
+    const root = await mkdtemp(`${tmpdir()}/trucheman-mounted-secrets-`);
+    roots.push(root);
+    const path = join(root, "trucheman_env");
+    await writeFile(
+      path,
+      [
+        "TRUCHEMAN_TRANSLATION_API_KEY=mounted-key",
+        "TRUCHEMAN_EDITING_API_KEY=mounted-editor-key",
+      ].join("\n"),
+    );
+    vi.stubEnv("TRUCHEMAN_SECRETS_FILE", path);
+
+    expect(loadSecrets()).toMatchObject({
+      translationApiKey: "mounted-key",
+      editingApiKey: "mounted-editor-key",
     });
   });
 });

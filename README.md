@@ -15,6 +15,32 @@ Trucheman is a local-first web application for translating DRM-free EPUB 2 and E
 - Conservative EPUB extraction, rebuilding, and output validation.
 - Optional high-quality critic and targeted repair pipeline with durable usage reporting.
 
+## Quick start with Docker
+
+Requirements: Docker Desktop or Docker Engine with Compose.
+
+```sh
+git clone https://github.com/ferruman/Trucheman.git
+cd Trucheman
+cp .env.example .env
+```
+
+Add provider keys and models to `.env`, then start Trucheman:
+
+```sh
+docker compose up -d
+```
+
+Open `http://127.0.0.1:4173`. Job data survives container replacement in the
+`trucheman-data` volume, and provider configuration is mounted as a Docker secret rather than
+copied into the image. The service runs as a non-root user, exposes only the loopback interface,
+and includes a healthcheck.
+
+Use `docker compose logs -f` to follow startup, `docker compose down` to stop without deleting
+books, and `docker compose pull && docker compose up -d` to update. Do not use
+`docker compose down -v` unless you intend to delete all Trucheman job data. See the complete
+[Docker operations guide](docs/docker.md), including backup and restore commands.
+
 ## Development
 
 Requirements: Node.js 24 or newer.
