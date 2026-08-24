@@ -51,7 +51,7 @@
     "@types/yazl": "^2.4.5",
     "@vitejs/plugin-react": "^5.0.4",
     "az": "^0.2.3",
-    "eslint": "^9.39.0",
+    "eslint": "^10.8.1",
     "eslint-config-prettier": "^10.1.8",
     "jsdom": "^27.0.0",
     "prettier": "^3.6.2",
