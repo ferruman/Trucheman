@@ -90,7 +90,7 @@ describe("text segments", () => {
     for (const id of absorbed.keys()) values.set(id, "");
 
     reinsertText(d, segments, values);
-    const text = serializeXml(d).replace(/<[^>]*>/g, "");
+    const text = d.documentElement.textContent;
     expect(text.trim()).toBe("В пустыне");
   });
 
