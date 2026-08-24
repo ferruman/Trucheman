@@ -27,18 +27,13 @@ import {
 import { resolveEpubPath, validateEpubArchive } from "../epub/validate.js";
 import { updateContentLanguage, updatePackageLanguage } from "../epub/localization.js";
 import { repairInvalidParagraphNesting } from "../epub/repair.js";
-import {
-  horizontalizePackage,
-  isJapanese,
-  latinizeStagedStylesheets,
-  normalizeJapaneseContent,
-} from "../epub/japanese.js";
 import type { LanguageModelProvider } from "../providers/provider.js";
 import { FakeProvider } from "../providers/fake-provider.js";
 import { DeepSeekProvider } from "../providers/deepseek.js";
 import { assertOpenAiBatchProfile, OpenAiBatchProvider } from "../providers/openai-batch.js";
 import { resolveProfiles } from "../config/profiles.js";
 import { targetLanguageProfile } from "../config/target-language.js";
+import { sourceLanguageCapabilities } from "../languages/registry.js";
 import { LANGUAGES } from "../../shared/languages.js";
 import { buildSegmentScanReport, runQualityPipeline, type RunnerStage } from "./job-runner.js";
 import { scanSegment, type SegmentDefect } from "./segment-scan.js";
@@ -205,12 +200,12 @@ export async function prepareBook(root: string, sourceLanguage?: string): Promis
   // Japanese books are typeset vertically, page backwards and gloss their kanji. All three are
   // properties of the original text, not of the translation, so they are undone in staging
   // before anything is segmented — reinsertion and assembly then need to know nothing about it.
-  const japanese = isJapanese(sourceLanguage);
+  const sourceCapabilities = sourceLanguageCapabilities(sourceLanguage);
   const readings = new Map<string, string>();
-  if (japanese) {
+  if (sourceCapabilities.preparePackage) {
     const packageDom = parseXml(await readFile(packageFile));
-    if (horizontalizePackage(packageDom)) await writeFile(packageFile, serializeXml(packageDom));
-    await latinizeStagedStylesheets(staging);
+    if (await sourceCapabilities.preparePackage(packageDom, staging))
+      await writeFile(packageFile, serializeXml(packageDom));
   }
   const documents: PreparedDocument[] = [];
   const documentIds = [...bookPackage.spine];
@@ -227,7 +222,8 @@ export async function prepareBook(root: string, sourceLanguage?: string): Promis
     const documentId = `document-${index + 1}`;
     const dom = parseXml(await readFile(path));
     let rewritten = repairInvalidParagraphNesting(dom) > 0;
-    if (japanese) rewritten = normalizeJapaneseContent(dom, readings) || rewritten;
+    if (sourceCapabilities.normalizeContent)
+      rewritten = sourceCapabilities.normalizeContent(dom, readings) || rewritten;
     if (rewritten) await writeFile(path, serializeXml(dom));
     const segments = extractTextSegments(dom, documentId);
     const { units, absorbed } = mergeLogicalBlocks(segments);
@@ -487,7 +483,7 @@ export async function runPreparedBook(
     glossary,
     sourceLanguage,
     targetLanguage,
-    mechanics: targetRules.mechanics,
+    normalizeConsistency: targetRules.normalizeConsistency,
     nameEndings: targetRules.nameEndings,
     provider,
     profile: consistencyProfile,

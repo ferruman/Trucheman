@@ -1,5 +1,5 @@
 import type { TextSegment } from "./text-segments.js";
-import { isJapanese } from "./japanese.js";
+import { sourceLanguageCapabilities } from "../languages/registry.js";
 export type Batch = { id: string; documentId: string; segments: TextSegment[] };
 
 export const MAX_BATCH_SEGMENTS = 20;
@@ -12,7 +12,7 @@ export const MAX_BATCH_CHARS = 12000;
  * the Russian it comes back as is longer again than the source.
  */
 export function batchCharBudget(sourceLanguage?: string): number {
-  return isJapanese(sourceLanguage) ? 4000 : MAX_BATCH_CHARS;
+  return sourceLanguageCapabilities(sourceLanguage).batchCharBudget ?? MAX_BATCH_CHARS;
 }
 
 /**
@@ -23,7 +23,7 @@ export function batchCharBudget(sourceLanguage?: string): number {
  * the model lose count. Ten is the conservative cap used up front.
  */
 export function batchSegmentCap(sourceLanguage?: string): number {
-  return isJapanese(sourceLanguage) ? 10 : MAX_BATCH_SEGMENTS;
+  return sourceLanguageCapabilities(sourceLanguage).batchSegmentCap ?? MAX_BATCH_SEGMENTS;
 }
 
 /**

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
-import { distance, guillemetBalance } from "../epub/consistency-audit.js";
+import { distance } from "../epub/consistency-audit.js";
 import { atomicJson } from "../storage/atomic-file.js";
 import type { TextSegment } from "../epub/text-segments.js";
 import type {
@@ -11,6 +11,8 @@ import type {
   ProviderSegment,
 } from "../providers/provider.js";
 import { abortableDelay, retryDecision } from "../providers/retry-policy.js";
+import { targetLanguageCapabilities } from "../languages/registry.js";
+export { normalizeRussianConsistencyMechanics } from "../languages/ru.js";
 
 /**
  * Layout of the on-disk answer caches. This is not a lever for re-asking the model: bumping
@@ -107,7 +109,6 @@ const resolutionSchema = z.object({
 const sourceNamePattern = /(?<![\p{L}\p{N}])\p{Lu}[\p{L}\p{M}'’.-]{2,}/gu;
 const sourcePlacePattern =
   /(?<![\p{L}\p{N}])\p{Lu}[\p{L}\p{M}'’-]{2,}\s+(?:Street|St\.|Avenue|Ave\.|Road|Rd\.|Lane|Square|Place)(?![\p{L}\p{N}])/gu;
-const wordPattern = /[\p{L}\p{M}]*[её][\p{L}\p{M}]*/giu;
 /** Sentence ends, for telling a name from a word that merely opened a sentence. */
 const sentenceEnd = /[.!?。！？]/u;
 
@@ -427,148 +428,10 @@ export function extractEntityEvidence(
   return { entities, stats };
 }
 
-function replaceCounted(
-  value: string,
-  pattern: RegExp,
-  replacement: (...values: string[]) => string,
-) {
-  let count = 0;
-  const text = value.replace(pattern, (...values: string[]) => {
-    count++;
-    return replacement(...values);
-  });
-  return { text, count };
-}
-
-export function normalizeRussianConsistencyMechanics(documents: ConsistencyDocument[]) {
-  let applied = 0;
-  const rules: Array<[RegExp, (...values: string[]) => string]> = [
-    [/«(?:\s*«)+/gu, () => "«"],
-    [/(?:»\s*)+»/gu, () => "»"],
-    [
-      /(\d{1,3})\s*°\s*(\d{1,2})\s*[′´']/gu,
-      (_match, degrees, minutes) => `${degrees}° ${minutes}′`,
-    ],
-    // «A», — сказал X. — B». One line of speech interrupted by its attribution needs one
-    // pair of guillemets around the whole line, not a pair that closes and never reopens.
-    // This is the single largest source of unmatched » in a translated dialogue scene.
-    [
-      /«([^«»\n]{1,240})»(\s*,?\s*[—–][^«»\n]{1,200}?[.!?…]\s*[—–]\s[^«»\n]{1,400}?)»/gu,
-      (_match, quoted, attribution) => `«${quoted}${attribution}»`,
-    ],
-    [/«[\t ]+/gu, () => "«"],
-    [/[\t ]+»/gu, () => "»"],
-    [/«\s*«/gu, () => "«"],
-    [/»\s*»/gu, () => "»"],
-  ];
-  for (const document of documents) {
-    const lengths = document.editedSegments.map((segment) => segment.text.length);
-    const joined = document.editedSegments.map((segment) => segment.text).join("");
-    const straightQuotes = replaceCounted(joined, /"/gu, (_match, offset) => {
-      const index = Number(offset);
-      const previous = joined[index - 1] ?? "";
-      const nextNonSpace = joined.slice(index + 1).match(/\S/u)?.[0] ?? "";
-      const opening =
-        (!previous || /\s|[([{—:;,]/u.test(previous)) && /[\p{L}\p{N}]/u.test(nextNonSpace);
-      return opening ? "«" : "»";
-    });
-    applied += straightQuotes.count;
-    let position = 0;
-    for (const [index, segment] of document.editedSegments.entries()) {
-      segment.text = straightQuotes.text.slice(position, position + lengths[index]);
-      position += lengths[index];
-    }
-    const unmatchedOpenings: number[] = [];
-    let unmatchedClosings = 0;
-    for (const [index, character] of [...straightQuotes.text].entries()) {
-      if (character === "«") unmatchedOpenings.push(index);
-      else if (character === "»") {
-        if (unmatchedOpenings.length) unmatchedOpenings.pop();
-        else unmatchedClosings++;
-      }
-    }
-    if (unmatchedOpenings.length === 1 && unmatchedClosings === 0) {
-      let openingSegment = -1;
-      let boundary = 0;
-      for (const [index, length] of lengths.entries()) {
-        boundary += length;
-        if (unmatchedOpenings[0] < boundary) {
-          openingSegment = index;
-          break;
-        }
-      }
-      const inlineContent = document.editedSegments[openingSegment + 1];
-      if (
-        inlineContent &&
-        inlineContent.text.trim().length > 0 &&
-        inlineContent.text.length <= 200 &&
-        !/[«»]/u.test(inlineContent.text)
-      ) {
-        inlineContent.text += "»";
-        applied++;
-      }
-    }
-    for (const segment of document.editedSegments) {
-      for (const [pattern, replacement] of rules) {
-        const result = replaceCounted(segment.text, pattern, replacement);
-        segment.text = result.text;
-        applied += result.count;
-      }
-    }
-  }
-  return applied;
-}
-
-function quoteReport(text: string) {
-  const opening = text.match(/«/g)?.length ?? 0;
-  const closing = text.match(/»/g)?.length ?? 0;
-  const straight = text.match(/"/g)?.length ?? 0;
-  const hybrid = text.match(/"[^"\n]{0,240}»|«[^«\n]{0,240}"/g)?.map((item) => clipped(item)) ?? [];
-  const duplicated = text.match(/«\s*«|»\s*»/g)?.length ?? 0;
-  const balance = guillemetBalance(text);
-  return {
-    opening,
-    closing,
-    straight,
-    ...balance,
-    balanced: balance.unmatchedOpenings === 0 && balance.unmatchedClosings === 0,
-    hybrid,
-    duplicated,
-  };
-}
-
-// Words where the е and ё forms are different words, not spellings of one. A book that uses
-// both is correct Russian; flagging them made "все/всё" and "чем/чём" 38 of one run's 53
-// warnings and buried everything else.
-// ponytail: the frequent pairs, not the dictionary — extend when a run flags a new false one.
-const yoHomographs = new Set(
-  `все всем всех чем небо падеж осел слез поем совершенный узнаем признаем берет ведро мел`.split(
-    /\s+/u,
-  ),
-);
-
-function yoVariants(text: string) {
-  const forms = new Map<string, Set<string>>();
-  for (const match of text.matchAll(wordPattern)) {
-    const word = match[0].toLocaleLowerCase();
-    const key = word.replaceAll("ё", "е");
-    const variants = forms.get(key) ?? new Set<string>();
-    variants.add(word);
-    forms.set(key, variants);
-  }
-  return [...forms.entries()]
-    .filter(
-      ([key, variants]) =>
-        !yoHomographs.has(key) &&
-        variants.size > 1 &&
-        [...variants].some((word) => word.includes("ё")),
-    )
-    .map(([key, variants]) => ({ key, variants: [...variants].sort() }));
-}
-
 export function buildConsistencyReport(
   documents: ConsistencyDocument[],
   glossary: GlossaryEntry[] = [],
+  targetLanguage = "ru",
 ) {
   const evidence = extractEntityEvidence(documents);
   const entityEvidence = evidence.entities.map((entity) => ({
@@ -578,49 +441,18 @@ export function buildConsistencyReport(
         entry.enabled && entry.source.toLocaleLowerCase() === entity.source.toLocaleLowerCase(),
     )?.target,
   }));
-  const documentReports = documents.map((document) => {
-    const text = document.editedSegments.map((segment) => segment.text).join("\n");
-    const segmentsWithYo = document.editedSegments.filter((segment) =>
-      /ё/iu.test(segment.text),
-    ).length;
-    let currentWithoutYoChars = 0;
-    let longestWithoutYoChars = 0;
-    for (const segment of document.editedSegments) {
-      if (!/[а-я]/iu.test(segment.text)) continue;
-      if (/ё/iu.test(segment.text)) currentWithoutYoChars = 0;
-      else currentWithoutYoChars += segment.text.length;
-      longestWithoutYoChars = Math.max(longestWithoutYoChars, currentWithoutYoChars);
-    }
-    const yoCount = text.match(/ё/giu)?.length ?? 0;
-    return {
-      id: document.id,
-      quotes: quoteReport(text),
-      yo: {
-        variants: yoVariants(text),
-        segmentsWithYo,
-        segmentsWithoutYo: document.editedSegments.length - segmentsWithYo,
-        longestWithoutYoChars,
-        possibleDrift: yoCount >= 3 && longestWithoutYoChars >= 4000,
-      },
-    };
-  });
-  const warningCount = documentReports.reduce(
-    (total, document) =>
-      total +
-      (document.quotes.balanced ? 0 : 1) +
-      (document.quotes.straight ? 1 : 0) +
-      document.quotes.hybrid.length +
-      document.quotes.duplicated +
-      document.yo.variants.length +
-      (document.yo.possibleDrift ? 1 : 0),
-    0,
-  );
+  const diagnostics = targetLanguageCapabilities(targetLanguage).diagnoseConsistency?.(
+    documents,
+  ) ?? {
+    documents: [],
+    warningCount: 0,
+  };
   return {
     version: 1,
     entityEvidence,
     entityStats: evidence.stats,
-    documents: documentReports,
-    warningCount,
+    documents: diagnostics.documents,
+    warningCount: diagnostics.warningCount,
   };
 }
 
@@ -1255,7 +1087,7 @@ export async function runConsistencyPass(options: {
   glossary: unknown[];
   sourceLanguage: ProviderLanguage;
   targetLanguage: ProviderLanguage;
-  mechanics: "russian" | undefined;
+  normalizeConsistency?: (documents: ConsistencyDocument[]) => number;
   nameEndings: string[] | undefined;
   provider: LanguageModelProvider;
   profile: ProviderProfile;
@@ -1268,9 +1100,8 @@ export async function runConsistencyPass(options: {
   const { documents } = options;
   const glossary = options.glossary.filter(isGlossaryEntry);
   const errors = [...(options.errors ?? [])];
-  let mechanicalApplied =
-    options.mechanics === "russian" ? normalizeRussianConsistencyMechanics(documents) : 0;
-  const resolverReport = buildConsistencyReport(documents, glossary);
+  let mechanicalApplied = options.normalizeConsistency?.(documents) ?? 0;
+  const resolverReport = buildConsistencyReport(documents, glossary, options.targetLanguage.tag);
   let resolution: ConsistencyResolution = {
     decisions: [],
     chunks: 0,
@@ -1303,11 +1134,10 @@ export async function runConsistencyPass(options: {
   // Replacements run after the first mechanics pass and are another possible source of
   // malformed punctuation. This defensive pass also cleans cached decisions made by older
   // versions of the resolver.
-  if (options.mechanics === "russian")
-    mechanicalApplied += normalizeRussianConsistencyMechanics(documents);
+  mechanicalApplied += options.normalizeConsistency?.(documents) ?? 0;
   const adherence = measureGlossaryAdherence(documents, glossary);
   const ignoredGlossaryEntries = glossaryAdherenceWarnings(adherence);
-  const report = buildConsistencyReport(documents, glossary);
+  const report = buildConsistencyReport(documents, glossary, options.targetLanguage.tag);
   return {
     ...report,
     decisions: resolution.decisions,

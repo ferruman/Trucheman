@@ -14,16 +14,29 @@ describe("target language registry", () => {
     expect(targetLanguageProfile(undefined)).toEqual({});
   });
 
-  it("drives prompt rules, prompt style, endings, and mechanics from one entry", () => {
+  it("drives prompts, endings, normalization, scanning, and audit from one module", () => {
     const russian = targetLanguageProfile("ru");
 
     expect(russian.promptRules).toContain("«ёлочки»");
     expect(russian.promptStyle?.yo).toContain("ё");
     expect(russian.nameEndings).toContain("ой");
-    expect(russian.mechanics).toBe("russian");
+    expect(russian.script).toBe("cyrillic");
+    expect(russian.normalizeConsistency).toBeTypeOf("function");
+    expect(russian.diagnoseConsistency).toBeTypeOf("function");
+    expect(russian.isNumberWrittenOut).toBeTypeOf("function");
+    expect(russian.auditEpub).toBeTypeOf("function");
+    expect(russian.loadAgreementFixes).toBeTypeOf("function");
     // The plural genitive must stay out because short endings make unrelated stems collide.
     expect(russian.nameEndings).not.toContain("ов");
     expect(russian.nameEndings?.every((ending) => ending.length > 0)).toBe(true);
+  });
+
+  it("does not apply Russian capabilities to another target language", () => {
+    const german = targetLanguageProfile("de");
+    expect(german.normalizeConsistency).toBeUndefined();
+    expect(german.diagnoseConsistency).toBeUndefined();
+    expect(german.auditEpub).toBeUndefined();
+    expect(german.isNumberWrittenOut).toBeUndefined();
   });
 
   it("is the only thing that decides what a prompt says about a target language", () => {

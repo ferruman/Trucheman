@@ -174,6 +174,7 @@ These commands use the configured editing provider and write ignored reports und
 
 - [Product overview](PRODUCT.md)
 - [Architecture](ARCHITECTURE.md)
+- [Language modules](docs/language-modules.md)
 - [Roadmap](ROADMAP.md)
 - [Docker operations](docs/docker.md)
 - [Contributing](CONTRIBUTING.md)
