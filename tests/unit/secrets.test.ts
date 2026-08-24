@@ -1,0 +1,86 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { redact } from "../../src/server/domain/redaction.js";
+import { loadSecrets } from "../../src/server/config/secrets.js";
+
+const roots: string[] = [];
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
+});
+
+describe("secret boundaries", () => {
+  it("does not retain sentinel credentials in diagnostics", () => {
+    expect(redact("Bearer sk-sentinel-secret")).not.toContain("sentinel");
+  });
+
+  it("loads the independent consistency provider profile", async () => {
+    const root = await mkdtemp(`${tmpdir()}/book-secrets-`);
+    roots.push(root);
+    const path = join(root, ".env.local");
+    await writeFile(
+      path,
+      [
+        "BOOK_TRANSLATOR_CONSISTENCY_API_KEY=consistency-key",
+        "BOOK_TRANSLATOR_CONSISTENCY_ENDPOINT=https://consistency.example/v1/chat/completions",
+        "BOOK_TRANSLATOR_CONSISTENCY_MODEL=consistency-model",
+        "BOOK_TRANSLATOR_CONSISTENCY_THINKING=enabled",
+        "BOOK_TRANSLATOR_CRITIC_MODEL=critic-model",
+        "BOOK_TRANSLATOR_CRITIC_API_KEY=critic-key",
+        "BOOK_TRANSLATOR_CRITIC_ENDPOINT=https://critic.example/v1/chat/completions",
+        "BOOK_TRANSLATOR_CRITIC_THINKING=disabled",
+      ].join("\n"),
+    );
+
+    expect(loadSecrets(path)).toMatchObject({
+      consistencyApiKey: "consistency-key",
+      consistencyEndpoint: "https://consistency.example/v1/chat/completions",
+      consistencyModel: "consistency-model",
+      consistencyThinking: "enabled",
+      criticModel: "critic-model",
+      criticApiKey: "critic-key",
+      criticEndpoint: "https://critic.example/v1/chat/completions",
+      criticThinking: "disabled",
+    });
+  });
+
+  it("prefers Trucheman variables while accepting legacy variables", async () => {
+    const root = await mkdtemp(`${tmpdir()}/trucheman-secrets-`);
+    roots.push(root);
+    const path = join(root, ".env.local");
+    await writeFile(
+      path,
+      [
+        "TRUCHEMAN_TRANSLATION_API_KEY=current-key",
+        "BOOK_TRANSLATOR_TRANSLATION_API_KEY=legacy-key",
+        "BOOK_TRANSLATOR_EDITING_API_KEY=legacy-editor-key",
+      ].join("\n"),
+    );
+
+    expect(loadSecrets(path)).toMatchObject({
+      translationApiKey: "current-key",
+      editingApiKey: "legacy-editor-key",
+    });
+  });
+
+  it("loads a Docker-mounted secret file without exposing values as container environment", async () => {
+    const root = await mkdtemp(`${tmpdir()}/trucheman-mounted-secrets-`);
+    roots.push(root);
+    const path = join(root, "trucheman_env");
+    await writeFile(
+      path,
+      [
+        "TRUCHEMAN_TRANSLATION_API_KEY=mounted-key",
+        "TRUCHEMAN_EDITING_API_KEY=mounted-editor-key",
+      ].join("\n"),
+    );
+    vi.stubEnv("TRUCHEMAN_SECRETS_FILE", path);
+
+    expect(loadSecrets()).toMatchObject({
+      translationApiKey: "mounted-key",
+      editingApiKey: "mounted-editor-key",
+    });
+  });
+});

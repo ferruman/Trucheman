@@ -1,0 +1,29 @@
+import { describe, expect, it } from "vitest";
+import {
+  normalizeEntryName,
+  validateArchiveEntries,
+} from "../../src/server/epub/archive-policy.js";
+describe("archive policy", () => {
+  it("normalizes safe paths", () =>
+    expect(normalizeEntryName("OPS/chapter.xhtml")).toBe("OPS/chapter.xhtml"));
+  it.each(["../secret", "/absolute", "C:\\secret", "OPS\\chapter.xhtml"])(
+    "rejects unsafe path %s",
+    (path) => expect(() => normalizeEntryName(path)).toThrow(),
+  );
+  it("rejects duplicates and zip bombs", () => {
+    expect(() =>
+      validateArchiveEntries([
+        { fileName: "a", compressedSize: 1, uncompressedSize: 1 },
+        { fileName: "./a", compressedSize: 1, uncompressedSize: 1 },
+      ]),
+    ).toThrow();
+    expect(() =>
+      validateArchiveEntries([{ fileName: "a", compressedSize: 1, uncompressedSize: 999 }], {
+        maxEntries: 10,
+        maxCompressedBytes: 10,
+        maxEntryBytes: 10,
+        maxExpandedBytes: 10,
+      }),
+    ).toThrow();
+  });
+});

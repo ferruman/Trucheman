@@ -1,0 +1,48 @@
+name: Bug report
+description: Report a reproducible problem in Trucheman
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Do not include API keys, copyrighted book text, personal data, or unredacted job files.
+        Report security issues through the private security advisory link instead.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: main at 1a2b3c4
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [macOS, Linux, Windows, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use a minimal DRM-free fixture or describe the EPUB without uploading it.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs
+      render: shell

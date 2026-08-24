@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+test-results/
+eval-results/
+*.log
+.env*
+!.env.example
+data/
+.DS_Store
+.vscode/
+.idea/
+.codebase-memory/
+.agents
+.github/agents
+.github/prompts
