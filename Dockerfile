@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:24-bookworm-slim AS build
+FROM node:26-bookworm-slim AS build
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -11,14 +11,14 @@ COPY src ./src
 COPY tests/helpers ./tests/helpers
 RUN npm run build
 
-FROM node:24-bookworm-slim AS production-dependencies
+FROM node:26-bookworm-slim AS production-dependencies
 WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --omit=dev --ignore-scripts
 
-FROM node:24-bookworm-slim AS runtime
+FROM node:26-bookworm-slim AS runtime
 
 LABEL org.opencontainers.image.title="Trucheman" \
       org.opencontainers.image.description="Local-first EPUB translation" \
