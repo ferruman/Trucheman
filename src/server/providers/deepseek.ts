@@ -1,6 +1,7 @@
 import { parseAuditSegments } from "./audit-contract.js";
 import { buildPromptMessages } from "./prompts.js";
 import {
+  isRequestTooLargeFailure,
   ProviderError,
   type LanguageModelProvider,
   type ProviderRequest,
@@ -442,6 +443,17 @@ export class DeepSeekProvider implements LanguageModelProvider {
       });
       observedRequestId = res.headers.get("x-request-id") ?? undefined;
       if (!res.ok) {
+        const errorBody =
+          res.status === 400 || res.status === 413 || res.status === 422
+            ? await res.text().catch(() => "")
+            : "";
+        if (isRequestTooLargeFailure(res.status, errorBody)) {
+          throw new ProviderError(
+            "request_too_large",
+            `Provider request exceeds the model context (${res.status})`,
+            res.status,
+          );
+        }
         if (res.status === 401 || res.status === 403 || res.status === 400) {
           throw new ProviderError(
             "configuration",

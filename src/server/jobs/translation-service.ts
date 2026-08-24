@@ -11,6 +11,36 @@ import { ProviderError } from "../providers/provider.js";
 import { qualityWarnings, validateProviderResponse } from "../providers/response-validator.js";
 import { abortableDelay, retryDecision } from "../providers/retry-policy.js";
 
+type AdaptiveTextSplit = { left: string; right: string; separator: string };
+
+/** Split near the middle without dropping any source characters. */
+function splitAdaptiveText(text: string): AdaptiveTextSplit | null {
+  if (text.length < 2) return null;
+  const middle = Math.floor(text.length / 2);
+  const candidates: number[] = [];
+  for (let index = 1; index < text.length; index++) {
+    if (/\s/u.test(text[index]) || /[.!?。！？]/u.test(text[index - 1])) candidates.push(index);
+  }
+  const boundary = candidates.length
+    ? candidates.reduce((best, value) =>
+        Math.abs(value - middle) < Math.abs(best - middle) ? value : best,
+      )
+    : middle;
+  let leftEnd = boundary;
+  while (leftEnd > 0 && /\s/u.test(text[leftEnd - 1])) leftEnd--;
+  let rightStart = boundary;
+  while (rightStart < text.length && /\s/u.test(text[rightStart])) rightStart++;
+  const left = text.slice(0, leftEnd);
+  const right = text.slice(rightStart);
+  if (!left || !right) return null;
+  return { left, right, separator: text.slice(leftEnd, rightStart) };
+}
+
+function joinAdaptiveText(left: string, right: string, sourceSeparator: string): string {
+  if (!sourceSeparator || /\s$/u.test(left) || /^\s/u.test(right)) return left + right;
+  return `${left} ${right}`;
+}
+
 /**
  * For audit responses `issues` is the contract and `text` is only a journal-friendly
  * serialization, so derive it here rather than making every provider remember to.
@@ -99,6 +129,45 @@ export async function processBatch(
             chunk[0]?.id ?? "unknown"
           }): ${error instanceof Error ? error.message : String(error)}`,
         );
+        if (kind === "request_too_large") {
+          if (chunk.length > 1) {
+            const middle = Math.ceil(chunk.length / 2);
+            const head = await processChunk(chunk.slice(0, middle));
+            const tail = await processChunk(chunk.slice(middle));
+            return validateProviderResponse(
+              { segments: [...head.segments, ...tail.segments], finishReason: "stop" },
+              chunk,
+            );
+          }
+          const segment = chunk[0];
+          if (mode === "translation" && segment && "text" in segment) {
+            const split = splitAdaptiveText(segment.text);
+            if (split) {
+              const head = await processChunk([
+                { ...segment, id: `${segment.id}~adaptive-1`, text: split.left },
+              ]);
+              const tail = await processChunk([
+                { ...segment, id: `${segment.id}~adaptive-2`, text: split.right },
+              ]);
+              return validateProviderResponse(
+                {
+                  segments: [
+                    {
+                      id: segment.id,
+                      text: joinAdaptiveText(
+                        head.segments[0]?.text ?? "",
+                        tail.segments[0]?.text ?? "",
+                        split.separator,
+                      ),
+                    },
+                  ],
+                  finishReason: "stop",
+                },
+                chunk,
+              );
+            }
+          }
+        }
         const decision = retryDecision(
           { kind, status: (error as { status?: number }).status },
           attempt,

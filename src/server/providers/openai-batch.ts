@@ -5,6 +5,7 @@ import { atomicJson, atomicWrite } from "../storage/atomic-file.js";
 import { abortableDelay } from "./retry-policy.js";
 import { chatCompletionRequestBody, parseChatCompletionBody, transportCause } from "./deepseek.js";
 import {
+  isRequestTooLargeFailure,
   ProviderError,
   type LanguageModelProvider,
   type ProviderProfile,
@@ -75,7 +76,12 @@ function authorization(apiKey: string) {
 
 async function responseJson<T>(response: Response, operation: string): Promise<T> {
   if (!response.ok) {
-    const kind = [400, 401, 403, 404].includes(response.status) ? "configuration" : "temporary";
+    const body = await response.text().catch(() => "");
+    const kind = isRequestTooLargeFailure(response.status, body)
+      ? "request_too_large"
+      : [400, 401, 403, 404].includes(response.status)
+        ? "configuration"
+        : "temporary";
     throw new ProviderError(kind, `${operation} failed (${response.status})`, response.status);
   }
   try {
@@ -211,9 +217,14 @@ export class OpenAiBatchProvider implements LanguageModelProvider {
         }
         if (["failed", "expired", "cancelled"].includes(batch.status)) {
           await rm(statePath, { force: true });
+          const failure = batchFailure(batch);
           throw new ProviderError(
-            batch.status === "failed" ? "configuration" : "temporary",
-            batchFailure(batch),
+            batch.status === "failed" && isRequestTooLargeFailure(undefined, failure)
+              ? "request_too_large"
+              : batch.status === "failed"
+                ? "configuration"
+                : "temporary",
+            failure,
           );
         }
         await abortableDelay(this.options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS, signal);
@@ -269,7 +280,11 @@ export class OpenAiBatchProvider implements LanguageModelProvider {
     const status = output.response?.status_code;
     if (status !== 200 || !output.response?.body) {
       throw new ProviderError(
-        status === 400 || status === 401 || status === 403 ? "configuration" : "temporary",
+        isRequestTooLargeFailure(status, output.response?.body)
+          ? "request_too_large"
+          : status === 400 || status === 401 || status === 403
+            ? "configuration"
+            : "temporary",
         `OpenAI batch request failed (${status ?? "no status"})`,
         status,
       );

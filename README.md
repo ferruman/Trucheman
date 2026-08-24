@@ -112,9 +112,26 @@ TRUCHEMAN_CONSISTENCY_MODEL=deepseek-v4-flash
 Omitted critic settings inherit the editing profile. Omitted consistency settings inherit the
 translation profile. Restart the service after editing `.env`.
 
+Using one model for every stage is supported and is the simplest way to start. For stronger
+production results, configure separate models by role:
+
+- a faithful, cost-efficient model for translation;
+- a stronger prose model for literary editing and repair;
+- an independent critic model, preferably from a different model family, to reduce correlated
+  blind spots;
+- a consistency model chosen for structured reasoning over terminology and entities.
+
+Validate a model combination on a short representative chapter before committing a whole book;
+different languages and genres can favor different combinations.
+
 Batch mode requires the official `https://api.openai.com/v1/chat/completions` endpoint for every
 configured profile and compatible OpenAI models. Trucheman rejects other endpoints before
 uploading book text.
+
+> [!NOTE]
+> The live translation pipeline has been tested with OpenAI and DeepSeek APIs. Other
+> OpenAI-compatible providers and models may work, but are not part of the supported compatibility
+> baseline yet; try them on a small book first and keep the source EPUB and job data backed up.
 
 </details>
 
@@ -142,10 +159,22 @@ npm run dev
 The development server listens on `127.0.0.1:4173`. Copy `.env.example` to `.env.local` for local
 provider credentials; `.env.local` takes precedence over `.env`.
 
+The versioned literary regression corpus uses public-domain passages from _Alice's Adventures in
+Wonderland_ and _Botchan_, paired with deliberately flawed repository-authored Russian drafts:
+
+```sh
+npm run eval:literary:golden -- --limit 5 # inexpensive smoke sample; no gate
+npm run eval:literary:golden             # full corpus; enforces the 85% acceptance floor
+```
+
+These commands use the configured editing provider and write ignored reports under
+`eval-results/`. Source provenance is recorded in [tests/fixtures/NOTICE.md](tests/fixtures/NOTICE.md).
+
 ## Project docs
 
 - [Product overview](PRODUCT.md)
 - [Architecture](ARCHITECTURE.md)
+- [Roadmap](ROADMAP.md)
 - [Docker operations](docs/docker.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)

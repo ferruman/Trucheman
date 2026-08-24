@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { processBatch } from "../../src/server/jobs/translation-service.js";
 import { ProviderError, type LanguageModelProvider } from "../../src/server/providers/provider.js";
 
+const languages = {
+  sourceLanguage: { tag: "en", name: "English" },
+  targetLanguage: { tag: "ru", name: "Russian" },
+};
+
 describe("translation service", () => {
   it("forwards the prompt version selected by the provider profile", async () => {
     let promptVersion: string | undefined;
@@ -135,6 +140,82 @@ describe("translation service", () => {
         0,
       ),
     ).rejects.toThrow("malformed output");
+  });
+
+  it("splits a context-limited batch immediately and preserves segment order", async () => {
+    const requestIds: string[][] = [];
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        const ids = request.segments.map((segment) => segment.id);
+        requestIds.push(ids);
+        if (ids.length > 2) {
+          throw new ProviderError("request_too_large", "context_length_exceeded", 400);
+        }
+        return { segments: ids.map((id) => ({ id, text: `ok:${id}` })) };
+      },
+    };
+    const segments = ["s1", "s2", "s3", "s4"].map((id) => ({ id, text: id }));
+
+    const result = await processBatch(
+      provider,
+      { name: "test", endpoint: "local", model: "test" },
+      "translation",
+      segments,
+      languages,
+      "",
+      [],
+      3,
+    );
+
+    expect(requestIds).toEqual([
+      ["s1", "s2", "s3", "s4"],
+      ["s1", "s2"],
+      ["s3", "s4"],
+    ]);
+    expect(result.result.segments.map(({ id }) => id)).toEqual(["s1", "s2", "s3", "s4"]);
+    expect(result.attempts).toBe(3);
+  });
+
+  it("uses deterministic child IDs when one translation segment exceeds context", async () => {
+    const requested: Array<{ id: string; text: string }> = [];
+    const provider: LanguageModelProvider = {
+      async complete(request) {
+        const segment = request.segments[0];
+        if (!("text" in segment)) throw new Error("translation input expected");
+        requested.push({ id: segment.id, text: segment.text });
+        if (segment.text.length > 18) {
+          throw new ProviderError("request_too_large", "payload too large", 413);
+        }
+        return { segments: [{ id: segment.id, text: segment.text.toUpperCase() }] };
+      },
+    };
+    const source = "one two three four five six seven eight";
+
+    const result = await processBatch(
+      provider,
+      { name: "test", endpoint: "local", model: "test" },
+      "translation",
+      [{ id: "chapter:1", text: source }],
+      languages,
+      "",
+      [],
+      0,
+    );
+
+    expect(requested[0]).toEqual({ id: "chapter:1", text: source });
+    expect(requested.slice(1).map(({ id }) => id)).toEqual([
+      "chapter:1~adaptive-1",
+      "chapter:1~adaptive-2",
+      "chapter:1~adaptive-2~adaptive-1",
+      "chapter:1~adaptive-2~adaptive-2",
+    ]);
+    expect(
+      requested
+        .filter(({ text }) => text.length <= 18)
+        .map(({ text }) => text)
+        .join(" "),
+    ).toBe(source);
+    expect(result.result.segments).toEqual([{ id: "chapter:1", text: source.toUpperCase() }]);
   });
 
   it("recovers only empty output segments instead of repeating the whole batch", async () => {
