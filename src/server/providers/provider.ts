@@ -64,7 +64,7 @@ export interface LanguageModelProvider {
 
 export class ProviderError extends Error {
   constructor(
-    public readonly kind: "temporary" | "configuration" | "invalid_response",
+    public readonly kind: "temporary" | "configuration" | "invalid_response" | "request_too_large",
     message: string,
     public readonly status?: number,
     public readonly usage?: ProviderResponse["usage"],
@@ -73,4 +73,19 @@ export class ProviderError extends Error {
   ) {
     super(message);
   }
+}
+
+/** Recognize the context-limit variants used by OpenAI-compatible providers. */
+export function isRequestTooLargeFailure(status?: number, body?: unknown): boolean {
+  if (status === 413) return true;
+  if (status !== 400 && status !== 422 && status !== undefined) return false;
+  let text = "";
+  try {
+    text = typeof body === "string" ? body : JSON.stringify(body ?? "");
+  } catch {
+    return false;
+  }
+  return /context[_ -]?length[_ -]?exceeded|maximum context length|context window|too many tokens|request (?:is )?too large|payload too large/iu.test(
+    text,
+  );
 }

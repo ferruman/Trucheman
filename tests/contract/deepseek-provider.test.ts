@@ -43,6 +43,28 @@ describe("DeepSeek provider", () => {
     expect((failure as ProviderError).message).toMatch(/credit is exhausted/i);
   });
 
+  it("classifies provider context limits separately from invalid configuration", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ error: { code: "context_length_exceeded", message: "too long" } }),
+            { status: 400, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+    await expect(
+      new DeepSeekProvider().complete({
+        profile: { name: "x", endpoint: "https://provider.test", model: "x", apiKey: "secret" },
+        mode: "translation",
+        ...languages,
+        segments: [{ id: "s1", text: "A long chapter" }],
+      }),
+    ).rejects.toMatchObject({ kind: "request_too_large", status: 400 });
+  });
+
   it("sends rules and book data in separate messages", async () => {
     let requestBody: Record<string, unknown> | undefined;
     vi.stubGlobal(

@@ -22,6 +22,11 @@ TRUCHEMAN_TRANSLATION_API_KEY=your-key
 TRUCHEMAN_EDITING_API_KEY=your-key
 ```
 
+The same model can serve every stage. For better production quality, use separate translation and
+editing models and an independent critic model—preferably from another model family—so the critic
+does not simply repeat the translator's and editor's blind spots. Test the combination on a short
+chapter before processing a complete book.
+
 Start the application:
 
 ```sh

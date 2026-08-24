@@ -1,0 +1,244 @@
+{
+  "version": 1,
+  "description": "Public-domain literary editing regression corpus: Alice's Adventures in Wonderland and Botchan, with repository-authored Russian drafts.",
+  "minPassRate": 0.85,
+  "cases": [
+    {
+      "id": "alice-01-tired",
+      "bookId": "alice-1865",
+      "genre": "Victorian fantasy",
+      "sourceLanguage": { "tag": "en", "name": "English" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "Alice was beginning to get very tired of sitting by her sister on the bank, and of having nothing to do.",
+      "draft": "Алисе начинало становиться очень усталой от сидения рядом с сестрой на берегу и от отсутствия дела.",
+      "forbidden": [
+        { "pattern": "становиться очень усталой", "label": "literal get-tired calque" }
+      ],
+      "reviewNotes": "Prefer natural narrative motion over nominalized word-for-word syntax."
+    },
+    {
+      "id": "alice-02-book",
+      "bookId": "alice-1865",
+      "genre": "Victorian fantasy",
+      "sourceLanguage": { "tag": "en", "name": "English" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "And what is the use of a book, thought Alice, without pictures or conversations?",
+      "draft": "И что является использованием книги, подумала Алиса, без картинок или разговоров?",
+      "forbidden": [
+        { "pattern": "является использованием книги", "label": "nominalized use calque" }
+      ],
+      "reviewNotes": "Keep the child's direct, lightly impatient voice."
+    },
+    {
+      "id": "alice-03-late",
+      "bookId": "alice-1865",
+      "genre": "Victorian fantasy",
+      "sourceLanguage": { "tag": "en", "name": "English" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "Oh dear! Oh dear! I shall be late!",
+      "draft": "О дорогой! О дорогой! Я буду поздней!",
+      "forbidden": [{ "pattern": "О дорогой", "label": "idiom translated as address" }],
+      "reviewNotes": "Render the Rabbit's alarm as an exclamation, not a term of endearment."
+    },
+    {
+      "id": "alice-04-watch",
+      "bookId": "alice-1865",
+      "genre": "Victorian fantasy",
+      "sourceLanguage": { "tag": "en", "name": "English" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "The Rabbit actually took a watch out of its waistcoat-pocket, and looked at it, and then hurried on.",
+      "draft": "Кролик фактически взял часы наружу из кармана жилета, посмотрел на них и затем поспешил дальше.",
+      "forbidden": [{ "pattern": "взял часы наружу", "label": "phrasal-verb calque" }],
+      "reviewNotes": "Use idiomatic Russian action sequencing."
+    },
+    {
+      "id": "alice-05-down",
+      "bookId": "alice-1865",
+      "genre": "Victorian fantasy",
+      "sourceLanguage": { "tag": "en", "name": "English" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "Down, down, down. Would the fall never come to an end?",
+      "draft": "Вниз, вниз, вниз. Неужели падение никогда не придёт к своему концу?",
+      "forbidden": [{ "pattern": "придёт к своему концу", "label": "come-to-an-end calque" }],
+      "reviewNotes": "Preserve rhythm while making the question concise."
+    },
+    {
+      "id": "alice-06-curiouser",
+      "bookId": "alice-1865",
+      "genre": "Victorian fantasy",
+      "sourceLanguage": { "tag": "en", "name": "English" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "Curiouser and curiouser!",
+      "draft": "Более любопытнее и более любопытнее!",
+      "forbidden": [{ "pattern": "более любопытнее", "label": "ungrammatical double comparative" }],
+      "reviewNotes": "Find a playful Russian deformation rather than explaining the joke."
+    },
+    {
+      "id": "alice-07-mad",
+      "bookId": "alice-1865",
+      "genre": "Victorian fantasy",
+      "sourceLanguage": { "tag": "en", "name": "English" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "We're all mad here. I'm mad. You're mad.",
+      "draft": "Мы все безумны здесь. Я являюсь безумным. Ты являешься безумной.",
+      "forbidden": [{ "pattern": "явля(?:юсь|ешься) безум", "label": "copula calque" }],
+      "reviewNotes": "Keep the Cheshire Cat's clipped conversational certainty."
+    },
+    {
+      "id": "alice-08-heads",
+      "bookId": "alice-1865",
+      "genre": "Victorian fantasy",
+      "sourceLanguage": { "tag": "en", "name": "English" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "Off with their heads!",
+      "draft": "Прочь вместе с их головами!",
+      "forbidden": [{ "pattern": "Прочь вместе с их головами", "label": "word-for-word command" }],
+      "reviewNotes": "Use a forceful idiomatic execution order."
+    },
+    {
+      "id": "alice-09-beginning",
+      "bookId": "alice-1865",
+      "genre": "Victorian fantasy",
+      "sourceLanguage": { "tag": "en", "name": "English" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "Begin at the beginning, and go on till you come to the end: then stop.",
+      "draft": "Начните в начале и идите дальше, пока не придёте к концу: затем остановитесь.",
+      "forbidden": [{ "pattern": "Начните в начале", "label": "begin-at-the-beginning calque" }],
+      "reviewNotes": "Retain the mock-logical cadence without English prepositional syntax."
+    },
+    {
+      "id": "alice-10-way",
+      "bookId": "alice-1865",
+      "genre": "Victorian fantasy",
+      "sourceLanguage": { "tag": "en", "name": "English" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "Would you tell me, please, which way I ought to go from here?",
+      "draft": "Не сказали бы вы мне, пожалуйста, который путь я должна идти отсюда?",
+      "forbidden": [
+        { "pattern": "который путь я должна идти", "label": "English interrogative syntax" }
+      ],
+      "reviewNotes": "Alice is polite; the Russian question should still sound spoken."
+    },
+    {
+      "id": "alice-11-business",
+      "bookId": "alice-1865",
+      "genre": "Victorian fantasy",
+      "sourceLanguage": { "tag": "en", "name": "English" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "If everybody minded their own business, the world would go round a deal faster than it does.",
+      "draft": "Если бы каждый думал свой собственный бизнес, мир ходил бы кругом намного быстрее.",
+      "forbidden": [
+        { "pattern": "думал свой собственный бизнес", "label": "mind-your-business calque" }
+      ],
+      "reviewNotes": "Render the idiom and the absurd consequence naturally."
+    },
+    {
+      "id": "alice-12-cards",
+      "bookId": "alice-1865",
+      "genre": "Victorian fantasy",
+      "sourceLanguage": { "tag": "en", "name": "English" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "Who cares for you? You're nothing but a pack of cards!",
+      "draft": "Кто заботится для вас? Вы ничто, кроме пакета карт!",
+      "forbidden": [{ "pattern": "пакета карт", "label": "pack-of-cards lexical calque" }],
+      "reviewNotes": "End with Alice's sudden confidence and contempt."
+    },
+    {
+      "id": "botchan-01-reckless",
+      "bookId": "botchan-1906",
+      "genre": "Japanese comic novel",
+      "sourceLanguage": { "tag": "ja", "name": "Japanese" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "親譲りの無鉄砲で小供の時から損ばかりしている。",
+      "draft": "Из-за родительского наследования безрассудства я с детского времени делаю только убытки.",
+      "forbidden": [
+        {
+          "pattern": "родительского наследования безрассудства",
+          "label": "nominalized inheritance calque"
+        }
+      ],
+      "reviewNotes": "Preserve Botchan's blunt first-person self-characterization."
+    },
+    {
+      "id": "botchan-02-jump",
+      "bookId": "botchan-1906",
+      "genre": "Japanese comic novel",
+      "sourceLanguage": { "tag": "ja", "name": "Japanese" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "小学校に居る時分学校の二階から飛び降りて一週間ほど腰を抜かした事がある。",
+      "draft": "Во время пребывания в начальной школе я прыгнул со второго этажа и примерно на неделю вынул поясницу.",
+      "forbidden": [{ "pattern": "вынул поясницу", "label": "Japanese idiom rendered literally" }],
+      "reviewNotes": "Express the injury naturally without losing the dry comic delivery."
+    },
+    {
+      "id": "botchan-03-why",
+      "bookId": "botchan-1906",
+      "genre": "Japanese comic novel",
+      "sourceLanguage": { "tag": "ja", "name": "Japanese" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "なぜそんな無闇をしたと聞く人があるかも知れぬ。",
+      "draft": "Может существовать человек, который спросит, почему я сделал такую бездумность.",
+      "forbidden": [
+        { "pattern": "Может существовать человек", "label": "existential construction calque" }
+      ],
+      "reviewNotes": "Keep the narrator addressing an imagined reader directly."
+    },
+    {
+      "id": "botchan-04-reason",
+      "bookId": "botchan-1906",
+      "genre": "Japanese comic novel",
+      "sourceLanguage": { "tag": "ja", "name": "Japanese" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "別段深い理由でもない。",
+      "draft": "Это также не является отдельно глубокой причиной.",
+      "forbidden": [
+        { "pattern": "отдельно глубокой причиной", "label": "particle-by-particle calque" }
+      ],
+      "reviewNotes": "The sentence should be short and dismissive."
+    },
+    {
+      "id": "botchan-05-window",
+      "bookId": "botchan-1906",
+      "genre": "Japanese comic novel",
+      "sourceLanguage": { "tag": "ja", "name": "Japanese" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "新築の二階から首を出していたら、同級生の一人が冗談に、いくら威張ってもそこから飛び降りる事は出来まい。",
+      "draft": "Когда я выставлял шею со второго этажа нового здания, один одинакового класса в шутку сказал, что, сколько ни важничай, оттуда не выпрыгнешь.",
+      "forbidden": [{ "pattern": "выставлял шею", "label": "body-part idiom calque" }],
+      "reviewNotes": "Keep the anecdote quick and colloquial."
+    },
+    {
+      "id": "botchan-06-classmate",
+      "bookId": "botchan-1906",
+      "genre": "Japanese comic novel",
+      "sourceLanguage": { "tag": "ja", "name": "Japanese" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "同級生の一人が冗談に云った。",
+      "draft": "Один человек одинакового класса сказал в качестве шутки.",
+      "forbidden": [{ "pattern": "человек одинакового класса", "label": "classmate calque" }],
+      "reviewNotes": "Use the ordinary Russian word for a school classmate."
+    },
+    {
+      "id": "botchan-07-boast",
+      "bookId": "botchan-1906",
+      "genre": "Japanese comic novel",
+      "sourceLanguage": { "tag": "ja", "name": "Japanese" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "いくら威張ってもそこから飛び降りる事は出来まい。",
+      "draft": "Сколько бы ты ни был важным, сделать выпрыгивание оттуда, вероятно, невозможно.",
+      "forbidden": [{ "pattern": "сделать выпрыгивание", "label": "verbal noun calque" }],
+      "reviewNotes": "The taunt must sound like something one schoolboy says to another."
+    },
+    {
+      "id": "botchan-08-coward",
+      "bookId": "botchan-1906",
+      "genre": "Japanese comic novel",
+      "sourceLanguage": { "tag": "ja", "name": "Japanese" },
+      "targetLanguage": { "tag": "ru", "name": "Russian" },
+      "original": "弱虫やーい。",
+      "draft": "Эй, слабый червяк!",
+      "forbidden": [{ "pattern": "слабый червяк", "label": "coward translated by components" }],
+      "reviewNotes": "Use a short playground jeer."
+    }
+  ]
+}

@@ -12,5 +12,9 @@ The original literary text is in the public domain. Short Russian translations i
 written specifically for this repository and are covered by the repository's MIT license. No
 published Russian translation is copied.
 
+`literary-public-domain-v1.json` is the versioned regression corpus built from those same sources.
+Its deliberately flawed Russian drafts, review notes, and automated defect patterns were written
+for Trucheman and do not reproduce a published translation.
+
 Project Gutenberg and Aozora Bunko are credited as transcription sources. Their names and service
 marks are not part of the test fixtures, and this project is not affiliated with either service.
