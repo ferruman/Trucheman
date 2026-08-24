@@ -5,7 +5,7 @@ const JOB_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]
 
 export function jobRoot(dataDir: string, id: string): string {
   if (!JOB_ID_PATTERN.test(id)) throw new Error("Invalid job id");
-  return resolve(dataDir, "jobs", id);
+  return safeJobPath(resolve(dataDir, "jobs"), id);
 }
 export function safeJobPath(root: string, relativePath: string): string {
   if (
