@@ -5,7 +5,8 @@ import { extractEpub } from "./extract.js";
 import { parseContainer, parsePackage } from "./package-parser.js";
 import { resolveEpubPath } from "./validate.js";
 import { localName, parseXml } from "./xml-dom.js";
-import { agreementFixes, type AgreementFinding } from "./morphology.js";
+import type { AgreementFinding } from "./morphology.js";
+import { targetLanguageCapabilities } from "../languages/registry.js";
 
 type AuditDocument = {
   id: string;
@@ -110,50 +111,6 @@ export function repeatedStems(text: string): string[] {
   return found;
 }
 
-const capitalizedWordPattern = /(?<![\p{L}\p{N}])[А-ЯЁ][а-яё]{2,}/gu;
-const russianStopWords = new Set([
-  "Это",
-  "Этот",
-  "Эта",
-  "После",
-  "Когда",
-  "Однако",
-  "Затем",
-  "Тогда",
-  "Если",
-  "Хотя",
-  "Потом",
-  "Самое",
-  "Всё",
-  "Все",
-]);
-
-/**
- * Guillemets do not pair one-for-one in Russian: multi-paragraph direct speech reopens with
- * « in every paragraph and closes once at the end. Counting « against » calls that a defect
- * and misses the real one — a » that closes nothing. Paragraphs are separated by newlines.
- */
-export function guillemetBalance(text: string) {
-  let depth = 0,
-    unmatchedClosings = 0,
-    continuations = 0;
-  for (const line of text.split("\n")) {
-    let paragraph = line;
-    if (depth > 0 && paragraph.trimStart().startsWith("«")) {
-      continuations++;
-      paragraph = paragraph.replace("«", "");
-    }
-    for (const character of paragraph) {
-      if (character === "«") depth++;
-      else if (character === "»") {
-        if (depth > 0) depth--;
-        else unmatchedClosings++;
-      }
-    }
-  }
-  return { unmatchedOpenings: depth, unmatchedClosings, continuations };
-}
-
 export function distance(left: string, right: string) {
   const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
   for (let leftIndex = 1; leftIndex <= left.length; leftIndex++) {
@@ -170,46 +127,6 @@ export function distance(left: string, right: string) {
   return previous[right.length];
 }
 
-export function nameClusters(text: string) {
-  const counts = new Map<string, number>();
-  for (const match of text.matchAll(capitalizedWordPattern)) {
-    const word = match[0];
-    const preceding = text.slice(0, match.index).trimEnd().at(-1);
-    if (russianStopWords.has(word) || !preceding || /[.!?]/u.test(preceding)) continue;
-    counts.set(word, (counts.get(word) ?? 0) + 1);
-  }
-  const words = [...counts].filter(([word, count]) => word.length >= 5 && count >= 2);
-  const clusters: Array<Array<{ value: string; count: number }>> = [];
-  const used = new Set<string>();
-  for (const [word, count] of words) {
-    if (used.has(word)) continue;
-    const variants = [{ value: word, count }];
-    for (const [candidate, candidateCount] of words) {
-      let commonPrefix = 0;
-      while (
-        commonPrefix < Math.min(word.length, candidate.length) &&
-        word[commonPrefix]?.toLocaleLowerCase() === candidate[commonPrefix]?.toLocaleLowerCase()
-      ) {
-        commonPrefix++;
-      }
-      const likelyInflection = commonPrefix >= Math.min(word.length, candidate.length) - 2;
-      if (
-        candidate !== word &&
-        !used.has(candidate) &&
-        !likelyInflection &&
-        Math.abs(candidate.length - word.length) <= 2 &&
-        distance(word.toLocaleLowerCase(), candidate.toLocaleLowerCase()) <= 2
-      ) {
-        variants.push({ value: candidate, count: candidateCount });
-        used.add(candidate);
-      }
-    }
-    used.add(word);
-    if (variants.length > 1) clusters.push(variants);
-  }
-  return clusters;
-}
-
 export function analyzeEpubConsistency(
   documents: AuditDocument[],
   packageLanguage: string | undefined,
@@ -218,43 +135,10 @@ export function analyzeEpubConsistency(
   /** From `morphology.ts`, which needs an optional package and an async load of its own. */
   agreement: AgreementFinding[] = [],
 ) {
-  const text = documents.map((document) => document.text).join("\n");
-  const quoteDocuments = documents.map((document) => ({
-    id: document.id,
-    opening: document.text.match(/«/gu)?.length ?? 0,
-    closing: document.text.match(/»/gu)?.length ?? 0,
-    straight: document.text.match(/"/gu)?.length ?? 0,
-    ...guillemetBalance(document.text),
-  }));
-  const yoDocuments = documents.map((document) => ({
-    id: document.id,
-    yo: document.text.match(/ё/giu)?.length ?? 0,
-    cyrillicWords: document.text.match(/[а-яё]+/giu)?.length ?? 0,
-  }));
-  const yoWindows = Array.from({ length: Math.ceil(text.length / 4000) }, (_, index) => {
-    const start = index * 4000;
-    const value = text.slice(start, start + 4000);
-    return {
-      start,
-      end: start + value.length,
-      yo: value.match(/ё/giu)?.length ?? 0,
-      cyrillicWords: value.match(/[а-яё]+/giu)?.length ?? 0,
-    };
-  });
-  const coordinateMatches = [...text.matchAll(/(\d{1,3})\s*°(\s*)(\d{1,2})(\s*)([′´'])/gu)].map(
-    (match) => ({
-      value: match[0],
-      mark: match[5],
-      canonical: `${match[1]}° ${match[3]}′`,
-      canonicalSpacing: match[2] === " " && match[4] === "",
-    }),
-  );
-  const hyphenStreet = [
-    ...text.matchAll(/(?<![\p{L}\p{N}])([А-ЯЁ][а-яё]+)-стрит(?![\p{L}\p{N}])/gu),
-  ].map((match) => match[1]);
-  const wordStreet = [
-    ...text.matchAll(/(?<![\p{L}\p{N}])улиц(?:а|е|у|ы|ей)\s+([А-ЯЁ][а-яё]+)/giu),
-  ].map((match) => match[1]);
+  const languageAudit = targetLanguageCapabilities(expectedLanguage).auditEpub?.(documents) ?? {
+    warnings: [],
+    checks: {},
+  };
   const languageDocuments = documents.map((document) => ({
     id: document.id,
     lang: document.lang,
@@ -263,22 +147,7 @@ export function analyzeEpubConsistency(
       document.lang?.toLocaleLowerCase().startsWith(expectedLanguage) === true &&
       (!document.xmlLang || document.xmlLang.toLocaleLowerCase().startsWith(expectedLanguage)),
   }));
-  const warnings: string[] = [];
-  for (const quotes of quoteDocuments) {
-    if (quotes.unmatchedOpenings || quotes.unmatchedClosings)
-      warnings.push(
-        `${quotes.id}: unbalanced guillemets, ${quotes.unmatchedOpenings} unclosed and ${quotes.unmatchedClosings} unopened`,
-      );
-    if (quotes.straight) warnings.push(`${quotes.id}: ${quotes.straight} straight double quote(s)`);
-  }
-  if (yoDocuments.some((document) => document.cyrillicWords >= 100 && document.yo === 0))
-    warnings.push("Possible ё drift: a substantial Russian document contains no ё");
-  if (
-    (text.match(/ё/giu)?.length ?? 0) >= 3 &&
-    yoWindows.some((window) => window.cyrillicWords >= 300 && window.yo === 0)
-  )
-    warnings.push("Possible ё drift: a 4000-character Russian window contains no ё");
-  const clusters = nameClusters(text);
+  const warnings = [...languageAudit.warnings];
   // Fuzzy target-only name clusters are diagnostic evidence, not a warning by themselves.
   // Inflections and unrelated short names routinely land within two edits of one another.
   // Morphology is likewise diagnostic. Even when it can derive a replacement, sentence
@@ -297,14 +166,6 @@ export function analyzeEpubConsistency(
     warnings.push(`Table of contents entry is corrupted: "${entry.label}"`);
   const emptyTocLabels = tocLabels.filter((label) => !label.trim()).length;
   if (emptyTocLabels) warnings.push(`${emptyTocLabels} empty table-of-contents label(s)`);
-  const streetStem = (value: string) => value.toLocaleLowerCase().slice(0, 5);
-  const hyphenStreetStems = new Set(hyphenStreet.map(streetStem));
-  if (wordStreet.some((value) => hyphenStreetStems.has(streetStem(value))))
-    warnings.push("Mixed Russian street-name conventions (-стрит and улица + name)");
-  if (
-    coordinateMatches.some((coordinate) => coordinate.mark !== "′" || !coordinate.canonicalSpacing)
-  )
-    warnings.push("Non-canonical coordinate minute marks or spacing");
   if (!packageLanguage?.toLocaleLowerCase().startsWith(expectedLanguage))
     warnings.push(
       `Package language is ${packageLanguage ?? "missing"}, expected ${expectedLanguage}`,
@@ -316,15 +177,11 @@ export function analyzeEpubConsistency(
     expectedLanguage,
     warnings,
     checks: {
-      quotes: quoteDocuments,
-      yo: { documents: yoDocuments, windows: yoWindows },
-      capitalizedNameClusters: clusters,
+      ...languageAudit.checks,
       agreement,
       duplicatedFragments: duplicates,
       emptyDocuments,
       tableOfContents: toc,
-      streetSuffixes: { hyphenStreet, wordStreet },
-      coordinates: coordinateMatches,
       language: { packageLanguage, documents: languageDocuments },
     },
   };
@@ -367,9 +224,10 @@ export async function auditExtractedEpub(root: string, expectedLanguage = "ru") 
   // Only surface findings for which the morphology engine can derive one unambiguous fix.
   // The broader detector remains available for diagnostics, but its dictionary ambiguity
   // produced mostly false warnings in completed books.
-  const agreement = expectedLanguage.toLocaleLowerCase().startsWith("ru")
-    ? await agreementFixes(documents.map((document) => document.text).join("\n"))
-    : [];
+  const agreement =
+    ((await targetLanguageCapabilities(expectedLanguage).loadAgreementFixes?.(
+      documents.map((document) => document.text).join("\n"),
+    )) as AgreementFinding[] | undefined) ?? [];
   return analyzeEpubConsistency(documents, pkg.language, expectedLanguage, tocLabels, agreement);
 }
 

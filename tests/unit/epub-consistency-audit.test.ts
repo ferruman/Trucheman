@@ -2,6 +2,20 @@ import { describe, expect, it } from "vitest";
 import { analyzeEpubConsistency } from "../../src/server/epub/consistency-audit.js";
 
 describe("EPUB consistency audit", () => {
+  it("does not run Russian typography checks for another target language", () => {
+    const report = analyzeEpubConsistency(
+      [{ id: "chapter", lang: "de", xmlLang: "de", text: '„Schon", sagte er auf Straße.' }],
+      "de",
+      "de",
+    );
+
+    expect(report.checks).not.toHaveProperty("yo");
+    expect(report.checks).not.toHaveProperty("streetSuffixes");
+    expect(report.warnings).not.toEqual(
+      expect.arrayContaining([expect.stringContaining("straight double quote")]),
+    );
+  });
+
   it("reports all deterministic consistency dimensions", () => {
     const report = analyzeEpubConsistency(
       [

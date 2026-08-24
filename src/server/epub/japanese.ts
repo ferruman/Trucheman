@@ -2,10 +2,9 @@ import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Document, Element, Node } from "@xmldom/xmldom";
 import { localName } from "./xml-dom.js";
-import { baseLanguageTag } from "../config/target-language.js";
 
 export function isJapanese(tag: string | undefined): boolean {
-  return Boolean(tag) && baseLanguageTag(tag!) === "ja";
+  return tag?.toLocaleLowerCase().split("-")[0] === "ja";
 }
 
 function walkElements(node: Node, visit: (element: Element) => void) {

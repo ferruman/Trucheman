@@ -205,7 +205,7 @@ describe("batching Japanese", () => {
 
 describe("scanning a Japanese source", () => {
   const kinds = (source: string, translation: string) =>
-    scanSegment(source, translation, "s1").map((defect) => defect.kind);
+    scanSegment(source, translation, "s1", "ru").map((defect) => defect.kind);
 
   it("does not report a faithful translation as over-long", () => {
     // Japanese says in one character about what three Latin ones do

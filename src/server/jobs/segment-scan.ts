@@ -1,5 +1,6 @@
 import type { ProviderInputSegment, ProviderSegment } from "../providers/provider.js";
 import { expectedExpansion } from "../providers/response-validator.js";
+import { targetLanguageCapabilities } from "../languages/registry.js";
 
 /**
  * Deterministic per-segment defects, found by comparing a translation with its original.
@@ -72,97 +73,6 @@ function unscanPronouns(text: string) {
   return text.replace(/(?<![\p{L}\p{N}])1(?=\s+\p{L})/gu, "I");
 }
 
-// ponytail: Russian only, 1–999 — what prose actually spells out. Any other language or
-// larger value keeps reporting, which is the safe direction.
-const RU_STEMS = new Map<number, string>([
-  [1, "перв|одн"],
-  [2, "втор|дв[уе]"],
-  [3, "трет|тр[её]"],
-  [4, "чётверт|четверт|четв[её]р"],
-  [5, "пят"],
-  [6, "шест"],
-  [7, "седьм|сем"],
-  [8, "восьм|восем"],
-  [9, "девят"],
-  [10, "десят"],
-  [11, "одиннадцат"],
-  [12, "двенадцат"],
-  [13, "тринадцат"],
-  [14, "четырнадцат"],
-  [15, "пятнадцат"],
-  [16, "шестнадцат"],
-  [17, "семнадцат"],
-  [18, "восемнадцат"],
-  [19, "девятнадцат"],
-  [20, "двадцат"],
-  [30, "тридцат"],
-  [40, "сорок"],
-  [50, "пятьдесят|пятидесят"],
-  [60, "шестьдесят|шестидесят"],
-  [70, "семьдесят|семидесят"],
-  [80, "восемьдесят|восьмидесят"],
-  [90, "девяност"],
-  [100, "ст[оа]|сот"],
-  [200, "двест|двухсот"],
-  [300, "трист|тр[её]хсот"],
-  [400, "четырест|четыр[её]хсот"],
-  [500, "пятьсот|пятисот"],
-  [600, "шестьсот|шестисот"],
-  [700, "семьсот|семисот"],
-  [800, "восемьсот|восьмисот"],
-  [900, "девятьсот|девятисот"],
-]);
-
-/**
- * Stems that must all appear for `value` to count as written out in words. "12" reads as
- * «двенадцатого», "22" as «двадцать второго» — reporting those as dropped numbers buried
- * a date that really was lost. Decimal labels and abbreviated years need the same handling:
- * ".357" can be «триста пятьдесят седьмой», "’49" can be «сорок девятого».
- */
-function spelledOutStems(value: string): string[] {
-  const n = Number(value);
-  if (!Number.isInteger(n) || n < 1 || n > 999_999) return [];
-  const thousands = Math.floor(n / 1000);
-  if (!thousands) return hundredsStems(n);
-  // «двадцать тысяч триста двадцать» for "20,320". Bare «тысяча» carries no numeral of its
-  // own, so requiring a stem for a leading 1 would report every spelled-out thousand.
-  return [
-    ...(thousands === 1 ? [] : hundredsStems(thousands)),
-    "тысяч",
-    ...hundredsStems(n % 1000),
-  ];
-}
-
-function hundredsStems(n: number): string[] {
-  if (n < 1) return [];
-  const parts: number[] = [];
-  if (n >= 100) parts.push(Math.floor(n / 100) * 100);
-  const rest = n % 100;
-  if (rest >= 10 && rest < 20) parts.push(rest);
-  else {
-    if (rest >= 20) parts.push(Math.floor(rest / 10) * 10);
-    if (rest % 10) parts.push(rest % 10);
-  }
-  return parts.map((part) => RU_STEMS.get(part)!);
-}
-
-/** «345 тысяч» and "345,000" are the same number written two ways. */
-const RU_MAGNITUDES: Array<[scale: number, stem: string]> = [
-  [1e9, "миллиард"],
-  [1e6, "миллион"],
-  [1e3, "тысяч"],
-];
-
-function isAbbreviatedMagnitude(value: string, translation: string) {
-  const n = Number(value);
-  return RU_MAGNITUDES.some(
-    ([scale, stem]) =>
-      n >= scale &&
-      n % scale === 0 &&
-      new RegExp(`(?<!\\d)${n / scale}(?!\\d)[^\\p{L}\\d]{0,3}${stem}`, "iu").test(translation),
-  );
-}
-
 /** "a ’49 Mercury" is «Меркьюри» 1949 года: a two-digit year written out is not a loss. */
 function isExpandedYear(value: string, translation: string) {
   return (
@@ -172,10 +82,7 @@ function isExpandedYear(value: string, translation: string) {
 
 function isSpelledOut(value: string, translation: string, targetTag: string | undefined) {
   if (isExpandedYear(value, translation)) return true;
-  if (!targetTag?.toLocaleLowerCase().startsWith("ru")) return false;
-  if (isAbbreviatedMagnitude(value, translation)) return true;
-  const stems = spelledOutStems(value);
-  return stems.length > 0 && stems.every((stem) => new RegExp(stem, "iu").test(translation));
+  return targetLanguageCapabilities(targetTag).isNumberWrittenOut?.(value, translation) ?? false;
 }
 
 const cjkPattern = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu;
@@ -206,9 +113,11 @@ function dominantScript(text: string) {
  * is a name or a title — White Rabbit, Cheshire Cat — and keeping those is
  * correct, so flagging them buried the finding exactly the way a cognate would.
  */
-function sourceResidue(source: string, translation: string): string[] {
+function sourceResidue(source: string, translation: string, targetTag?: string): string[] {
   const sourceScript = dominantScript(source);
-  if (sourceScript === "none" || dominantScript(translation) !== "cyrillic") return [];
+  const targetScript = targetLanguageCapabilities(targetTag).script;
+  if (!targetScript || sourceScript === "none" || dominantScript(translation) !== targetScript)
+    return [];
   // Japanese needs none of the care Latin does. There is no case to filter on and no cognate
   // to spare: a run of kana or kanji standing in Russian prose was not translated, full stop.
   if (sourceScript === "cjk")
@@ -364,7 +273,7 @@ export function scanSegment(
       kind: "missing_numbers",
       detail: `numbers missing from the translation: ${missing.slice(0, MAX_REPORTED_EXAMPLES).join(", ")}`,
     });
-  const residue = sourceResidue(original, result);
+  const residue = sourceResidue(original, result, targetTag);
   const isolated = isolatedResidue(result, residue);
   if (isolated.length)
     defects.push({

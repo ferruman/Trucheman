@@ -104,7 +104,7 @@ const report = await runConsistencyPass({
   glossary: mergeGlossaries(job.glossary, generated),
   sourceLanguage,
   targetLanguage,
-  mechanics: rules.mechanics,
+  normalizeConsistency: rules.normalizeConsistency,
   nameEndings: rules.nameEndings,
   provider,
   profile,
