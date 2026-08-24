@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/trucheman-hero.webp" alt="An interpreter carrying a book across a bridge between two editions" width="1200">
+  <img src="docs/assets/trucheman-hero.webp" alt="Pixel-art EPUB translation pipeline running through a retro terminal" width="1200">
 </p>
 
 <h1 align="center">Trucheman</h1>
