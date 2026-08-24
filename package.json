@@ -47,7 +47,7 @@
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "@types/yauzl": "^2.10.3",
+    "@types/yauzl": "^3.4.0",
     "@types/yazl": "^2.4.5",
     "@vitejs/plugin-react": "^5.0.4",
     "az": "^0.2.3",
