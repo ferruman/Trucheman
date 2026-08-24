@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { loadSecrets } from "../config/secrets.js";
+import { isEndpointHost } from "../config/endpoint.js";
 import { DeepSeekProvider } from "../providers/deepseek.js";
 import { FakeProvider } from "../providers/fake-provider.js";
 import type { LanguageModelProvider, ProviderProfile } from "../providers/provider.js";
@@ -176,7 +177,7 @@ async function main() {
           apiKey: secrets.editingApiKey,
           temperature,
           thinking: (thinking ??
-            (endpoint.includes("api.deepseek.com") ? "disabled" : undefined)) as
+            (isEndpointHost(endpoint, "api.deepseek.com") ? "disabled" : undefined)) as
             ProviderProfile["thinking"] | undefined,
         }
       : { name: "deterministic-literary-eval", endpoint: "local", model: "fake" };

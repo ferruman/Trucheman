@@ -1,5 +1,6 @@
 import { loadSecrets, type SecretStore } from "./secrets.js";
 import type { ProviderProfile } from "../providers/provider.js";
+import { isEndpointHost } from "./endpoint.js";
 
 const DEEPSEEK_ENDPOINT = "https://api.deepseek.com/chat/completions";
 const DEEPSEEK_MODEL = "deepseek-v4-flash";
@@ -33,7 +34,8 @@ function thinkingMode(
   endpoint: string,
   variable: string,
 ): ProviderProfile["thinking"] {
-  const configured = value ?? (endpoint.includes("api.deepseek.com") ? "disabled" : undefined);
+  const configured =
+    value ?? (isEndpointHost(endpoint, "api.deepseek.com") ? "disabled" : undefined);
   if (configured !== undefined && configured !== "enabled" && configured !== "disabled") {
     throw new Error(`${variable} must be enabled or disabled`);
   }
@@ -99,7 +101,7 @@ export function resolveProfiles(
     endpoint: translationEndpoint,
     model: secrets.translationModel ?? envValue(env, "TRANSLATION_MODEL") ?? DEEPSEEK_MODEL,
     apiKey: secrets.translationApiKey,
-    thinking: translationEndpoint.includes("api.deepseek.com") ? "disabled" : undefined,
+    thinking: isEndpointHost(translationEndpoint, "api.deepseek.com") ? "disabled" : undefined,
     timeoutMs,
   };
   return {
@@ -112,7 +114,7 @@ export function resolveProfiles(
       endpoint: editingEndpoint,
       model: editingModel,
       apiKey: secrets.editingApiKey,
-      thinking: editingEndpoint.includes("api.deepseek.com") ? "disabled" : undefined,
+      thinking: isEndpointHost(editingEndpoint, "api.deepseek.com") ? "disabled" : undefined,
       promptVersion: editingPromptVersion || defaultEditingPromptVersion(editingModel),
       timeoutMs,
     },

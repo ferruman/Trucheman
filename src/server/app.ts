@@ -1,4 +1,5 @@
 import express from "express";
+import { rateLimit } from "express-rate-limit";
 import { join } from "node:path";
 import { jobsRouter } from "./api/jobs.js";
 import { settingsRouter } from "./api/settings.js";
@@ -13,7 +14,10 @@ import { defaults } from "./config/defaults.js";
 import { DomainError } from "./domain/errors.js";
 import { problemResponse } from "./api/problem.js";
 
-export function createApp(dataDir: string, options: { maxUploadBytes?: number } = {}) {
+export function createApp(
+  dataDir: string,
+  options: { maxUploadBytes?: number; requestsPerMinute?: number } = {},
+) {
   const app = express(),
     jobs = new JobRepository(dataDir),
     events = new EventRepository(join(dataDir, "events.ndjson"));
@@ -23,6 +27,14 @@ export function createApp(dataDir: string, options: { maxUploadBytes?: number } 
     },
   });
   app.disable("x-powered-by");
+  app.use(
+    rateLimit({
+      windowMs: 60_000,
+      limit: options.requestsPerMinute ?? 600,
+      standardHeaders: "draft-8",
+      legacyHeaders: false,
+    }),
+  );
   app.use(
     express.raw({
       type: ["application/epub+zip", "application/octet-stream"],
