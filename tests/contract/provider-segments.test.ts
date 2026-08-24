@@ -78,7 +78,7 @@ describe("provider prompt contract", () => {
   it("sends only the glossary entries the batch can use", () => {
     const glossary = [
       { source: "Moon", target: "Луна", enabled: true },
-      { source: "Kyra", target: "Кайра", enabled: true },
+      { source: "Alice", target: "Алиса", enabled: true },
       { source: "Hearse", target: "Хёрс", enabled: true },
       "an entry this code cannot inspect",
     ];
@@ -98,10 +98,10 @@ describe("provider prompt contract", () => {
     ]);
     // The editor keeps the rule for a rendering already in its draft.
     expect(
-      read([{ id: "s1", original: "She waited.", draft: "Кайра ждала." }], "editing").map(
+      read([{ id: "s1", original: "She waited.", draft: "Алиса ждала." }], "editing").map(
         (entry: { source?: string }) => entry.source,
       ),
-    ).toEqual(["Kyra", undefined]);
+    ).toEqual(["Alice", undefined]);
   });
 
   it("keeps editing originals and drafts in separate fields", () => {
@@ -239,15 +239,13 @@ describe("provider prompt contract", () => {
 
     expect(russianPrompt).toContain("Target-language rules for Russian");
     expect(russianPrompt).toContain("Use ё consistently");
-    expect(russianPrompt).toContain("Thomas Street → Томас-стрит");
-    // Dialogue punctuation was the largest Russian-specific defect class in a production
-    // run. Telling a batch to pick one convention was not enough — 197 of 206 batches did,
-    // and each picked on its own, so job 4c3bcb2a shipped 586 quoted paragraphs alongside
-    // 220 dashed ones. The convention has to be named, not chosen.
+    expect(russianPrompt).toContain("Oxford Street → Оксфорд-стрит");
+    // Telling each batch merely to pick a dialogue convention can produce a mixed book. The
+    // convention has to be named, not chosen independently by every request.
     expect(russianPrompt).toContain("— Реплика, — сказал он.");
     expect(russianPrompt).toContain("never with «ёлочки»");
     expect(frenchPrompt).not.toContain("Russian rules");
-    expect(frenchPrompt).not.toContain("Thomas Street → Томас-стрит");
+    expect(frenchPrompt).not.toContain("Oxford Street → Оксфорд-стрит");
     expect(frenchPrompt).not.toContain("Use ё consistently");
     expect(frenchPrompt).not.toContain("— Реплика, — сказал он.");
   });

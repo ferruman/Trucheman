@@ -30,18 +30,18 @@ const unit = (id: string, text: string): TextSegment =>
 
 describe("ruby", () => {
   it("keeps the base, drops the reading, and remembers the pair", () => {
-    const doc = xhtml("<p><ruby><span>加藤保憲</span><rt>かとうやすのり</rt></ruby>は立った。</p>");
+    const doc = xhtml("<p><ruby><span>山嵐</span><rt>やまあらし</rt></ruby>は立った。</p>");
     const readings = new Map<string, string>();
 
     expect(flattenRuby(doc, readings)).toBe(1);
 
     const out = serializeXml(doc);
-    expect(out).toContain("加藤保憲");
-    expect(out).not.toContain("かとうやすのり");
+    expect(out).toContain("山嵐");
+    expect(out).not.toContain("やまあらし");
     expect(out).not.toContain("<ruby>");
     // the wrapper the reader ships its text in survives; only the gloss is gone
-    expect(out).toContain("<span>加藤保憲</span>");
-    expect(readings.get("加藤保憲")).toBe("かとうやすのり");
+    expect(out).toContain("<span>山嵐</span>");
+    expect(readings.get("山嵐")).toBe("やまあらし");
   });
 
   it("drops rp fallbacks and glosses that annotate no kanji", () => {
@@ -57,11 +57,11 @@ describe("ruby", () => {
   });
 
   it("segments the same in memory as it does after a round trip through the file", () => {
-    // Lifting the base out of the ruby left "その夜、", "加藤" and "は立った。" as three sibling
+    // Lifting the base out of the ruby leaves surrounding text as separate sibling
     // text nodes, which a parser reading the file back merges into one. Assembly re-reads the
     // document it prepared, so the whole volume failed with "Source changed" at reinsertion —
     // and every glossed word had been a segment of its own, translated out of its sentence.
-    const doc = xhtml("<p>その夜、<ruby>加藤<rt>かとう</rt></ruby>は立った。</p>");
+    const doc = xhtml("<p>おれは<ruby>清<rt>きよ</rt></ruby>の事を考えている。</p>");
     flattenRuby(doc);
 
     const inMemory = extractTextSegments(doc, "document-1").map((segment) => segment.text);
@@ -70,17 +70,17 @@ describe("ruby", () => {
     );
 
     expect(inMemory).toEqual(reparsed);
-    expect(inMemory).toEqual(["その夜、加藤は立った。"]);
+    expect(inMemory).toEqual(["おれは清の事を考えている。"]);
   });
 
   it("reads nested ruby innermost first", () => {
     const doc = xhtml(
-      "<p><ruby><ruby>帝都<rt>ていと</rt></ruby>物語<rt>ものがたり</rt></ruby></p>",
+      "<p><ruby><ruby>坊<rt>ぼう</rt></ruby>っちゃん<rt>ぼっちゃん</rt></ruby></p>",
     );
     const readings = new Map<string, string>();
     flattenRuby(doc, readings);
-    expect(serializeXml(doc)).toContain("帝都物語");
-    expect(readings.get("帝都")).toBe("ていと");
+    expect(serializeXml(doc)).toContain("坊っちゃん");
+    expect(readings.get("坊")).toBe("ぼう");
   });
 });
 
@@ -96,8 +96,7 @@ describe("writing direction", () => {
   it("loads the horizontal stylesheet instead of the vertical one", () => {
     // The class was only half the switch. These books ship one stylesheet per direction and
     // choose with `rel`: the vertical sheet is preferred, the horizontal one is `alternate`,
-    // which a reader does not apply. Four finished volumes were delivered still running their
-    // lines down the page because the sheet setting vertical-rl was the one being loaded.
+    // which a reader does not apply. Both halves of the switch have to move together.
     const doc = parseXml(
       `<html xmlns="http://www.w3.org/1999/xhtml" class="vrtl"><head>` +
         `<link rel="stylesheet" href="book-style.css"/>` +
@@ -178,7 +177,7 @@ describe("batching Japanese", () => {
     // fit in under a thousand characters, and twenty fragments in one answer is what the model
     // lost count of.
     const paragraphs = Array.from({ length: 40 }, (_, index) =>
-      unit(`document-1:${index + 1}`, "帝都は燃えていた。".repeat(5)),
+      unit(`document-1:${index + 1}`, "船は静かな海を岸へ漕ぎ戻る。".repeat(5)),
     );
     const batches = makeBatches(paragraphs, batchCharBudget("ja"), batchSegmentCap("ja"));
     expect(batches).toHaveLength(4);
@@ -186,7 +185,7 @@ describe("batching Japanese", () => {
   });
 
   it("splits an oversized node on 。 and joins the pieces without spaces", () => {
-    const sentence = `${"帝都は燃えていた".repeat(20)}。`;
+    const sentence = `${"船は静かな海を岸へ漕ぎ戻る".repeat(20)}。`;
     const batches = makeBatches([unit("document-1:1", sentence.repeat(12))], 400);
 
     expect(batches.length).toBeGreaterThan(1);
@@ -196,7 +195,7 @@ describe("batching Japanese", () => {
   });
 
   it("keeps a closing 」 with the sentence it ends", () => {
-    const text = `「行くぞ。」と加藤は言った。${"帝都は燃えていた。".repeat(40)}`;
+    const text = `「おい君は宿直じゃないか」と山嵐は聞いた。${"船は静かな海を岸へ漕ぎ戻る。".repeat(40)}`;
     const chunks = makeBatches([unit("document-1:1", text)], 120).map(
       (batch) => batch.segments[0].text,
     );
@@ -210,64 +209,58 @@ describe("scanning a Japanese source", () => {
 
   it("does not report a faithful translation as over-long", () => {
     // Japanese says in one character about what three Latin ones do
-    const source = "帝都は燃えていた。".repeat(12);
-    expect(kinds(source, "Столица горела. ".repeat(36))).toEqual([]);
+    const source = "船は静かな海を岸へ漕ぎ戻る。".repeat(12);
+    expect(kinds(source, "Лодка тихо возвращалась к берегу. ".repeat(24))).toEqual([]);
     // the same tolerance still catches a block that was lost
-    expect(kinds(source, "Столица горела.")).toEqual(["length_ratio"]);
-    expect(kinds(source, "Столица горела. ".repeat(200))).toEqual(["length_ratio"]);
+    expect(kinds(source, "Лодка вернулась.")).toEqual(["length_ratio"]);
+    expect(kinds(source, "Лодка тихо возвращалась к берегу. ".repeat(200))).toEqual([
+      "length_ratio",
+    ]);
   });
 
   it("reports a block the model never translated, even once editing has retouched it", () => {
-    // Seven consecutive paragraphs of a finished book were still Japanese. Identity missed
-    // them because the editing pass had normalized the spacing of the untouched source, and
-    // residue missed them because it only looks inside a Cyrillic translation.
+    // Public-domain Botchan text whose spacing was normalized by an editing pass.
     const source =
-      "　市ケ谷の小高い丘に早ばやと 闇 が訪れた。一月の夕暮れは早い。四時を回るや否や。";
+      "　教師も生徒も帰ってしまったあとで、一人 ぽかん としているのは随分間が抜けたものだ。";
     const retouched = source.replace(/ /g, "");
     expect(retouched).not.toBe(source);
     expect(kinds(source, retouched)).toEqual(["untranslated"]);
 
     // Thirty-one Japanese characters is a whole sentence, not a heading the floor should spare.
-    const short = "　枯れ草が急にさわさわと揺らぎ、そのあいだに黒い影が現われた。";
+    const short = "　おれは空を見ながら清の事を考えている。";
     expect(short.length).toBeLessThan(40);
     expect(kinds(short, short)).toEqual(["untranslated"]);
 
-    // A real translation of the same block is not flagged.
+    // Our repository-owned translation of the same public-domain block is not flagged.
     expect(
-      kinds(source, "На холм Итигая рано опустилась тьма. Январские сумерки коротки."),
+      kinds(source, "Когда учителя и ученики разошлись, сидеть одному без дела было нелепо."),
     ).toEqual([]);
   });
 
   it("separates a kanji run from the Russian word it fuses with", () => {
-    // Japanese writes no space, so «Ведь大多数 унтер-офицеров» tokenized as one word and the
-    // leak could never look isolated between two Cyrillic neighbours. Four reached a finished
-    // volume that way — a character's name, a number and two common words — reported as
-    // advisory residue instead of routed into a repair.
-    const source = "大多数の下士官兵は将校の命令に従っただけだ。".repeat(3);
+    // Japanese writes no space, so a leaked kanji run fuses with its Cyrillic neighbour.
+    const source = "学校には宿直があって、職員が代る代るこれをつとめる。".repeat(3);
     const leaked =
-      "Ведь大多数 унтер-офицеров и солдат просто подчинялись приказам офицеров. " +
-      "Поэтому приказ был отдан именно так, а не иначе.";
+      "Ведь宿直 в школе дежурили учителя, сменяя друг друга. " +
+      "Каждый исполнял эту обязанность по очереди.";
     const defects = scanSegment(source, leaked, "s1", "ru");
     expect(defects.map((d) => d.kind)).toContain("source_interference");
-    expect(defects.find((d) => d.kind === "source_interference")?.spans).toEqual(["大多数"]);
+    expect(defects.find((d) => d.kind === "source_interference")?.spans).toEqual(["宿直"]);
   });
 
   it("leaves a glossed original alone, in brackets as well as in quotes", () => {
-    // «собираются они — о́ни (鬼)» spells the term out in Russian and shows the original beside
-    // it. Repairing that away is the one thing the rule above must not do.
+    // The translation spells out a public-domain character name and keeps its source form.
     const gloss = scanSegment(
-      "陰の気に大いなる愛を注ぐがゆえに鬼が集まるのである。".repeat(3),
-      "Именно эту энергию инь великую любовь питают и, привлечённые ею, собираются они — " +
-        "о́ни (鬼). Поэтому верно было бы думать, что энергия инь дурна не сама по себе.",
+      "山嵐は強者の権利について説明した。".repeat(3),
+      "Ямаараси (山嵐) объяснил, что означает право сильного, и продолжил спор.",
       "s1",
       "ru",
     );
     expect(gloss.map((d) => d.kind)).not.toContain("source_interference");
 
     const quoted = scanSegment(
-      "日本の軍人はメーソンを魔孫と書いた。".repeat(4),
-      "Записывая это слово иероглифами «魔孫» — «дьявольский внук», военные выдавали " +
-        "свою одержимость тайными обществами.",
+      "生徒がおれの事を赤手拭と云うんだそうだ。".repeat(4),
+      "Оказалось, что ученики прозвали героя «赤手拭» — «красное полотенце».",
       "s1",
       "ru",
     );
@@ -275,8 +268,8 @@ describe("scanning a Japanese source", () => {
   });
 
   it("reports kana and kanji left standing in Russian prose", () => {
-    const source = "加藤は帝都の空を見上げた。".repeat(8);
-    const left = `Като посмотрел на небо 帝都 над городом. ${"Он долго молчал и не двигался. ".repeat(6)}`;
+    const source = "おれは空を見ながら清の事を考えている。".repeat(8);
+    const left = `Герой смотрел на небо и думал о 清 весь вечер. ${"Он долго молчал. ".repeat(6)}`;
     expect(kinds(source, left)).toContain("source_interference");
   });
 });
@@ -293,35 +286,35 @@ describe("entities in a Japanese source", () => {
   it("finds a name the book marks with an honorific", () => {
     const found = extractRepeatedSourceEntities(
       documents([
-        "その夜、加藤さんは黙っていた。",
-        "だれもが加藤さんを恐れていた。",
-        "辰宮さんが加藤さんに尋ねた。",
+        "おれは山嵐さんの事を考えている。",
+        "山嵐さんを連れて来たら愉快だろう。",
+        "赤シャツさんが山嵐さんについて尋ねた。",
       ]),
     );
     const sources = found.map((entity) => entity.source);
-    expect(sources).toContain("加藤");
-    expect(sources).toContain("辰宮");
+    expect(sources).toContain("赤シャツ");
+    expect(sources).toContain("山嵐");
   });
 
   it("finds a place by its suffix and drops the common compounds", () => {
     const found = extractRepeatedSourceEntities(
       documents([
-        "自分は平将門神社に行った。時間がなかった。",
-        "自分は平将門神社を出た。時間だけが過ぎた。",
+        "自分は住田町に行った。時間がなかった。",
+        "自分は住田町を出た。時間だけが過ぎた。",
       ]),
     );
     const sources = found.map((entity) => entity.source);
-    expect(sources).toContain("平将門神社");
+    expect(sources).toContain("住田町");
     expect(sources).not.toContain("自分");
     expect(sources).not.toContain("時間");
   });
 
   it("carries the book's own furigana to the registry", () => {
     const found = extractRepeatedSourceEntities(
-      documents(["加藤さんが来た。", "加藤さんは去った。", "だれもが加藤さんを見た。"]),
-      { 加藤: "かとう" },
+      documents(["山嵐さんが来た。", "山嵐さんは去った。", "だれもが山嵐さんを見た。"]),
+      { 山嵐: "やまあらし" },
     );
-    expect(found.find((entity) => entity.source === "加藤")?.reading).toBe("かとう");
+    expect(found.find((entity) => entity.source === "山嵐")?.reading).toBe("やまあらし");
   });
 });
 

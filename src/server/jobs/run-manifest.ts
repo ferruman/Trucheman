@@ -80,8 +80,7 @@ export async function writeRunManifest(root: string, job: PersistedJob): Promise
       translation: unitState(countCompleted(drafts), total),
       editing: unitState(countCompleted(edits), total),
       audit: unitState(countCompleted(audits), job.qualityMode === "high" ? total : 0),
-      // Repair only visits the batches the audit flagged, so the book is not its denominator:
-      // a finished run that repaired 29 of 158 batches read as 129 batches still outstanding.
+      // Repair only visits batches the audit flagged, so the whole book is not its denominator.
       repair: unitState(countCompleted(repairs), countCompleted(repairs)),
     },
   };

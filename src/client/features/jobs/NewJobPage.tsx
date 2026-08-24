@@ -13,8 +13,8 @@ type GlossaryDraft = {
 
 /**
  * The categories worth carrying between books. A generated glossary is mostly `term`, because
- * the entity extractor casts wide on purpose: over a volume of 帝都物語 the rule that would have
- * dropped 地面 and 視線 also dropped 加藤保憲, 東京 and 銀座, so the noise is kept and filtered
+ * the entity extractor casts wide on purpose: a rule that drops words such as 地面 and 視線
+ * can also drop names such as 山嵐 and places such as 東京, so noise is kept and filtered
  * here instead — by then the model has labelled every row and the labels can be trusted.
  */
 const NAMED_CATEGORIES = new Set(["person", "place", "organization", "work", "ship"]);

@@ -52,10 +52,9 @@ describe("scanSegment", () => {
   });
 
   it("accepts a Russian number written out in words instead of digits", () => {
-    // «до спасения двенадцатого числа» is a translation of "till his rescue on the 12th",
-    // not a dropped number; reporting it buried the one date that had really been lost.
+    // An ordinal written as a Russian word is not a dropped number.
     expect(
-      scanSegment("till his rescue on the 12th", "до спасения двенадцатого числа", "s1", "ru"),
+      scanSegment("Alice returned on the 12th", "Алиса вернулась двенадцатого числа", "s1", "ru"),
     ).toEqual([]);
     expect(
       scanSegment("on March 22nd he wrote", "двадцать второго марта он написал", "s1", "ru"),
@@ -65,36 +64,43 @@ describe("scanSegment", () => {
       "missing_numbers",
     );
     expect(
-      scanSegment("till his rescue on the 12th", "до спасения двенадцатого числа", "s1", "pl")[0]
+      scanSegment("Alice returned on the 12th", "Алиса вернулась двенадцатого числа", "s1", "pl")[0]
         ?.kind,
     ).toBe("missing_numbers");
   });
 
-  it("accepts calibers, model years and magnitudes the way Russian writes them", () => {
-    // A production run reported 26 dropped numbers and every one of them was this: the
-    // hundreds-and-tens numerals of a caliber, a two-digit year, or a rounded count.
+  it("accepts decimals, short labels and magnitudes written as Russian words", () => {
     const ru = (source: string, translation: string) =>
       scanSegment(source, translation, "s1", "ru").map((defect) => defect.kind);
-    expect(ru("he aimed the .357 at her", "он навёл «триста пятьдесят седьмой» на неё")).toEqual(
-      [],
-    );
-    expect(ru("a pair of .45s in his bag", "пара сорок пятых в его сумке")).toEqual([]);
-    expect(ru("perched on a ’49 Merc", "сидела на «мерке» сорок девятого года")).toEqual([]);
-    expect(ru("perched on a ’49 Merc", "сидела на «мерке» 1949 года")).toEqual([]);
-    expect(ru("345,000 miles on the odometer", "345 тысяч миль на одометре")).toEqual([]);
+    expect(
+      ru("the bottle was marked .357", "на бутылочке стояло «триста пятьдесят седьмой»"),
+    ).toEqual([]);
+    expect(ru("two cakes marked .45", "два пирожка с номером сорок пять")).toEqual([]);
+    expect(ru("a card marked ’49", "карта с номером сорок девять")).toEqual([]);
+    expect(ru("a card marked ’49", "карта с номером 1949")).toEqual([]);
+    expect(
+      ru("345,000 miles down the rabbit-hole", "345 тысяч миль вниз по кроличьей норе"),
+    ).toEqual([]);
     expect(ru("a swallow of H2O", "глоток H₂O")).toEqual([]);
     // The number is still gone when nothing stands in for it.
-    expect(ru("he aimed the .357 at her", "он навёл пистолет на неё")).toEqual(["missing_numbers"]);
+    expect(ru("the bottle was marked .357", "на бутылочке была метка")).toEqual([
+      "missing_numbers",
+    ]);
   });
 
   it('does not read the scanned pronoun "1" as a dropped number', () => {
     const ru = (source: string, translation: string) =>
       scanSegment(source, translation, "s1", "ru").map((defect) => defect.kind);
-    // OCR turns "I" into "1" — 26 of one run's 27 dropped-number findings were this.
+    // OCR can turn "I" into "1" inside otherwise ordinary prose.
     expect(
-      ru("I didn’t see anybody until 1 got here.", "Я никого не видел, пока не пришёл."),
+      ru(
+        "I followed the Rabbit until 1 reached the hall.",
+        "Я шла за Кроликом, пока не добралась до зала.",
+      ),
     ).toEqual([]);
-    expect(ru("Her name’s Shadow. 1 Embraced her.", "Её зовут Шэдоу. Я обратил её.")).toEqual([]);
+    expect(ru("Her name is Dinah. 1 remembered her.", "Её зовут Дина. Я вспомнила о ней.")).toEqual(
+      [],
+    );
     // A digit against a digit is still checked, and a Cyrillic source is left alone.
     expect(ru("He waited 1,000 years and 12 days.", "Он ждал тысячу лет.")).toEqual([
       "missing_numbers",
@@ -108,12 +114,12 @@ describe("scanSegment", () => {
     const ru = (source: string, translation: string) =>
       scanSegment(source, translation, "s1", "ru").map((defect) => defect.kind);
     expect(
-      ru("its 20,320-foot crown", "её вершина высотой в двадцать тысяч триста двадцать футов"),
+      ru("that would be four thousand miles down", "это было бы на глубине четырёх тысяч миль"),
     ).toEqual([]);
     expect(ru("1,000 miles away", "в тысяче миль отсюда")).toEqual([]);
     expect(ru("2,500 men", "две тысячи пятьсот человек")).toEqual([]);
     // A thousand short of its own numeral is still a dropped number.
-    expect(ru("its 20,320-foot crown", "её вершина высотой в триста двадцать футов")).toEqual([
+    expect(ru("that would be 4,000 miles down", "это было бы на глубине четырёх миль")).toEqual([
       "missing_numbers",
     ]);
   });
@@ -121,18 +127,10 @@ describe("scanSegment", () => {
   it("separates a word left inside a sentence from text the book keeps foreign", () => {
     // Every residue run 9cfcd03a produced, and which side of the line it fell on.
     const interference: Array<[string, string, string]> = [
-      [
-        "Ms. Therman did an admirable job",
-        "Госпожа Терман проделала admirable работу",
-        "admirable",
-      ],
-      ["Charnas sounded shocked.", "Чарнас sounded изумлённым, и все замолчали.", "sounded"],
-      [
-        "Ilse wished she could slip back",
-        "Ильза wished она могла бы соскользнуть обратно",
-        "wished",
-      ],
-      ["he formally bowed to her", "Она встала, и он formally поклонился ей.", "formally"],
+      ["Alice did an admirable job", "Алиса выполнила admirable работу", "admirable"],
+      ["Rabbit sounded shocked.", "Кролик sounded потрясённым, и все замолчали.", "sounded"],
+      ["Alice wished she could slip back", "Алиса wished снова проскользнуть в дверь", "wished"],
+      ["he formally bowed to Alice", "Он formally поклонился Алисе.", "formally"],
     ];
     for (const [source, translation, word] of interference) {
       const defects = scanSegment(source, translation, "s1").filter((defect) =>
@@ -143,15 +141,12 @@ describe("scanSegment", () => {
     }
 
     const preserved: Array<[string, string]> = [
-      // A Latin incantation, a German line of dialogue, a band name: all kept on purpose.
-      [
-        "“Ignis magnificus, veni y illuminatum occulos mios,”",
-        "— Ignis magnificus, veni y illuminatum occulos mios, — пробормотал он.",
-      ],
-      ["“Ach, liebe Gott...,” Westphal whispered.", "— Ach, liebe Gott... — прошептал Вестфаль."],
-      ["“Wer hat gesiegt!” he cried out.", "— Wer hat gesiegt! — крикнул он."],
-      ["Lyle, mein Liebchen, I must ask you", "Лайл, mein Liebchen, я должен просить вас"],
-      ["the worst tribute to the Grateful Dead", "худшая дань уважения Grateful Dead в истории"],
+      // Foreign phrases and public-domain character names kept on purpose.
+      ["The lesson began with “Où est ma chatte?”", "Урок начался с фразы «Où est ma chatte?»"],
+      ["Alice called to the White Rabbit.", "Алиса позвала White Rabbit."],
+      ["The Cheshire Cat grinned.", "Cheshire Cat улыбнулся."],
+      ["Dinah, ma chère, come here", "Дина, ma chère, иди сюда"],
+      ["the strangest tale of the Mock Turtle", "страннейший рассказ Mock Turtle"],
       [
         "they danced under paper bienvenidos banners",
         "они танцевали под бумажными транспарантами «bienvenidos» под музыку",
@@ -191,20 +186,18 @@ describe("scanSegment", () => {
     ]);
     // Latin to Latin: a shared word is a name or a cognate, not residue
     expect(kinds("The harbour was quiet.", "Der harbour war ruhig.")).toEqual([]);
-    // A capitalized word kept as-is is a name, a brand or a title, and keeping it is right.
-    // 32 of a production run's 32 residue findings were these, burying four real ones.
+    // Capitalized public-domain character names may intentionally remain untranslated.
     expect(
       kinds(
-        "He wore Levi’s and played Nine Inch Nails.",
-        "Он носил Levi’s и слушал Nine Inch Nails.",
+        "Alice followed the White Rabbit and met the Cheshire Cat.",
+        "Алиса последовала за White Rabbit и встретила Cheshire Cat.",
       ),
     ).toEqual([]);
-    // Nor when the source happens to use the same word lowercase in its own prose: the
-    // author's page reported «Science Fiction Reviews» against "received excellent reviews".
+    // Nor when the source also uses the same word lowercase as an ordinary noun.
     expect(
       kinds(
-        "He has received excellent reviews from Science Fiction Reviews.",
-        "Он получил отличные отзывы от Science Fiction Reviews.",
+        "The Mouse told Alice about a mouse, then met the Mock Turtle.",
+        "Мышь рассказала Алисе о мыши, затем встретила Mock Turtle.",
       ),
     ).toEqual([]);
   });

@@ -84,13 +84,13 @@ describe("selective literary quality service", () => {
   });
 
   it("rejects a repair that duplicates a fragment of the block it repaired", () => {
-    // The production regression: repairing the fragmented heading "In / the / Desert".
+    // Public-domain Alice heading fragmented across separate inline elements.
     const result = applySelectiveRepairs(
-      [{ id: "h1", text: "В пустыне" }],
-      [{ id: "h1", text: "В пустыне пустыня" }],
+      [{ id: "h1", text: "Вниз по кроличьей норе" }],
+      [{ id: "h1", text: "Вниз по кроличьей норе норе" }],
     );
 
-    expect(result.segments).toEqual([{ id: "h1", text: "В пустыне" }]);
+    expect(result.segments).toEqual([{ id: "h1", text: "Вниз по кроличьей норе" }]);
     expect(result.rejected).toEqual([
       { id: "h1", reason: "repair duplicates an adjacent fragment" },
     ]);
@@ -100,8 +100,8 @@ describe("selective literary quality service", () => {
     const cases = [
       { edited: "Хороший текст", repaired: "   ", reason: "empty repair" },
       {
-        edited: "Из страны дальних солнц",
-        repaired: "Из земли Земля из the Farther Suns",
+        edited: "Море слёз",
+        repaired: "Море море of Tears",
         reason: "repair duplicates an adjacent fragment",
       },
       {
@@ -115,8 +115,8 @@ describe("selective literary quality service", () => {
         reason: "repair unbalances guillemets",
       },
       {
-        edited: "Ночные пташки",
-        repaired: "Ночные пташки, которые летают в темноте над безмолвным городом каждую ночь",
+        edited: "Белый Кролик спешил",
+        repaired: "Белый Кролик очень быстро спешил по длинному коридору к Герцогине",
         reason: "repair changes the block structure",
       },
     ];
@@ -131,28 +131,26 @@ describe("selective literary quality service", () => {
   });
 
   it("accepts a repair that restores a block the editor truncated", () => {
-    // The real shape of the defect: editing dropped the dialogue and left only the narration,
+    // Public-domain Alice fixture: editing dropped the dialogue and left only the narration,
     // so the correct repair is far longer than the edit but no longer than the source.
-    const truncated = "Помолчав, Дезидра сказала:";
+    const truncated = "Алиса довольно строго сказала себе:";
     const restored =
-      "Помолчав, Дезидра сказала: — Он тебя накажет, верно? Может, даже убьёт, " +
-      "если не приведёшь меня обратно. Разве не так? Ты играешь с огнём, Крис.";
+      "Алиса довольно строго сказала себе: «Ну же, нет никакого смысла так плакать! " +
+      "Советую тебе сейчас же перестать!»";
     const source =
-      "After a long moment, Desidra said, \"He'll punish you, right? Maybe kill you if you " +
-      "don't bring me back. Isn't that correct? You're playing a dangerous game with me, Chris.\"";
+      '"Come, there’s no use in crying like that!" said Alice to herself, rather sharply; ' +
+      '"I advise you to leave off this minute!"';
 
     expect(reviewRepair(truncated, restored)).toBe("repair changes the block structure");
     expect(reviewRepair(truncated, restored, source)).toBe(undefined);
 
-    // The block a Japanese book never translated: the text to replace *is* the source, and its
-    // correct Russian runs three times longer. Judged against a Latin expectation this gate
-    // rejected all fourteen such repairs on one volume, every one of them correct, and the
-    // untranslated paragraphs shipped.
+    // Public-domain Botchan fixture: the text to replace *is* the source, and its Russian
+    // translation is much longer. See tests/fixtures/NOTICE.md.
     const japanese =
-      "　男は自衛隊の将校服に身を固めていた。瘦せてひょろ長いが、歩き方で強靭な肉体と分かる。";
+      "教師も生徒も帰ってしまったあとで、一人ぽかんとしているのは随分間が抜けたものだ。";
     const russian =
-      "Мужчина был облачён в мундир офицера Сил самообороны. Худой и долговязый, " +
-      "он, однако, уже по одной походке выдавал незаурядную физическую силу.";
+      "Когда учителя и ученики разошлись, оставаться одному без всякого дела казалось " +
+      "до крайности нелепым занятием.";
     expect(russian.length).toBeGreaterThan(japanese.length * 2 + 20);
     expect(reviewRepair(japanese, russian)).toBe(undefined);
     // Still bounded: a repair that runs away is rejected whatever the script.
@@ -339,20 +337,20 @@ describe("selective literary quality service", () => {
       [
         {
           id: "negation",
-          text: "There wasn't anywhere to put it. Stick any worthwhile amount in your mouth and it will kill.",
+          text: "There was nothing else to do, so Alice soon began talking again.",
         },
-        { id: "quote", text: "They danced below bienvenidos banners." },
+        { id: "quote", text: 'Alice asked, "Où est ma chatte?"' },
         { id: "punctuation", text: "He asked a question." },
         { id: "period", text: "He called it a total loss." },
-        { id: "transliteration", text: "It was la Noche de San Lucas." },
+        { id: "transliteration", text: 'The Mouse asked, "Où est ma chatte?"' },
       ],
       [],
       [
-        { id: "negation", text: "Засунь дозу в рот — и она убьёт." },
-        { id: "quote", text: "Они танцевали под транспарантами «bienvenidos»." },
+        { id: "negation", text: "Делать больше было нечего, и Алиса вскоре снова заговорила." },
+        { id: "quote", text: "Алиса спросила: «Où est ma chatte?»" },
         { id: "punctuation", text: "«Он оставил знак, не так ли?»" },
         { id: "period", text: "«Полная потеря»." },
-        { id: "transliteration", text: "Это Ла Ночь де Сан-Лукас." },
+        { id: "transliteration", text: "Мышь спросила: «Où est ma chatte?»" },
       ],
     );
     const findings = parseQualityFindings(inputs, [
@@ -361,7 +359,7 @@ describe("selective literary quality service", () => {
         text: "",
         issues: [
           {
-            span: "Засунь дозу в рот",
+            span: "Делать больше было нечего",
             type: "semantic_error",
             severity: "high",
             reason: "Опущено отрицание, поэтому смысл изменён на противоположный.",
@@ -373,7 +371,7 @@ describe("selective literary quality service", () => {
         text: "",
         issues: [
           {
-            span: "bienvenidos",
+            span: "Où est ma chatte?",
             type: "source_language_interference",
             severity: "high",
             reason: "Source word was left inside a translated sentence.",
@@ -409,10 +407,10 @@ describe("selective literary quality service", () => {
         text: "",
         issues: [
           {
-            span: "Ла Ночь де Сан-Лукас",
+            span: "Où est ma chatte?",
             type: "source_language_interference",
             severity: "medium",
-            reason: "Глоссарий требует «Сан», а не смешение испанского и русского.",
+            reason: "Глоссарий требует перевод, а не исходную фразу.",
           },
         ],
       },

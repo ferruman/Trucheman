@@ -70,10 +70,9 @@ describe("EPUB structural repair", () => {
   });
 
   it("makes the package describe its own files: scripts, NCX identity, dead refines", async () => {
-    // The shape a reader-produced EPUB arrives in. Every page loads the reader's own
-    // JavaScript and the manifest never says so — one OPF-014 per document, twenty-five of the
-    // thirty errors left on a finished book. The NCX announces the identifier of whatever
-    // rebuilt it, and the metadata refines a creator id that a later tool renamed away.
+    // A reader-produced EPUB can load JavaScript the manifest never declares. The NCX may
+    // announce the identifier of the tool that rebuilt it, while metadata refines a creator id
+    // that a later tool renamed away.
     const root = await mkdtemp(join(tmpdir(), "epub-declare-"));
     roots.push(root);
     const source = join(root, "source");

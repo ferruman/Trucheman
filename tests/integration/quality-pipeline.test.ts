@@ -55,14 +55,14 @@ describe("two-pass pipeline", () => {
         editingProfile: profile,
         ...languages,
         instructions: "Prefer concise dialogue",
-        chapterCards: new Map([["chapter-1", "- Kyra: female, singular"]]),
+        chapterCards: new Map([["chapter-1", "- Alice: female, singular"]]),
       },
     );
     const instructions = provider.requests
       .filter((request) => request.mode === "translation")
       .map((request) => request.instructions);
     expect(instructions).toEqual([
-      "Prefer concise dialogue\n\n- Kyra: female, singular",
+      "Prefer concise dialogue\n\n- Alice: female, singular",
       "Prefer concise dialogue",
     ]);
   });
@@ -733,15 +733,15 @@ describe("two-pass pipeline", () => {
             id: input.id,
             text:
               request.mode === "repair"
-                ? "Он посмотрел через улицу, затем снова на собеседника. Рубашка была распахнута, и татуировка хорошо видна. Незнакомец заметил её, улыбнулся и посоветовал не стрелять сгоряча."
-                : "Незнакомец посмотрел и улыбнулся.",
+                ? "Колодец был очень глубоким, или Алиса падала очень медленно. У неё было достаточно времени, чтобы осмотреться и подумать, что произойдёт дальше. На стенах она заметила шкафы и книжные полки."
+                : "Алиса медленно падала и смотрела вокруг.",
           })),
         };
       },
     };
     const profile = { name: "fake", endpoint: "local", model: "fake" };
     const longSource =
-      "The stranger looked across the street, then looked back at Curve. Curve's shirt was still open and the tattoo was clearly visible. He focused on it and smiled gently. He offered a warning about trying to shoot it away before walking into the building.";
+      "Either the well was very deep, or she fell very slowly, for she had plenty of time as she went down to look about her and to wonder what was going to happen next. She looked at the sides of the well, and noticed that they were filled with cupboards and book-shelves.";
 
     const result = await runQualityPipeline(
       [
@@ -762,7 +762,7 @@ describe("two-pass pipeline", () => {
     );
 
     expect(modes).toEqual(["translation", "editing", "audit", "repair"]);
-    expect(result.edits.get("chapter-1-batch-1")?.[0].text).toContain("татуировка");
+    expect(result.edits.get("chapter-1-batch-1")?.[0].text).toContain("книжные полки");
   });
 
   it("routes a Russian case ending outside guillemets to repair", async () => {

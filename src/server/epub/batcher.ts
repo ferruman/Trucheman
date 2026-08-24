@@ -17,12 +17,10 @@ export function batchCharBudget(sourceLanguage?: string): number {
 
 /**
  * Which of the two limits actually binds depends on the language, and for Japanese it is this
- * one: a volume of 帝都物語 filled 255 of its 281 batches to the segment cap at a median of 920
- * characters, so the character budget never came near. Twenty Japanese paragraphs average
+ * one: short Japanese paragraphs can reach the segment cap long before the character budget.
+ * Twenty Japanese paragraphs average
  * forty-odd characters each, and asking one answer to carry twenty fragments that short made
- * the model lose count — eight of the first thirteen translation requests came back invalid,
- * while every half of a split batch parsed. Ten is what the halving recovery was already
- * doing successfully, done up front instead of after three paid attempts.
+ * the model lose count. Ten is the conservative cap used up front.
  */
 export function batchSegmentCap(sourceLanguage?: string): number {
   return isJapanese(sourceLanguage) ? 10 : MAX_BATCH_SEGMENTS;

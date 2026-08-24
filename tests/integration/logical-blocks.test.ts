@@ -45,12 +45,11 @@ describe("fragmented EPUB logical blocks", () => {
 
     // Nine one-word spans across three headings collapse into three headings.
     expect(document.units.map((unit) => unit.text)).toEqual([
-      "In the Desert",
-      "From the Land of the Farther Suns",
-      "Part 5 Little Birds of the Night",
-      // Decorative `<em>` is absorbed too: a bare " at all." on its own line is what the
-      // model turns into invented text.
-      "He said nothing at all.",
+      "Down the Rabbit-Hole",
+      "The Pool of Tears",
+      "A Caucus-Race and a Long Tale",
+      // Decorative `<em>` is absorbed too instead of splitting the sentence.
+      "Alice was beginning to get very tired.",
     ]);
     expect(document.segments.length).toBeGreaterThan(document.units.length);
     expect(Object.keys(document.absorbed)).toHaveLength(
@@ -59,17 +58,17 @@ describe("fragmented EPUB logical blocks", () => {
 
     // A table-of-contents entry fragmented inside one <a> also rejoins.
     const nav = prepared.documents.find((candidate) => candidate.navigation === "nav");
-    expect(nav?.units.map((unit) => unit.text)).toEqual(["Part 2. In the Desert"]);
+    expect(nav?.units.map((unit) => unit.text)).toEqual(["CHAPTER I. Down the Rabbit-Hole"]);
     expect(prepared.documents.find((candidate) => candidate.navigation === "ncx")).toBeDefined();
   });
 
   it("reinserts a translated heading once, without duplicated fragments", async () => {
     const root = await fragmentedJobRoot();
     const translations = new Map([
-      ["In the Desert", "В пустыне"],
-      ["From the Land of the Farther Suns", "Из страны дальних солнц"],
-      ["Part 5 Little Birds of the Night", "Часть 5. Ночные пташки"],
-      ["Part 2. In the Desert", "Часть 2. В пустыне"],
+      ["Down the Rabbit-Hole", "Вниз по кроличьей норе"],
+      ["The Pool of Tears", "Море слёз"],
+      ["A Caucus-Race and a Long Tale", "Бег по кругу и длинный рассказ"],
+      ["CHAPTER I. Down the Rabbit-Hole", "ГЛАВА I. Вниз по кроличьей норе"],
     ]);
     const provider = {
       async complete(request: {
@@ -97,13 +96,13 @@ describe("fragmented EPUB logical blocks", () => {
     await extractEpub(join(root, "output.epub"), extracted);
     const chapter = await readFile(join(extracted, "OEBPS/chapter.xhtml"), "utf8");
 
-    expect(chapter).toContain("В пустыне");
-    expect(chapter).toContain("Из страны дальних солнц");
-    expect(chapter).toContain("Часть 5. Ночные пташки");
-    // The regressions the fragmented markup used to produce.
-    expect(chapter).not.toContain("В пустыне пустыня");
-    expect(chapter).not.toContain("Из земли Земля");
-    expect(chapter.replace(/<[^>]*>/g, " ").match(/В пустыне/g)).toHaveLength(1);
+    expect(chapter).toContain("Вниз по кроличьей норе");
+    expect(chapter).toContain("Море слёз");
+    expect(chapter).toContain("Бег по кругу и длинный рассказ");
+    // The regressions fragmented markup used to produce.
+    expect(chapter).not.toContain("кроличьей норе норе");
+    expect(chapter).not.toContain("Море море");
+    expect(chapter.replace(/<[^>]*>/g, " ").match(/Вниз по кроличьей норе/g)).toHaveLength(1);
   });
 
   it("audits the built EPUB for duplicated fragments and TOC corruption", async () => {
@@ -146,7 +145,7 @@ describe("fragmented EPUB logical blocks", () => {
     // document-3, and only the NCX rendering may reach the built book.
     const byDocument: Record<string, string> = {
       "document-2": "Глава вторая. Среди песков",
-      "document-3": "Часть 2. В пустыне",
+      "document-3": "ГЛАВА I. Вниз по кроличьей норе",
     };
     const provider = {
       async complete(request: {
@@ -158,7 +157,7 @@ describe("fragmented EPUB logical blocks", () => {
             const rendering = byDocument[segment.id.split(":")[0]];
             return {
               id: segment.id,
-              text: input.includes("In the Desert") && rendering ? rendering : input,
+              text: input.includes("Down the Rabbit-Hole") && rendering ? rendering : input,
             };
           }),
           finishReason: "stop",
@@ -173,7 +172,7 @@ describe("fragmented EPUB logical blocks", () => {
     const report = JSON.parse(await readFile(join(root, "consistency-report.json"), "utf8"));
 
     expect(report.navigationLabels.labels).toEqual([
-      { source: "Part 2. In the Desert", canonical: "Часть 2. В пустыне" },
+      { source: "CHAPTER I. Down the Rabbit-Hole", canonical: "ГЛАВА I. Вниз по кроличьей норе" },
     ]);
 
     const extracted = await mkdtemp(join(tmpdir(), "book-nav-out-"));
@@ -181,7 +180,7 @@ describe("fragmented EPUB logical blocks", () => {
     await extractEpub(join(root, "output.epub"), extracted);
     const nav = await readFile(join(extracted, "OEBPS/toc.xhtml"), "utf8");
 
-    expect(nav).toContain("Часть 2. В пустыне");
+    expect(nav).toContain("ГЛАВА I. Вниз по кроличьей норе");
     expect(nav).not.toContain("Среди песков");
   });
 });

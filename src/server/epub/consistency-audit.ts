@@ -24,7 +24,7 @@ const stemWordPattern = /[\p{L}\p{M}]{4,}/gu;
 const rhetoricalSeparator = /[-–—…]|\.\.\./u;
 
 /**
- * Two sentences, not one fragment: «…проблемами обиды Лилит. Лилит знала лучше» is ordinary
+ * Two sentences, not one fragment: «…обиды Дины. Дина знала лучше» is ordinary
  * prose that happens to name the same person on both sides of a full stop.
  */
 // Newlines separate block nodes in the extracted audit text. A heading ending in «ИЗДАНИЙ»
@@ -35,7 +35,7 @@ const sentenceBreak = /[.!?\r\n]/u;
 const MIN_STEM_SHARE = 0.8;
 
 /**
- * Adjacent words sharing a stem — "В пустыне пустыня", "Из земли Земля". Repairing a
+ * Adjacent words sharing a stem — "У Кролика кролик", "Из норы нора". Repairing a
  * fragmented heading one span at a time produced exactly this shape.
  */
 export function duplicatedFragments(text: string): string[] {
@@ -48,7 +48,8 @@ export function duplicatedFragments(text: string): string[] {
     if (/[\p{L}\p{N}]/u.test(between) || rhetoricalSeparator.test(between)) continue;
     // A full stop between them ends the argument whether or not the endings agree. Picking
     // a word up across the break is a figure Russian prose uses on purpose — «Ничто из
-    // этого не имело значения. Значение имела кровь» — and the last block of a paragraph
+    // этого не имело значения. Значение имел золотой ключ» — and the last block of a
+    // paragraph
     // meets the first word of the next one the same way. Ten of one book's twelve audit
     // warnings were this, and not one was corruption.
     if (sentenceBreak.test(between)) continue;
@@ -69,7 +70,7 @@ export function duplicatedFragments(text: string): string[] {
       common++;
     }
     // A shared four-letter prefix alone matched «в конце концов» and «провести проверку»;
-    // requiring the shared part to dominate the longer word keeps «В пустыне пустыня».
+    // requiring the shared part to dominate the longer word keeps «У Кролика кролик».
     if (common >= 4 && common / Math.max(previous[0].length, current[0].length) >= MIN_STEM_SHARE)
       found.push(`${previous[0]} ${current[0]}`);
   }

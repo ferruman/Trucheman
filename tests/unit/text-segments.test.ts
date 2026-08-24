@@ -16,25 +16,27 @@ describe("text segments", () => {
   });
   it("merges a heading fragmented into one span per word into a single unit", () => {
     const d = parseXml(
-      `<html xmlns="http://www.w3.org/1999/xhtml"><body><h1><span>In</span> <span>the</span> <span>Desert</span></h1><p>He said <em>nothing</em> at all.</p></body></html>`,
+      `<html xmlns="http://www.w3.org/1999/xhtml"><body><h1><span>Down</span> <span>the</span> <span>Rabbit-Hole</span></h1><p>Alice was <em>very tired</em>.</p></body></html>`,
     );
     const { units, absorbed } = mergeLogicalBlocks(extractTextSegments(d, "doc"));
 
-    // Decorative `<em>` no longer splits the sentence: translating " at all." on its own
-    // is what produced invented and duplicated fragments around <i>-wrapped names.
-    expect(units.map((unit) => unit.text)).toEqual(["In the Desert", "He said nothing at all."]);
+    // Decorative `<em>` no longer splits the public-domain sentence.
+    expect(units.map((unit) => unit.text)).toEqual([
+      "Down the Rabbit-Hole",
+      "Alice was very tired.",
+    ]);
     expect(absorbed.size).toBe(4);
     expect([...absorbed.values()]).toEqual([units[0].id, units[0].id, units[1].id, units[1].id]);
   });
 
   it("never pulls a sentence into the emphasis that starts it", () => {
     const d = parseXml(
-      `<html xmlns="http://www.w3.org/1999/xhtml"><body><p><i>Emma</i> sailed at dawn.</p></body></html>`,
+      `<html xmlns="http://www.w3.org/1999/xhtml"><body><p><i>Dinah</i> sailed at dawn.</p></body></html>`,
     );
     const { units, absorbed } = mergeLogicalBlocks(extractTextSegments(d, "doc"));
 
     // Merging outward is safe; merging inward would italicise the whole paragraph.
-    expect(units.map((unit) => unit.text)).toEqual(["Emma", " sailed at dawn."]);
+    expect(units.map((unit) => unit.text)).toEqual(["Dinah", " sailed at dawn."]);
     expect(absorbed.size).toBe(0);
   });
 
@@ -52,22 +54,22 @@ describe("text segments", () => {
 
   it("joins fragments without manufacturing space before punctuation", () => {
     const d = parseXml(
-      `<html xmlns="http://www.w3.org/1999/xhtml"><body><p>The <i>Emma</i>, he says, and the <i>Emma</i>'s crew. <span>Part</span> <span>5</span></p></body></html>`,
+      `<html xmlns="http://www.w3.org/1999/xhtml"><body><p>The <i>Dinah</i>, he says, and the <i>Dinah</i>'s crew. <span>Part</span> <span>5</span></p></body></html>`,
     );
     const { units } = mergeLogicalBlocks(extractTextSegments(d, "doc"));
 
-    expect(units[0].text).toBe("The Emma, he says, and the Emma's crew. Part 5");
+    expect(units[0].text).toBe("The Dinah, he says, and the Dinah's crew. Part 5");
   });
 
   it("rejoins a capital split from the rest of a word by small-caps markup", () => {
     const d = parseXml(
-      `<html xmlns="http://www.w3.org/1999/xhtml"><body><p>S<small>OSIAS:</small> I<small>S NOT THIS STRANGE?</small> T<small>HEORUS BECOMING A CROW!</small></p><p>X<small>ANTHIAS:</small> N<small>O.</small></p></body></html>`,
+      `<html xmlns="http://www.w3.org/1999/xhtml"><body><p>A<small>LICE:</small> C<small>URIOUSER AND CURIOUSER!</small></p><p>R<small>ABBIT:</small> O<small>H DEAR!</small></p></body></html>`,
     );
     const { units } = mergeLogicalBlocks(extractTextSegments(d, "doc"));
 
     expect(units.map((unit) => unit.text)).toEqual([
-      "SOSIAS: IS NOT THIS STRANGE? THEORUS BECOMING A CROW!",
-      "XANTHIAS: NO.",
+      "ALICE: CURIOUSER AND CURIOUSER!",
+      "RABBIT: OH DEAR!",
     ]);
   });
 
@@ -86,12 +88,12 @@ describe("text segments", () => {
     );
     const segments = extractTextSegments(d, "doc");
     const { units, absorbed } = mergeLogicalBlocks(segments);
-    const values = new Map<string, string>([[units[0].id, "В пустыне"]]);
+    const values = new Map<string, string>([[units[0].id, "Вниз по кроличьей норе"]]);
     for (const id of absorbed.keys()) values.set(id, "");
 
     reinsertText(d, segments, values);
     const text = d.documentElement.textContent;
-    expect(text.trim()).toBe("В пустыне");
+    expect(text.trim()).toBe("Вниз по кроличьей норе");
   });
 
   it("reinserts only the original text node", () => {

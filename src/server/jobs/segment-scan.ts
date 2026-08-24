@@ -62,9 +62,8 @@ function numbers(text: string) {
 }
 
 /**
- * A scanned book writes the pronoun "I" as "1": «until 1 got here», «Because 1 do not hope».
- * All 37 standalone "1"s in job 02279a8b's source were this, and they were 26 of that run's
- * 27 dropped-number findings.
+ * A scanned book can write the pronoun "I" as "1": «until 1 reached the hall». Treating
+ * every such OCR error as a numeral creates false dropped-number findings.
  *
  * A bare "1" in front of a word is the trade: "1 mile" stops being checked, which costs one
  * digit in one block, against a book's worth of phantom findings burying the real ones.
@@ -117,8 +116,8 @@ const RU_STEMS = new Map<number, string>([
 /**
  * Stems that must all appear for `value` to count as written out in words. "12" reads as
  * «двенадцатого», "22" as «двадцать второго» — reporting those as dropped numbers buried
- * the one date that really had been lost. Calibers and model years are the bulk of it:
- * ".357" is «триста пятьдесят седьмой», "’49" is «сорок девятого».
+ * a date that really was lost. Decimal labels and abbreviated years need the same handling:
+ * ".357" can be «триста пятьдесят седьмой», "’49" can be «сорок девятого».
  */
 function spelledOutStems(value: string): string[] {
   const n = Number(value);
@@ -204,7 +203,7 @@ function dominantScript(text: string) {
  * cognate, and flagging those would bury the real finding.
  *
  * Only words the source itself writes lowercase count. A capitalized Latin word kept as-is
- * is a name, a brand or a title — Nine Inch Nails, MasterCard, Levi's — and keeping those is
+ * is a name or a title — White Rabbit, Cheshire Cat — and keeping those is
  * correct, so flagging them buried the finding exactly the way a cognate would.
  */
 function sourceResidue(source: string, translation: string): string[] {
@@ -235,18 +234,15 @@ function sourceResidue(source: string, translation: string): string[] {
  * Of the words carried over, the ones with target-script words on both sides.
  *
  * «он formally поклонился ей» is interference: the model translated the sentence and left one
- * word behind. «Ach, liebe Gott», «Ignis magnificus, veni», «Grateful Dead» are not — a book
- * keeps its German dialogue, its Latin incantation and its band names, and every one of those
- * sits inside a run of source text. Every residue this run of the book produced fell cleanly
- * on one side or the other, which is what makes the first kind worth paying a repair for and
- * the second kind worth only reporting.
+ * word behind. Intentionally preserved foreign dialogue and character names are not: a book
+ * can keep those source-language spans, and each one sits inside a run of source text. The
+ * first kind is worth repairing; the second is worth reporting only.
  */
 /**
  * Words, with a CJK run counting as one of its own. Japanese writes no space, so a kanji run
- * left in Russian prose fuses with the word beside it — «Ведь大多数 унтер-офицеров» tokenized as
- * one word «Ведь大多数» — and could never look isolated between two Cyrillic neighbours. Four
- * such leaks reached a finished volume: a character's name, a number, and two common words,
- * every one of them reported as advisory residue instead of routed into a repair.
+ * left in Russian prose fuses with the word beside it and can no longer look isolated between
+ * two Cyrillic neighbours. Splitting CJK runs into their own tokens routes those leaks into a
+ * repair.
  */
 const CJK_CLASS = "\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}";
 const wordPattern = new RegExp(`[${CJK_CLASS}ー]+|(?:(?![${CJK_CLASS}])[\\p{L}\\p{M}])+`, "gu");
@@ -311,9 +307,8 @@ export function scanSegment(
   /**
    * A block still written in the source's own writing system was not translated, whatever the
    * two texts differ by. Identity alone misses it: the editing pass runs over the untouched
-   * source and normalizes its spacing, after which the strings no longer match — six Japanese
-   * paragraphs reached a finished book that way, invisible to every gate. Residue misses it
-   * too, and for the worst possible reason: `sourceResidue` gives up unless the *translation*
+   * source and normalizes its spacing, after which the strings no longer match. Residue misses
+   * it too, and for the worst possible reason: `sourceResidue` gives up unless the *translation*
    * is dominantly Cyrillic, so a block that is entirely source text is the one case it skips.
    *
    * Scoped to the scripts that cannot be confused with a target language's own: a Latin run
@@ -325,8 +320,8 @@ export function scanSegment(
     dominantScript(original) === "cjk" &&
     // Length is the wrong question for a whole block written entirely in the source's script:
     // a chapter heading typeset one character per span merges into a unit of thirteen, under
-    // any floor calibrated on Latin, and «四　式神に質す» reached a finished book that way. A
-    // block carrying no target-script character at all was not translated, at any length —
+    // any floor calibrated on Latin. A block carrying no target-script character at all was
+    // not translated, at any length —
     // while a lone kanji glossing a term inside Russian prose, «они (鬼)», sits in a block
     // that is dominantly Cyrillic and is never in question here.
     (!/\p{Script=Cyrillic}|\p{Script=Latin}/u.test(result) ||
@@ -381,7 +376,7 @@ export function scanSegment(
       spans: isolated,
     });
   // Capitalized in the *translation* is a title or a name kept on purpose — «The New York
-  // Times», «Science Fiction Reviews» — even when the source also uses the word lowercase in
+  // Rabbit», «Mock Turtle» — even when the source also uses the word lowercase in
   // its prose. Only the reported bucket is filtered: an isolated word is interference and
   // gets repaired whatever its case.
   const preserved = residue.filter(

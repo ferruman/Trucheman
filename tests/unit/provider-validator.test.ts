@@ -40,11 +40,12 @@ describe("provider response validation", () => {
 
 describe("segment alignment", () => {
   const long = (marker: string, length: number) => marker.repeat(length);
-  const kana = (length: number) => "帝都物語".repeat(Math.ceil(length / 4)).slice(0, length);
+  // Public-domain Botchan title used as deterministic CJK filler; see fixtures/NOTICE.md.
+  const kana = (length: number) => "坊っちゃん".repeat(Math.ceil(length / 4)).slice(0, length);
 
   it("finds answers that carry the next segment's text", () => {
-    // The shape taken from job 9c6c4e7c, batch document-10-batch-8: a sentence split over two
-    // blocks is answered whole under the first id, and everything after it moves up one.
+    // A sentence split over two blocks is answered whole under the first id, and everything
+    // after it moves up one.
     const expected = [
       { id: "a", text: long("a", 120) },
       { id: "b", text: long("b", 60) },
@@ -114,8 +115,8 @@ describe("segment alignment", () => {
   });
 
   it("finds an answer that swallowed the next segment without shifting", () => {
-    // Job 9cfcd03a, document-7:1p: the model answered both halves of the split sentence
-    // under the first id and then answered the second id as well, so the glued half was
+    // The model answered both halves of the split sentence under the first id and then
+    // answered the second id as well, so the glued half was
     // published twice. Nothing is out of order, so only the pair length gives it away.
     const expected = [
       { id: "a", text: long("a", 310) },

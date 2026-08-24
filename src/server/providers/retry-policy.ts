@@ -8,10 +8,8 @@ export function retryDecision(
   const retryable = error.kind === "temporary" || error.kind === "invalid_response";
   // A dropped connection is not the batch's fault: the identical request works again once the
   // network is back, while an invalid response repeats until the question changes — which is
-  // why the caller halves the batch instead of asking a fifth time. Measured on one run: four
-  // connection drops in an hour, three of them ridden out inside the ~3.5s that three attempts
-  // buy, and the fourth outlasted it and killed a book at 131 of 137 batches. Five attempts
-  // cover ~15s; a provider that is down for longer is down, and the checkpoints are the answer.
+  // why the caller halves the batch instead of retrying it indefinitely. Temporary failures
+  // get two additional attempts; a longer outage is handled by resumable checkpoints.
   const budget = error.kind === "temporary" ? maxRetries + 2 : maxRetries;
   if (!retryable || attempt >= budget)
     return { retry: false, delayMs: 0, reason: "not-retryable-or-exhausted" };

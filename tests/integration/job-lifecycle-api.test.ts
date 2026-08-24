@@ -120,12 +120,12 @@ describe("carrying a glossary between books", () => {
     const { repo, job } = await fixture("created");
     await repo.save({
       ...job,
-      glossary: [{ id: "g1", source: "加藤", target: "Като", category: "person", enabled: true }],
+      glossary: [{ id: "g1", source: "清", target: "Киё", category: "person", enabled: true }],
     });
     const orchestrator = orchestratorFor(repo, { runBook: async () => undefined });
 
     expect(await orchestrator.glossary(job.id)).toEqual([
-      { id: "g1", source: "加藤", target: "Като", category: "person", enabled: true },
+      { id: "g1", source: "清", target: "Киё", category: "person", enabled: true },
     ]);
 
     // What the run actually translated against — user terms plus everything the registry
@@ -134,7 +134,7 @@ describe("carrying a glossary between books", () => {
       `${jobRoot(repo.dataDir, job.id)}/glossary.json`,
       JSON.stringify({
         entries: [
-          { id: "g1", source: "加藤", target: "Като", category: "person", enabled: true },
+          { id: "g1", source: "清", target: "Киё", category: "person", enabled: true },
           {
             id: "generated-entity-1",
             source: "辰宮",

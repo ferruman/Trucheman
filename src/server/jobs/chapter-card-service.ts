@@ -24,9 +24,8 @@ const CARD_BUDGET = 24000;
 const MIN_CHAPTER = 2000;
 
 /**
- * A budget, not a contract. Rejecting the card for a 21st term threw away the characters and
- * the address registers with it, and the chapter was then translated with no card at all —
- * one production run lost a chapter that way. Keep the first twenty of each list instead.
+ * A budget, not a contract. Rejecting an oversized term list would also throw away valid
+ * characters and address registers. Keep the first twenty of each list instead.
  */
 const CARD_LIST_LIMIT = 20;
 const cardList = <T extends z.ZodTypeAny>(item: T) =>
@@ -116,7 +115,7 @@ export function formatChapterCard(card: ChapterCard): string {
     // whose gender the chapter never established is the one thing this card cannot pass on:
     // gender in the past tense is why it is asked for at all. Without it the line is noise
     // handed to every batch of the chapter under the word "binding" — which is how a card
-    // reading "The Project Gutenberg eBook of The Call of Cthulhu: unknown, singular" was
+    // reading a book title as though it were an unknown singular character was
     // sent with all fourteen batches of a book whose narrator is never named.
     const gender = character.gender?.trim();
     if (!character.name.trim() || !gender || gender.toLocaleLowerCase() === "unknown") continue;

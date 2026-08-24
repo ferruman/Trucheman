@@ -264,10 +264,14 @@ describe("book pipeline instructions", () => {
     expect(chapter.documentElement.getAttribute("xml:lang")).toBe("ru");
     expect(chapter.getElementsByTagName("header").item(0)?.getAttribute("lang")).toBe("ru");
     expect(nav.documentElement.getAttribute("lang")).toBe("ru");
-    expect(nav.documentElement.textContent).toContain("[translated] The call of Cthulhu");
+    expect(nav.documentElement.textContent).toContain(
+      "[translated] Alice’s Adventures in Wonderland",
+    );
     expect(nav.getElementsByTagName("a").item(0)?.getAttribute("href")).toBe("chapter.xhtml");
     expect(ncx.documentElement.getAttribute("xml:lang")).toBe("ru");
-    expect(ncx.documentElement.textContent).toContain("[translated] The CALL of CTHULHU");
+    expect(ncx.documentElement.textContent).toContain(
+      "[translated] ALICE’S ADVENTURES IN WONDERLAND",
+    );
     expect(ncx.getElementsByTagName("content").item(0)?.getAttribute("src")).toBe("chapter.xhtml");
 
     const outputAudit = JSON.parse(

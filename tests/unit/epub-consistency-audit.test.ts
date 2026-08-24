@@ -10,8 +10,8 @@ describe("EPUB consistency audit", () => {
           lang: "en",
           xmlLang: "en",
           text:
-            '«Ктулху" Энджелл встретил Анджелла, а Энджелл снова увидел Анджелла на Томас-стрит и на улице Томаса. ' +
-            "Мертвые звезды. 49° 51´ и 47°9'",
+            '«Белый Кролик" Алиса встретила Элис, а Алиса снова увидела Элис на Куин-стрит и на улице Куин. ' +
+            "Тёмные звёзды. 49° 51´ и 47°9'",
         },
       ],
       "en",
@@ -57,34 +57,39 @@ describe("EPUB consistency audit", () => {
   it("flags duplicated fragments, empty documents, and corrupted TOC labels", () => {
     const report = analyzeEpubConsistency(
       [
-        { id: "chapter", lang: "ru", xmlLang: "ru", text: "В пустыне пустыня. Из земли Земля." },
+        {
+          id: "chapter",
+          lang: "ru",
+          xmlLang: "ru",
+          text: "У Белого Кролика кролик. Он не нашёл золотого ключа ключ.",
+        },
         { id: "blank", lang: "ru", xmlLang: "ru", text: "   " },
       ],
       "ru",
       "ru",
       [
-        "Часть 5 Маленькие птицы ночи Эпилог Ночи",
-        "Часть 2. В пустыне",
+        "Глава III Бег Кролика Эпилог Кролик",
+        "ГЛАВА I. Вниз по кроличьей норе",
         // The same word twice is how a chapter names its setting and then its title.
-        "Среда, 21 апреля, Майами — Захват Праксиса: Майами",
+        "Пятница, 4 мая, сад — Глава: сад",
         "Эпилог Эпилог",
       ],
     );
 
     expect(report.warnings).toEqual(
       expect.arrayContaining([
-        'chapter: duplicated fragment "пустыне пустыня"',
-        'chapter: duplicated fragment "земли земля"',
+        'chapter: duplicated fragment "кролика кролик"',
+        'chapter: duplicated fragment "ключа ключ"',
         "blank: translated document is empty",
-        'Table of contents entry is corrupted: "Часть 5 Маленькие птицы ночи Эпилог Ночи"',
+        'Table of contents entry is corrupted: "Глава III Бег Кролика Эпилог Кролик"',
       ]),
     );
     expect(report.checks.tableOfContents[1]).toEqual({
-      label: "Часть 2. В пустыне",
+      label: "ГЛАВА I. Вниз по кроличьей норе",
       duplicates: [],
     });
     expect(report.checks.tableOfContents[2]).toEqual({
-      label: "Среда, 21 апреля, Майами — Захват Праксиса: Майами",
+      label: "Пятница, 4 мая, сад — Глава: сад",
       duplicates: [],
     });
     expect(report.warnings).toContain('Table of contents entry is corrupted: "Эпилог Эпилог"');
@@ -97,7 +102,7 @@ describe("EPUB consistency audit", () => {
           id: "copyright",
           lang: "ru",
           xmlLang: "ru",
-          text: "ИСТОРИЯ ИЗДАНИЙ\nИздание «Бульвар» / август 1996",
+          text: "ИСТОРИЯ ИЗДАНИЙ\nТестовое издание / январь 2099",
         },
       ],
       "ru",
@@ -129,11 +134,11 @@ describe("EPUB consistency audit", () => {
             "Было очень очень тихо, и он сказал: «Давай, давай!»",
             "Она молчала, молчала, а потом закричала.",
             // Two sentences that happen to name the same person on both sides of a stop.
-            "Он не думал про обиды Лилит. Лилит знала лучше.",
+            "Алиса не думала про обиды Дины. Дина знала лучше.",
             // The same across a stop with the endings disagreeing: a figure of speech, a
             // name declined into the next sentence, and a paragraph meeting the next one.
-            "Ничто из этого не имело значения. Значение имела кровь.",
-            "Кровь ложилась узором на спине Бианки. Бианка молча выносила порку.",
+            "Ничто из этого не имело значения. Значение имел золотой ключ.",
+            "Чай разлился узором возле Алисы. Алиса молча вытерла стол.",
             "Он вернулся взглядом к дороге. Дорога обратно заняла недолго.",
           ].join(" "),
         },

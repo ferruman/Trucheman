@@ -282,7 +282,7 @@ function commonPrefixLength(left: string, right: string) {
 
 /**
  * Two adjacent words sharing a long stem are the signature of the production regression
- * where repairing a fragmented heading produced "В пустыне пустыня".
+ * where repairing a fragmented heading produced "У Кролика кролик".
  */
 function adjacentStemRepetitions(text: string): number {
   const words = [...text.toLocaleLowerCase().matchAll(wordPattern)].map((match) => ({

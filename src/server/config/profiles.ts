@@ -20,10 +20,9 @@ export type ResolvedProfiles = {
   editing: ProviderProfile;
   critic: ProviderProfile;
   /**
-   * Repair rewrites the blocks the critic condemned. It followed the editing profile until a
-   * run put a stronger critic in front of a weaker repairer and 34 of 205 repairs came back
-   * word for word. Only the model is its own — same endpoint and key as editing, since the
-   * case this exists for is a bigger model on the same provider.
+   * Repair rewrites the blocks the critic condemned. It needs an independently selectable
+   * model so a stronger critic is not paired accidentally with a weaker repairer. The endpoint
+   * and key still come from editing because both models belong to the same provider.
    */
   repair: ProviderProfile;
   consistency: ProviderProfile;

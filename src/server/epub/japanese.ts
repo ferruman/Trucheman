@@ -18,10 +18,10 @@ const HAN = /\p{Script=Han}/u;
 /**
  * Furigana is a pronunciation gloss over the base text, not a second reading of it. Left in
  * place it is translated as its own segment — `<ruby>` and `<rt>` are segment boundaries in
- * `text-segments.ts` — so a Japanese book pays for some three thousand kana strings per volume
- * and gets each of them transliterated on top of the word it glosses. Flatten the ruby to its
- * base and keep the reading, which is the one thing that makes a name transliterable:
- * 加藤保憲 alone is a guess, 加藤保憲/かとうやすのり is Като Ясунори.
+ * `text-segments.ts` — so each gloss can be translated on top of the word it annotates.
+ * Flatten the ruby to its base and keep the reading, which is the information needed for
+ * transliteration. This example comes from the public-domain Botchan fixture (see NOTICE.md):
+ * 山嵐 alone is ambiguous, while 山嵐/やまあらし gives the reading.
  */
 export function flattenRuby(doc: Document, readings = new Map<string, string>()): number {
   const rubies: Element[] = [];
@@ -70,12 +70,11 @@ function directionOf(link: Element): "vertical" | "horizontal" | undefined {
  * Vertical right-to-left is the layout of the original, not of the translation: the same
  * markup rendering Russian would run the lines down the page and page backwards.
  *
- * The `vrtl` class is only half of the switch. These books also ship *two* stylesheets, one
+ * The `vrtl` class is only half of the switch. EPUBs can also ship *two* stylesheets, one
  * per direction, and choose between them with `rel`: the vertical one is the preferred sheet
  * and the horizontal one is `alternate stylesheet`, which a reader does not apply. Rewriting
- * the class alone changed nothing a reader could see — four finished volumes were delivered
- * still running their lines down the page — because the sheet that sets `writing-mode:
- * vertical-rl` was the one being loaded.
+ * the class alone changes nothing a reader can see when the sheet that sets `writing-mode:
+ * vertical-rl` remains loaded.
  */
 export function horizontalizeContent(doc: Document): number {
   let changed = 0;

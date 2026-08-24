@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 /**
  * Russian adjective/noun agreement over the built book, checked against a morphological
  * dictionary. Nothing else in the pipeline can see it: the critic is the same model family as
- * the editor and reads «Резкий встряска» as correct, and every other check here works on
+ * the editor and reads «Маленький дверь» as correct, and every other check here works on
  * characters rather than grammar.
  *
  * Optional, exactly like EPUBCheck: `az` is a 12 MB package that most installs do not want, so
@@ -37,7 +37,7 @@ const CASES = ["nomn", "gent", "datv", "accs", "ablt", "loct", "voct", "gen2", "
 /** After «два/три/четыре» a Russian noun stands in the genitive singular by rule, not by error. */
 const COUNTING = /^(два|две|три|четыре|оба|обе|полтора|полторы)$/iu;
 const WORD = /[\p{L}\p{M}ё-]+/gu;
-/** How far a numeral may stand from its noun: «два отвратительных горгульи». */
+/** How far a numeral may stand from its noun: «два белых перчатки». */
 const MAX_NUMERAL_GAP = 3;
 
 function grammemes(parse: Parse): Grammemes {
@@ -108,7 +108,7 @@ export function findAgreementErrors(text: string, morph: Morph): AgreementFindin
   for (let index = 0; index < tokens.length; index++) {
     const numeral = tokens[index][0];
     if (!/^(два|две)$/iu.test(numeral)) continue;
-    // «Два отвратительных горгульи»: the adjectives in between are correctly genitive, and
+    // «Два белых перчатки»: the adjectives in between are correctly genitive, and
     // only the numeral gives the noun's gender away.
     let ahead = index + 1,
       noun: string | undefined;

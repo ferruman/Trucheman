@@ -57,7 +57,7 @@ async function readJson<T>(path: string): Promise<T | null> {
   }
 }
 
-/** Titles are typed by hand ("Wicked Prayer RUS", "wicked prayer rus 2"); the archive is not. */
+/** Titles are typed by hand; the source archive hash is the stable book identity. */
 async function bookIdentity(root: string, fallback: string) {
   try {
     return createHash("sha256")

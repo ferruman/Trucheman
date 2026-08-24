@@ -51,18 +51,18 @@ describe("formatChapterCard", () => {
     expect(
       formatChapterCard({
         characters: [
-          { name: "Kyra", gender: "female", number: "singular" },
+          { name: "Alice", gender: "female", number: "singular" },
           { name: "Nobody", gender: "  " },
         ],
-        address: [{ from: "Kyra", to: "Marlow", register: "formal" }],
-        terms: [{ source: "the device", note: "the compass" }],
+        address: [{ from: "Alice", to: "White Rabbit", register: "formal" }],
+        terms: [{ source: "little golden key", note: "opens the tiny door" }],
       }),
     ).toBe(
       [
         "This chapter's established facts. They are binding for every block of this chapter, including blocks that do not name the character themselves:",
-        "- Kyra: female, singular",
-        "- Kyra addresses Marlow: formal",
-        '- recurring term "the device": the compass',
+        "- Alice: female, singular",
+        "- Alice addresses White Rabbit: formal",
+        '- recurring term "little golden key": opens the tiny door',
       ].join("\n"),
     );
   });
@@ -72,13 +72,12 @@ describe("formatChapterCard", () => {
   });
 
   it("drops a character whose gender the chapter never established", () => {
-    // Both cards job efe7bb1b produced. Neither names a character; both were handed to every
-    // batch of their chapter as binding facts.
+    // Neither candidate names a character, so neither belongs in a binding chapter card.
     expect(
       formatChapterCard({
         characters: [
           {
-            name: "The Project Gutenberg eBook of The Call of Cthulhu",
+            name: "Alice’s Adventures in Wonderland",
             gender: "unknown",
             number: "singular",
           },
@@ -98,30 +97,37 @@ describe("formatChapterCard", () => {
 });
 
 describe("verifyChapterCard", () => {
-  const chapter = "Марья Ивановна ждала у окна. «Вы уверены?» — спросил он про «серую башню».";
+  const chapter = "Алиса ждала у маленькой двери. «Вы опаздываете?» — спросила она Белого Кролика.";
 
   it("keeps a fact whose quote is in the chapter and drops one that is not", () => {
     const verified = verifyChapterCard(
       {
         characters: [
-          { name: "Марья", gender: "female", evidence: "Марья Ивановна ждала" },
-          { name: "Пётр", gender: "male", evidence: "Пётр вошёл в комнату" },
+          { name: "Алиса", gender: "female", evidence: "Алиса ждала" },
+          { name: "Дина", gender: "female", evidence: "Дина сидела у камина" },
         ],
-        address: [{ from: "он", to: "Марья", register: "formal", evidence: '"Вы уверены?"' }],
-        terms: [{ source: "серую башню" }, { source: "хрустальный мост" }],
+        address: [
+          {
+            from: "Алиса",
+            to: "Белый Кролик",
+            register: "formal",
+            evidence: '"Вы опаздываете?"',
+          },
+        ],
+        terms: [{ source: "маленькой двери" }, { source: "золотой ключ" }],
       },
       chapter,
     );
-    expect(verified.card.characters.map((character) => character.name)).toEqual(["Марья"]);
+    expect(verified.card.characters.map((character) => character.name)).toEqual(["Алиса"]);
     // Quotes and dashes differ between what the model returns and what it read.
     expect(verified.card.address).toHaveLength(1);
-    expect(verified.card.terms.map((term) => term.source)).toEqual(["серую башню"]);
+    expect(verified.card.terms.map((term) => term.source)).toEqual(["маленькой двери"]);
     expect(verified.dropped).toBe(2);
   });
 
   it("drops a fact with no evidence at all rather than trusting it", () => {
     expect(
-      verifyChapterCard({ characters: [{ name: "Марья", gender: "female" }] }, chapter),
+      verifyChapterCard({ characters: [{ name: "Алиса", gender: "female" }] }, chapter),
     ).toMatchObject({ card: { characters: [] }, dropped: 1 });
   });
 });
@@ -132,10 +138,10 @@ describe("resolveChapterCards", () => {
     try {
       const provider = new StubProvider({
         characters: [
-          { name: "Kyra", gender: "female", evidence: "She waited." },
+          { name: "Alice", gender: "female", evidence: "She waited." },
           // The chapter never mentions him: a card is binding for every block of the chapter,
           // so an invented character would be asserted across all of them.
-          { name: "Aldous", gender: "male", evidence: "Aldous drew his sword." },
+          { name: "White Rabbit", gender: "male", evidence: "The White Rabbit drew his sword." },
         ],
       });
       const documents = [
@@ -160,7 +166,7 @@ describe("resolveChapterCards", () => {
 
       const again = await resolve();
       expect(provider.requests).toHaveLength(1);
-      expect(again.cards.get("document-2")?.characters?.map((c) => c.name)).toEqual(["Kyra"]);
+      expect(again.cards.get("document-2")?.characters?.map((c) => c.name)).toEqual(["Alice"]);
       expect(JSON.parse(await readFile(join(root, "chapter-cards.json"), "utf8")).key).toContain(
         "chapter-cards-v",
       );
@@ -172,10 +178,10 @@ describe("resolveChapterCards", () => {
   it("trims an over-long list instead of losing the whole card", async () => {
     const root = await mkdtemp(join(tmpdir(), "chapter-cards-cap-"));
     try {
-      // Job 6464f658 lost document-13 entirely: the model returned 21 terms and the card —
-      // characters and address registers included — was rejected for the 21st.
+      // An oversized term list must not make the card lose valid characters and address
+      // registers as a whole.
       const answer = JSON.stringify({
-        characters: [{ name: "Kyra", gender: "female", evidence: "She waited." }],
+        characters: [{ name: "Alice", gender: "female", evidence: "She waited." }],
         terms: Array.from({ length: 21 }, () => ({ source: "She waited." })),
       });
       const provider: LanguageModelProvider = {
@@ -198,7 +204,7 @@ describe("resolveChapterCards", () => {
 
       expect(failed).toBe(0);
       expect(cards.get("document-3")?.characters?.map((character) => character.name)).toEqual([
-        "Kyra",
+        "Alice",
       ]);
       expect(cards.get("document-3")?.terms).toHaveLength(20);
     } finally {
@@ -213,8 +219,8 @@ describe("resolveChapterCards", () => {
       // closing bracket short. Nothing downstream notices a card that never arrives, and a
       // chapter is one indivisible question, so the only recovery is asking again.
       const answers = [
-        '{"characters":[{"name":"Kyra","gender":"female","evidence":"She waited."}]}}',
-        '{"characters":[{"name":"Kyra","gender":"female","evidence":"She waited."}]}',
+        '{"characters":[{"name":"Alice","gender":"female","evidence":"She waited."}]}}',
+        '{"characters":[{"name":"Alice","gender":"female","evidence":"She waited."}]}',
       ];
       const provider: LanguageModelProvider = {
         async complete(request: ProviderRequest): Promise<ProviderResponse> {
@@ -236,7 +242,7 @@ describe("resolveChapterCards", () => {
 
       expect(failed).toBe(0);
       expect(cards.get("document-2")?.characters?.map((character) => character.name)).toEqual([
-        "Kyra",
+        "Alice",
       ]);
       expect(answers).toHaveLength(0);
     } finally {

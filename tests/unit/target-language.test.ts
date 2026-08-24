@@ -21,7 +21,7 @@ describe("target language registry", () => {
     expect(russian.promptStyle?.yo).toContain("ё");
     expect(russian.nameEndings).toContain("ой");
     expect(russian.mechanics).toBe("russian");
-    // The plural genitive must stay out: with it, Кира → Кайра would break Киров.
+    // The plural genitive must stay out because short endings make unrelated stems collide.
     expect(russian.nameEndings).not.toContain("ов");
     expect(russian.nameEndings?.every((ending) => ending.length > 0)).toBe(true);
   });

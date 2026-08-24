@@ -75,8 +75,8 @@ const GLUED_PAIR_RATIO = { min: 0.8, max: 1.25 };
 /**
  * Segments whose answer covers more of the book than the segment does.
  *
- * A source sentence split across two blocks — `…one foot in the House of Shadows, the` /
- * `other on an empty street…` — invites the model to answer both halves under the first id.
+ * A source sentence split across two blocks — `…one foot in the rabbit-hole, the` /
+ * `other on the riverbank…` — invites the model to answer both halves under the first id.
  * From there it goes one of two ways, and the ids stay perfect either way, so
  * `validateProviderResponse` passes the batch and the damage reaches the book:
  *
@@ -87,9 +87,7 @@ const GLUED_PAIR_RATIO = { min: 0.8, max: 1.25 };
  * - or it answers the second id as well, and the glued half is published twice. Caught by an
  *   answer that is about as long as its own input and the next one together.
  *
- * Neither rule subsumes the other: over the 2361 finished batches in `data/jobs` the first
- * flags six batches and the second six, sharing four, and all eight are this bug. None was a
- * legitimately lopsided paragraph, so a single flagged segment is enough.
+ * Neither rule subsumes the other, so a single segment flagged by either shape is enough.
  */
 export function misalignedSegmentIds(
   expected: ProviderInputSegment[],

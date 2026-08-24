@@ -301,7 +301,7 @@ async function verifyRepairedBlocks(
   );
   // The critic is not asked twice about what the scan can see for free, and a repair that
   // leaves a source word inside the sentence it rewrote is strictly worse than the text it
-  // replaced: fixing «он formally поклонился» is what put «в grand жесте» two blocks away.
+  // replaced. Deterministic residue scanning catches that regression without another critic.
   for (const defect of scanSegments(
     request.filter((segment) => changed.has(segment.id)),
     after.filter((segment) => changed.has(segment.id)),

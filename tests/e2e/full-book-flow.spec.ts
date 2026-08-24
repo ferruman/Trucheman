@@ -20,8 +20,8 @@ test("uploads, analyzes, translates, and exposes the EPUB download", async ({ pa
   await page.getByLabel("Title").fill("Fixture book");
   await page.getByLabel("Quality mode").selectOption("high");
   await page.getByRole("button", { name: "Add glossary term" }).click();
-  await page.getByLabel("Glossary source term 1").fill("Cthulhu");
-  await page.getByLabel("Glossary target term 1").fill("Ктулху");
+  await page.getByLabel("Glossary source term 1").fill("White Rabbit");
+  await page.getByLabel("Glossary target term 1").fill("Белый Кролик");
   await page.getByLabel("Glossary category 1").fill("proper name");
   const configRequest = page.waitForRequest(
     (request) =>
@@ -35,8 +35,8 @@ test("uploads, analyzes, translates, and exposes the EPUB download", async ({ pa
   expect(submittedConfig.executionMode).toBe("standard");
   expect(submittedConfig.glossary).toEqual([
     expect.objectContaining({
-      source: "Cthulhu",
-      target: "Ктулху",
+      source: "White Rabbit",
+      target: "Белый Кролик",
       category: "proper name",
       enabled: true,
     }),

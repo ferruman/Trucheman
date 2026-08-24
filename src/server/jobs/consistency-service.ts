@@ -114,10 +114,10 @@ const sentenceEnd = /[.!?。！？]/u;
 /**
  * Japanese has neither capitals nor spaces, so every signal the patterns above run on is
  * absent and a Japanese book yields no candidates at all — the registry resolves nothing and
- * each stage invents its own Като. These three replace them.
+ * each stage invents its own Киё. These three replace them.
  *
  * A name is a short run of kanji or a run of katakana. That over-generates badly on its own —
- * 自分 and 時間 look exactly like 加藤 — which is what the two high-confidence patterns are
+ * 自分 and 時間 look exactly like 清 — which is what the two high-confidence patterns are
  * for: an honorific or a title binds to a personal name as tightly as "Street" binds to a
  * place, and a place suffix is part of the name it ends.
  */
@@ -149,8 +149,8 @@ const japaneseStopWords = new Set(
     .split(/\s+/)
     .filter(Boolean),
 );
-// A capitalized word is not an entity just because a sentence started with it. The registry
-// spent a production run resolving "She" and "The"; that noise is what timed the resolver out.
+// A capitalized word is not an entity just because a sentence started with it. Resolving words
+// such as "She" and "The" adds enough noise to overwhelm the registry.
 const sourceStopWords = new Set(
   `a an the this that these those he she it they we you i me him her them us my your his hers its
    their our mine yours ours theirs myself himself herself itself themselves who whom whose which
@@ -175,21 +175,20 @@ const lowercaseWordPattern = /(?<![\p{L}\p{N}])\p{Ll}[\p{L}\p{M}'’-]{2,}/gu;
 /** How far the capitalized spelling must outrun the lowercase one to be a name after all. */
 const NAME_OVER_NOUN = 4;
 const MIN_NAME_MENTIONS = 5;
-/** Lowercase words that stay inside a name: Little Chapel of the Stars. */
+/** Lowercase words that stay inside a name: Queen of Hearts. */
 const nameConnectors = new Set(["of", "the", "de", "del", "la", "le", "van", "von", "der", "du"]);
 const tokenPattern = /[\p{L}\p{N}\p{M}'’-]+/gu;
 
 /**
  * Runs of capitalized words — the only way a multi-word entity ever becomes one candidate.
- * Matching single words alone reduced "Leticia Dreams the Truth Hardin" to four unrelated
- * ones, so the registry's answer for the whole name was discarded as unsupported and the
- * phrase went through the book in four different renderings.
+ * Matching single words alone would split "Queen of Hearts" into unrelated candidates, so
+ * the complete phrase must remain one entity.
  */
 export function capitalizedPhrases(text: string, maxWords = 5) {
   const tokens = [...text.matchAll(tokenPattern)];
   const phrases: Array<{ value: string; index: number }> = [];
   const emit = (start: number, end: number) => {
-    // Trim leading stop words: "Then Kyra" is a sentence opening, not a name.
+    // Trim leading stop words: "Then Alice" is a sentence opening, not a name.
     while (start < end && sourceStopWords.has(tokens[start][0].toLocaleLowerCase())) start++;
     while (end > start && sourceStopWords.has(tokens[end][0].toLocaleLowerCase())) end--;
     if (end <= start || end - start + 1 > maxWords) return;
@@ -201,7 +200,7 @@ export function capitalizedPhrases(text: string, maxWords = 5) {
     lastCapital = -1;
   for (const [index, token] of tokens.entries()) {
     const previous = tokens[index - 1];
-    // Anything but whitespace between two words ends the run: "Johnny Church. Kyra" is two.
+    // Anything but whitespace between two words ends the run: "White Rabbit. Alice" is two.
     const separated =
       !previous ||
       !/^[ \t]+$/u.test(text.slice((previous.index ?? 0) + previous[0].length, token.index));
@@ -212,7 +211,7 @@ export function capitalizedPhrases(text: string, maxWords = 5) {
       continue;
     }
     // A connector bridges only when a capitalized word follows it, possibly past further
-    // connectors: Little Chapel *of the* Stars.
+    // connectors: Queen *of* Hearts.
     let ahead = index;
     while (
       !separated &&
@@ -306,10 +305,8 @@ export function extractEntityEvidence(
   /**
    * A word the book also writes lowercase is a common word — unless the book keeps
    * capitalizing it mid-sentence anyway, which is what a name spelt like a common noun looks
-   * like. "The Crow" ran 326 mid-sentence capitals against 3 lowercase birds, "Johnny Church"
-   * 117 against 2, "Erik Hearse" 43 against 2; all three were dropped as common words, so the
-   * book's central figures had no canonical rendering and every stage guessed one. The
-   * margin has to be wide: at 1:1 the list fills with truth, devil and mission.
+   * like. Alice uses Mouse as a character and mouse as an ordinary noun. The margin has to be
+   * wide: at 1:1 the list fills with ordinary words that happen to begin sentences.
    */
   const namedRatherThanCommon = (key: string) => {
     const common = lowercaseWords.get(key) ?? 0;
@@ -354,12 +351,9 @@ export function extractEntityEvidence(
         ...matches(japaneseNamePattern, false),
       ];
       for (const { value, index, highConfidence } of candidates) {
-        // Kyra’s is Kyra. Keeping them apart split one entity's evidence in two and spent
-        // two of the candidate slots on it. Trailing punctuation has to go first: "Crow’s."
-        // ends in a period, so a clitic anchored to the end never matched it, and the book's
-        // central entity entered the registry as the possessive "Crow’s" — resolved to the
-        // common noun «ворона» while "Corvus" was resolved to «Ворон», after which the audit
-        // cited the possessive against correct text and repair capitalized ordinary crows.
+        // Alice’s is Alice. Keeping them apart splits one entity's evidence in two. Trailing
+        // punctuation has to go first: "Rabbit’s." ends in a period, so a clitic anchored to
+        // the end would otherwise never match it.
         const source = value
           .replace(/[.-]+$/u, "")
           // Not n’t: that apostrophe belongs to the verb, and stripping it leaves "Didn",
@@ -418,7 +412,7 @@ export function extractEntityEvidence(
         ...entry
       }) => {
         // The book's own furigana is the reading the transliteration has to follow. Without it
-        // 加藤保憲 is a guess the model makes once per chunk, and it does not make the same one.
+        // 山嵐 is a guess the model makes once per chunk, and it does not make the same one.
         const reading = readings?.[entry.source];
         return reading ? { ...entry, reading } : entry;
       },
@@ -694,7 +688,7 @@ const answeredSchema = z.object({
  *
  * Per entity, not per request, and deliberately not keyed on the code version or the model:
  * what a name is called in the translation is a decision about the book, and re-asking
- * re-rolls it. A version bump once flipped Kyra from Кайра to Кира across the whole book,
+ * re-rolls it. A version bump once flipped Alice from Алиса to Элис across the whole book,
  * and because the glossary feeds the checkpoint key, that also re-spent every stage. An
  * entity whose evidence has not changed is never asked about twice; adding new entities
  * only costs the new ones. Use the job's invalidation to deliberately start over.
@@ -903,8 +897,8 @@ function boundedPattern(variant: string) {
 
 /**
  * One pass over the text, longest variant first. A pass per variant let each replacement's
- * output be the next one's input, and a production replay walked Кайра → Кира Дэймон →
- * Кира → Кай, renaming the protagonist in all 579 of her mentions.
+ * output be the next one's input, allowing overlapping character-name variants to rename one
+ * another throughout a book.
  */
 function replaceVariants(documents: ConsistencyDocument[], replacements: Map<string, string>) {
   if (!replacements.size) return 0;
@@ -940,10 +934,10 @@ function words(value: string) {
 /**
  * `splitEnding` drops the marks around a word before it compares two forms, but
  * `replaceVariants` writes the variant out literally. Gaining marks is the whole point of a
- * decision like Эмма → «Эмма». Losing them is never one: «Ага → Ага stripped the opening
- * guillemet off fifteen lines of dialogue, «Дуранго» → Дуранго unquoted a car, and навахо- →
- * навахо welded навахо-гобелену into one word. So a variant may carry no marks of its own, or
- * exactly the canonical's — never marks the canonical does not have.
+ * decision like Дина → «Дина». Losing them is never one: «Мармелад» → Мармелад
+ * unquotes a jar label, while dropping a trailing hyphen can corrupt a compound. A variant
+ * may therefore carry no marks of its own, or exactly the canonical's — never marks the
+ * canonical does not have.
  */
 function keepsMarks(variantWord: string, canonicalWord: string) {
   const leading = /^[^\p{L}\p{N}]*/u;
@@ -956,7 +950,7 @@ function keepsMarks(variantWord: string, canonicalWord: string) {
 
 /**
  * The stem and the ending `nameStem` took off it, so two forms compare part by part. Marks
- * around the word are punctuation, not grammar: «Эмма» and Эмма are one word in one case,
+ * around the word are punctuation, not grammar: «Дина» and Дина are one word in one case,
  * and adding the marks is the entire point of that decision.
  */
 function splitEnding(word: string, endings: string[]): [stem: string, ending: string] {
@@ -968,9 +962,8 @@ function splitEnding(word: string, endings: string[]): [stem: string, ending: st
 /**
  * A decision may re-spell a name; it may not rename one, and it may not re-inflect one.
  * The resolver offers the canonical's own declensions, its adjectives, its abbreviations and
- * its longer titles as variants, and applying those literally collapsed Летиции into Летиция,
- * truncated Кира Дэймон to Кира, and shipped «Гренландия дьявольской таблички» for
- * «гренландской дьявольской таблички» and «Кап. Коллинз» for «капитан Коллинз».
+ * its longer titles as variants. Applying those literally can collapse a declined name into
+ * its nominative, truncate a multi-word character name, or replace an adjective with a noun.
  *
  * A variant is a respelling only when it has the canonical's shape: the same number of words,
  * each word carrying the same ending, each stem near enough to be the same word misspelt.
@@ -981,10 +974,10 @@ function splitEnding(word: string, endings: string[]): [stem: string, ending: st
 export function isSafeVariant(variant: string, canonical: string, nameEndings: string[] = []) {
   if (variant.length < 2) return false;
   // The resolver names a rendering, never the space around it, and `words()` drops that space
-  // before the comparison below ever sees it — so «Терман » read as a respelling of «Терман»
-  // and replacing it deleted the space: a finished book said «Джеки Термандонёсся».
+  // before the comparison below ever sees it. Replacing «Кролика » as if the space belonged
+  // to the name would glue the following word to it.
   if (variant !== variant.trim()) return false;
-  // Case alone is not a respelling: a heading's КУЛЬТ КТУЛХУ is not the prose's Культ Ктулху.
+  // Case alone is not a respelling: a heading's БЕЛЫЙ КРОЛИК is not the prose's Белый Кролик.
   if (variant.toLocaleLowerCase() === canonical.toLocaleLowerCase()) return false;
   const variantWords = words(variant),
     canonicalWords = words(canonical);
@@ -996,8 +989,8 @@ export function isSafeVariant(variant: string, canonical: string, nameEndings: s
     if (!keepsMarks(word, canonicalWord)) return false;
     const [variantStem, variantEnding] = splitEnding(word, nameEndings);
     const [canonicalStem, canonicalEnding] = splitEnding(canonicalWord, nameEndings);
-    // Кир/Кайр is two edits apart — the same threshold the evidence search uses. капитан and
-    // кап. are four, which is the distance between a word and its abbreviation, not a typo.
+    // The threshold allows a short transliteration drift but still rejects the distance
+    // between a full word and its abbreviation.
     return variantEnding === canonicalEnding && distance(variantStem, canonicalStem) <= 2;
   });
 }
@@ -1114,7 +1107,7 @@ function lowercaseStems(documents: ConsistencyDocument[], endings: string[]) {
  * Deterministic fallback for when the resolver model is unavailable or times out. For each
  * glossary entry it looks only at the translations of blocks that name the entity, and
  * corrects the *stem* of a near-identical form while keeping that form's case ending:
- * Летисию → Летицию, never Летисия. Кирилл, Кирове and every ordinary word are left alone.
+ * Элису → Алису, never Алиса. Unrelated names and ordinary words are left alone.
  */
 export function alignGlossaryVariants(
   documents: ConsistencyDocument[],
@@ -1146,8 +1139,7 @@ export function alignGlossaryVariants(
     const text = (evidence.get(entry.source.toLocaleLowerCase()) ?? []).join("\n");
     const lowercased = text.toLocaleLowerCase();
     const canonicalUses = occurrences(lowercased, canonicalKey);
-    // A canonical the translation never once used is a registry artefact, not the truth:
-    // Westinghouse came back as "Вестнигауз" and would have overwritten every "Вестингауз".
+    // A canonical the translation never once used is a registry artefact, not the truth.
     if (!canonicalUses) continue;
     const words = new Set<string>();
     for (const match of text.matchAll(capitalizedTargetWord)) words.add(match[0]);
@@ -1160,19 +1152,19 @@ export function alignGlossaryVariants(
       // An ordinary word (демон), and a rendering that belongs to another entry, are both
       // out of bounds however closely they resemble this canonical form.
       if (common.has(wordKey) || canonicalStems.has(wordKey)) continue;
-      // Кир/Кайр is two edits apart, so distance must reach 2; a misspelling of a name
-      // keeps its initial, which is what stops that reach from catching a different name.
+      // Distance must reach 2 for plausible transliteration drift; requiring the same initial
+      // stops that reach from catching a different name.
       if (wordKey[0] !== canonicalKey[0]) continue;
       if (Math.abs(wordStem.length - canonicalStem.length) > 1) continue;
       if (distance(wordKey, canonicalKey) > 2) continue;
       // A competing rendering of the same entity is used at a rate comparable to the
       // canonical; a different name that merely resembles it is a rounding error. Every
-      // real variant in the reference run sits above 2% of the canonical's uses (Реймондо
-      // is the rarest at 2.1%), and Денни — a separate character — sits at 1%.
+      // A plausible competing rendering must occur often enough to be more than a coincidental
+      // lookalike.
       if (occurrences(lowercased, wordKey) * VARIANT_SHARE < canonicalUses) continue;
       const replacement = canonicalStem + word.slice(wordStem.length);
-      // Gluing an ending onto a differently declined stem invents forms: Летиш + а would
-      // give "Летициа". Only a form the book actually contains is a safe substitution.
+      // Gluing an ending onto a differently declined stem can invent a word. Only a form the
+      // book actually contains is a safe substitution.
       if (!attested.has(replacement)) continue;
       replacements.set(word, replacement);
     }
@@ -1212,7 +1204,7 @@ function targetPrefixes(target: string) {
 
 /**
  * How often the translation of a block that names an entity actually contains the glossary
- * rendering. The registry can be right and the run still ship both Кира and Кайра, so the
+ * rendering. The registry can be right and the run still ship both Элис and Алиса, so the
  * glossary has to be measured against the output rather than assumed to have been obeyed.
  */
 export function measureGlossaryAdherence(
@@ -1338,7 +1330,7 @@ export function applyConsistencyDecisions(
   nameEndings: string[] = [],
 ) {
   const canonicals = new Set(decisions.map((decision) => decision.canonical));
-  // Whole-word, not substring: "Ky" occurs inside every "Kyra", which made each of the
+  // Whole-word, not substring: "Ky" occurs inside every "Alice", which made each of the
   // protagonist's blocks read as evidence for her nickname.
   const mentions = decisions.map((decision) => ({
     key: decision.source.toLocaleLowerCase(),
@@ -1363,8 +1355,7 @@ export function applyConsistencyDecisions(
     const evidence = alignedTargets.get(decision.source.toLocaleLowerCase()) ?? [];
     for (const variant of decision.variants) {
       // A rendering another decision settled on is that entity's answer, not this one's
-      // mistake. The resolver offered Кира — its own canonical for Kyra — as a variant to
-      // replace with Кай, the canonical for the nickname Ky.
+      // mistake. A canonical for one Alice entity must never become a variant of another.
       if (canonicals.has(variant)) continue;
       if (
         isSafeVariant(variant, decision.canonical, nameEndings) &&
@@ -1375,10 +1366,11 @@ export function applyConsistencyDecisions(
       }
     }
   }
-  // The resolver only ever names nominatives, so Кайра → Кира left Кайры and Кайре behind.
+  // The resolver only ever names nominatives, so a spelling change can leave declined forms
+  // behind.
   // An accepted decision authorises its own stem substitution: unlike the glossary fallback
   // this is not a guess, so it needs no similarity threshold — only an exact stem match,
-  // which is what keeps Кирилл and Кирове out of it.
+  // which is what keeps unrelated names with similar prefixes out of it.
   if (nameEndings.length) {
     const observed = new Set<string>();
     for (const document of documents)

@@ -284,10 +284,9 @@ function mentions(text: string, term: string) {
 /**
  * The glossary entries this batch can actually use — the ones whose term appears in it.
  *
- * A book-wide glossary is mostly irrelevant to any one paragraph: on a reference run it was
- * 54 entries and 40% of every translation prompt, of which the median batch mentioned six.
- * Sending the other 48 buries the rules that matter, and none of it caches, because the
- * response contract carries this batch's segment ids ahead of it in the prompt.
+ * A book-wide glossary is mostly irrelevant to any one paragraph. Sending entries the batch
+ * never mentions buries the rules that matter, and none of it caches because the response
+ * contract carries this batch's segment ids ahead of it in the prompt.
  *
  * Both terms count, so the editor still sees the rule for a rendering already in its draft.
  * An entry that cannot be inspected — anything but an object with a string term — is kept.

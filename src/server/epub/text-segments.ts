@@ -22,7 +22,8 @@ const excluded = new Set(["script", "style", "pre", "code", "math", "svg"]);
 /**
  * Elements that start a new logical text block. Fragmented EPUBs split one heading or
  * sentence across sibling `<span>`s; translating those independently produced garbage
- * like "В пустыне пустыня", so the block — not the text node — is the translation unit.
+ * like "В кроличьей норе нора", so the block — not the text node — is the
+ * translation unit.
  */
 const blockElements = new Set([
   "address",
@@ -86,9 +87,9 @@ const semanticInline = new Set([
 /**
  * Semantic inline elements whose boundary is decorative rather than structural. A block
  * merges across these, giving up the markup on the absorbed side: a sentence chopped at an
- * `<i>` translates far worse than it reads without the italics. Translating `<i>Emma</i>`
- * and the bare `The ` around it as separate units produced «Эмма», «Эмма» and an invented
- * `Люди с «` in the Cthulhu run. Links, footnote markers and ruby annotations stay
+ * `<i>` translates far worse than it reads without the italics. Translating `<i>Dinah</i>`
+ * and the bare `The ` around it as separate units can duplicate the name or invent words
+ * around it. Links, footnote markers and ruby annotations stay
  * boundaries — there the element's own text is the point.
  */
 const presentationalInline = new Set([
@@ -188,8 +189,8 @@ export type LogicalBlocks = {
 
 /**
  * A fragment begins a new word — as opposed to continuing the previous one. Trailing
- * punctuation and possessives hug what precedes them, so joining `<i>Emma</i>` with the
- * `, he says` after it must not manufacture "Emma , he says". Straight quotes stay out:
+ * punctuation and possessives hug what precedes them, so joining `<i>Dinah</i>` with the
+ * `, he says` after it must not manufacture "Dinah , he says". Straight quotes stay out:
  * "'s" is a possessive far more often than "'" opens a quotation.
  */
 const startsNewWord = /^[\p{L}\p{N}(\[{«“„¿¡#$£€]/u;

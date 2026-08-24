@@ -20,7 +20,7 @@ export const qualityIssueSchema = z
 
 /**
  * The critic answers with issues as real JSON, not a JSON document escaped inside the
- * `text` string. The nested encoding cost a production run 171 unparseable segments.
+ * `text` string. Nested encoding makes otherwise valid segments unparseable.
  */
 export const qualityAuditSegmentSchema = z.object({
   id: z.string().min(1),
