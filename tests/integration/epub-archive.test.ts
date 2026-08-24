@@ -13,6 +13,14 @@ afterEach(async () => {
 });
 
 describe("EPUB archive safety", () => {
+  it.each(["../outside", "/absolute", "C:/windows", "nested/../../outside", "nested\\file"])(
+    "rejects an archive entry outside the extraction root: %s",
+    (fileName) =>
+      expect(() =>
+        validateArchiveEntries([{ fileName, compressedSize: 1, uncompressedSize: 1 }]),
+      ).toThrow(),
+  );
+
   it("rejects encrypted entries before extraction", () =>
     expect(() =>
       validateArchiveEntries([

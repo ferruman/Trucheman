@@ -1,9 +1,10 @@
 import yauzl, { type Entry } from "yauzl";
 import { mkdir, open, rm } from "node:fs/promises";
 import { createReadStream, createWriteStream } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { defaultArchiveLimits, validateArchiveEntries } from "./archive-policy.js";
+import { safeJobPath } from "../storage/job-paths.js";
 
 const zipOptions: yauzl.Options = {
   autoClose: false,
@@ -93,7 +94,7 @@ export async function extractEpub(source: string, destination: string): Promise<
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i],
         name = names[i],
-        target = join(destination, name);
+        target = safeJobPath(destination, name);
       if (entry.fileName.endsWith("/")) {
         await mkdir(target, { recursive: true });
         continue;

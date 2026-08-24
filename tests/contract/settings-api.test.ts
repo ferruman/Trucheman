@@ -153,4 +153,17 @@ describe("settings API boundary", () => {
       model: "critic-model",
     });
   });
+
+  it("only applies DeepSeek transport defaults to the actual DeepSeek hostname", () => {
+    const trusted = resolveProfiles(
+      { BOOK_TRANSLATOR_TRANSLATION_ENDPOINT: "https://api.deepseek.com/v1" },
+      {},
+    );
+    const lookalike = resolveProfiles(
+      { BOOK_TRANSLATOR_TRANSLATION_ENDPOINT: "https://api.deepseek.com.evil.example/v1" },
+      {},
+    );
+    expect(trusted.translation.thinking).toBe("disabled");
+    expect(lookalike.translation.thinking).toBeUndefined();
+  });
 });

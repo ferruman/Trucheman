@@ -8,6 +8,7 @@ import {
 } from "./provider.js";
 import { misalignedSegmentIds, validateProviderResponse } from "./response-validator.js";
 import { abortableDelay } from "./retry-policy.js";
+import { isEndpointHost } from "../config/endpoint.js";
 
 function withTransportIds(request: ProviderRequest): ProviderRequest {
   return {
@@ -28,7 +29,7 @@ export function chatCompletionRequestBody(request: ProviderRequest) {
     response_format: { type: "json_object" },
     temperature: request.profile.temperature,
     thinking:
-      request.profile.thinking && !request.profile.endpoint.includes("api.openai.com")
+      request.profile.thinking && !isEndpointHost(request.profile.endpoint, "api.openai.com")
         ? { type: request.profile.thinking }
         : undefined,
     stream: false,
