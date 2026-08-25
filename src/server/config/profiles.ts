@@ -1,5 +1,5 @@
 import { loadSecrets, type SecretStore } from "./secrets.js";
-import type { ProviderProfile } from "../providers/provider.js";
+import { PROVIDER_TRANSPORTS, type ProviderProfile } from "../providers/provider.js";
 import { isEndpointHost } from "./endpoint.js";
 
 const DEEPSEEK_ENDPOINT = "https://api.deepseek.com/chat/completions";
@@ -92,11 +92,18 @@ export function resolveProfiles(
   const consistencyEndpoint =
     secrets.consistencyEndpoint ?? envValue(env, "CONSISTENCY_ENDPOINT") ?? translationEndpoint;
   const editingModel = secrets.editingModel ?? envValue(env, "EDITING_MODEL") ?? DEEPSEEK_MODEL;
+  const externalTransport = (name: string, configured?: string) =>
+    useExternal
+      ? (configured ?? envValue(env, `${name}_TRANSPORT`) ?? PROVIDER_TRANSPORTS.openAiChat)
+      : PROVIDER_TRANSPORTS.deterministic;
+  const translationTransport = externalTransport("TRANSLATION", secrets.translationTransport);
+  const editingTransport = externalTransport("EDITING", secrets.editingTransport);
   const editingPromptVersion =
     secrets.editingPromptVersion ?? envValue(env, "EDITING_PROMPT_VERSION");
   const timeoutMs = requestTimeout(secrets.timeoutMs ?? envValue(env, "TIMEOUT_MS"));
   const translation: ProviderProfile = {
     name: useExternal ? "deepseek-translation" : "deterministic-local",
+    transport: translationTransport,
     endpoint: translationEndpoint,
     model: secrets.translationModel ?? envValue(env, "TRANSLATION_MODEL") ?? DEEPSEEK_MODEL,
     apiKey: secrets.translationApiKey,
@@ -110,6 +117,7 @@ export function resolveProfiles(
     translation,
     editing: {
       name: useExternal ? "deepseek-editing" : "deterministic-local",
+      transport: editingTransport,
       endpoint: editingEndpoint,
       model: editingModel,
       apiKey: secrets.editingApiKey,
@@ -119,6 +127,7 @@ export function resolveProfiles(
     },
     critic: {
       name: useExternal ? "critic" : "deterministic-local",
+      transport: externalTransport("CRITIC", secrets.criticTransport),
       endpoint: criticEndpoint,
       model: secrets.criticModel ?? envValue(env, "CRITIC_MODEL") ?? editingModel,
       apiKey: secrets.criticApiKey ?? secrets.editingApiKey,
@@ -131,6 +140,7 @@ export function resolveProfiles(
     },
     repair: {
       name: useExternal ? "deepseek-repair" : "deterministic-local",
+      transport: editingTransport,
       endpoint: editingEndpoint,
       model: secrets.repairModel ?? envValue(env, "REPAIR_MODEL") ?? editingModel,
       apiKey: secrets.editingApiKey,
@@ -144,6 +154,7 @@ export function resolveProfiles(
     },
     consistency: {
       name: useExternal ? "consistency" : "deterministic-local",
+      transport: externalTransport("CONSISTENCY", secrets.consistencyTransport),
       endpoint: consistencyEndpoint,
       model: secrets.consistencyModel ?? envValue(env, "CONSISTENCY_MODEL") ?? translation.model,
       apiKey: secrets.consistencyApiKey ?? secrets.translationApiKey,
@@ -160,6 +171,7 @@ export function resolveProfiles(
 /** Credential-free projection safe to send to the browser. */
 export function profilesView(profiles: ResolvedProfiles = resolveProfiles()) {
   const view = (profile: ProviderProfile) => ({
+    ...(profile.transport ? { transport: profile.transport } : {}),
     endpoint: profile.endpoint,
     model: profile.model,
     hasApiKey: Boolean(profile.apiKey),

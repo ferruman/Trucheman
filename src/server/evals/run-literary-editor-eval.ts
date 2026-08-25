@@ -3,8 +3,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { loadSecrets } from "../config/secrets.js";
 import { isEndpointHost } from "../config/endpoint.js";
-import { DeepSeekProvider } from "../providers/deepseek.js";
-import { FakeProvider } from "../providers/fake-provider.js";
+import { ProviderGateway } from "../providers/gateway.js";
 import type { LanguageModelProvider, ProviderProfile } from "../providers/provider.js";
 import {
   PROMPT_INPUT_VERSION,
@@ -172,6 +171,7 @@ async function main() {
     providerName === "deepseek"
       ? {
           name: "deepseek-literary-eval",
+          transport: "openai-chat",
           endpoint,
           model,
           apiKey: secrets.editingApiKey,
@@ -180,9 +180,16 @@ async function main() {
             (isEndpointHost(endpoint, "api.deepseek.com") ? "disabled" : undefined)) as
             ProviderProfile["thinking"] | undefined,
         }
-      : { name: "deterministic-literary-eval", endpoint: "local", model: "fake" };
-  const provider: LanguageModelProvider =
-    providerName === "deepseek" ? new DeepSeekProvider() : new FakeProvider();
+      : {
+          name: "deterministic-literary-eval",
+          transport: "deterministic",
+          endpoint: "local",
+          model: "fake",
+        };
+  const provider: LanguageModelProvider = new ProviderGateway({
+    root: dirname(outputPath),
+    useExternal: providerName === "deepseek",
+  });
   const results: Array<Record<string, unknown>> = [];
   const candidatesByVersion = Object.fromEntries(
     promptVersions.map((promptVersion) => [promptVersion, [] as CandidateResult[]]),

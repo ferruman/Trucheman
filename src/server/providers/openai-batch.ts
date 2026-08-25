@@ -3,7 +3,11 @@ import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { atomicJson, atomicWrite } from "../storage/atomic-file.js";
 import { abortableDelay } from "./retry-policy.js";
-import { chatCompletionRequestBody, parseChatCompletionBody, transportCause } from "./deepseek.js";
+import {
+  chatCompletionRequestBody,
+  parseChatCompletionBody,
+  transportCause,
+} from "./openai-chat.js";
 import {
   isRequestTooLargeFailure,
   ProviderError,

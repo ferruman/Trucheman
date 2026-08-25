@@ -28,9 +28,7 @@ import { resolveEpubPath, validateEpubArchive } from "../epub/validate.js";
 import { updateContentLanguage, updatePackageLanguage } from "../epub/localization.js";
 import { repairInvalidParagraphNesting } from "../epub/repair.js";
 import type { LanguageModelProvider } from "../providers/provider.js";
-import { FakeProvider } from "../providers/fake-provider.js";
-import { DeepSeekProvider } from "../providers/deepseek.js";
-import { assertOpenAiBatchProfile, OpenAiBatchProvider } from "../providers/openai-batch.js";
+import { ProviderGateway } from "../providers/gateway.js";
 import { resolveProfiles } from "../config/profiles.js";
 import { targetLanguageProfile } from "../config/target-language.js";
 import { sourceLanguageCapabilities } from "../languages/registry.js";
@@ -285,26 +283,22 @@ export async function runPreparedBook(
   } = resolveProfiles();
   const useExternal = overrides?.useExternal ?? resolvedUseExternal;
   const batchMode = job.executionMode === "batch" && !overrides?.provider;
-  if (batchMode) {
-    for (const profile of [
-      translationProfile,
-      editingProfile,
-      criticProfile,
-      repairProfile,
-      consistencyProfile,
-    ]) {
-      assertOpenAiBatchProfile(profile);
-    }
-  }
-  const provider = new UsageTrackingProvider(
-    overrides?.provider ??
-      (resolvedUseExternal
-        ? batchMode
-          ? new OpenAiBatchProvider(root)
-          : new DeepSeekProvider()
-        : new FakeProvider()),
-    root,
-  );
+  const profiles = [
+    translationProfile,
+    editingProfile,
+    criticProfile,
+    repairProfile,
+    consistencyProfile,
+  ];
+  const gateway = overrides?.provider
+    ? undefined
+    : new ProviderGateway({
+        root,
+        useExternal,
+        executionMode: batchMode ? "batch" : "standard",
+      });
+  gateway?.validateProfiles(profiles);
+  const provider = new UsageTrackingProvider(overrides?.provider ?? gateway!, root);
   const sourceLanguage = providerLanguage(job.sourceLanguage),
     targetLanguage = providerLanguage(job.targetLanguage);
   const sourceDocuments = prepared.documents.map((document) => ({
