@@ -410,7 +410,8 @@ export function retryAfterMs(header: string | null, now = Date.now()): number | 
 
 const MAX_RETRY_AFTER_MS = 60_000;
 
-export class DeepSeekProvider implements LanguageModelProvider {
+/** OpenAI-compatible synchronous Chat Completions transport. */
+export class OpenAiChatProvider implements LanguageModelProvider {
   /**
    * Batches run concurrently against one provider instance, so a 429 has to hold every
    * worker back, not just the one that got it. Otherwise the others keep spending the
@@ -512,3 +513,6 @@ export class DeepSeekProvider implements LanguageModelProvider {
     }
   }
 }
+
+/** @deprecated Use OpenAiChatProvider. Kept for API compatibility. */
+export { OpenAiChatProvider as DeepSeekProvider };

@@ -6,9 +6,13 @@ export type SecretStore = Readonly<{
   criticApiKey?: string;
   consistencyApiKey?: string;
   translationEndpoint?: string;
+  translationTransport?: string;
   editingEndpoint?: string;
+  editingTransport?: string;
   criticEndpoint?: string;
+  criticTransport?: string;
   consistencyEndpoint?: string;
+  consistencyTransport?: string;
   translationModel?: string;
   editingModel?: string;
   criticModel?: string;
@@ -51,9 +55,13 @@ export function loadSecrets(path?: string): SecretStore {
     criticApiKey: value("CRITIC_API_KEY"),
     consistencyApiKey: value("CONSISTENCY_API_KEY"),
     translationEndpoint: value("TRANSLATION_ENDPOINT"),
+    translationTransport: value("TRANSLATION_TRANSPORT"),
     editingEndpoint: value("EDITING_ENDPOINT"),
+    editingTransport: value("EDITING_TRANSPORT"),
     criticEndpoint: value("CRITIC_ENDPOINT"),
+    criticTransport: value("CRITIC_TRANSPORT"),
     consistencyEndpoint: value("CONSISTENCY_ENDPOINT"),
+    consistencyTransport: value("CONSISTENCY_TRANSPORT"),
     translationModel: value("TRANSLATION_MODEL"),
     editingModel: value("EDITING_MODEL"),
     criticModel: value("CRITIC_MODEL"),

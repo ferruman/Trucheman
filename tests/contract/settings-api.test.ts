@@ -79,6 +79,25 @@ describe("settings API boundary", () => {
     );
   });
 
+  it("selects transports per profile and keeps repair on the editing transport", () => {
+    const profiles = resolveProfiles(
+      {},
+      {
+        translationApiKey: "key",
+        editingApiKey: "key",
+        translationTransport: "vendor-translation",
+        editingTransport: "vendor-editor",
+        criticTransport: "vendor-critic",
+      },
+    );
+    expect(profiles.translation.transport).toBe("vendor-translation");
+    expect(profiles.editing.transport).toBe("vendor-editor");
+    expect(profiles.repair.transport).toBe("vendor-editor");
+    expect(profiles.critic.transport).toBe("vendor-critic");
+    expect(profiles.consistency.transport).toBe("openai-chat");
+    expect(profilesView(profiles).translation.transport).toBe("vendor-translation");
+  });
+
   it("falls back to the deterministic provider when credentials are absent", () => {
     const profiles = resolveProfiles({ BOOK_TRANSLATOR_PROVIDER: "deterministic" });
     expect(profiles.useExternal).toBe(false);

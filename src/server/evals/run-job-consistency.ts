@@ -19,8 +19,7 @@ import {
   type ConsistencyDocument,
 } from "../jobs/consistency-service.js";
 import { UsageTrackingProvider } from "../jobs/usage-service.js";
-import { DeepSeekProvider } from "../providers/deepseek.js";
-import { FakeProvider } from "../providers/fake-provider.js";
+import { ProviderGateway } from "../providers/gateway.js";
 import { readJournal } from "../storage/ndjson-journal.js";
 import { atomicJson } from "../storage/atomic-file.js";
 
@@ -65,7 +64,7 @@ if (!covered) {
 
 const { useExternal, consistency: profile } = resolveProfiles();
 const provider = new UsageTrackingProvider(
-  useExternal ? new DeepSeekProvider() : new FakeProvider(),
+  new ProviderGateway({ root: workspace, useExternal }),
   workspace,
 );
 const sourceLanguage = providerLanguage(job.sourceLanguage);

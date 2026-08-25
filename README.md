@@ -98,16 +98,24 @@ Changing a quality mode keeps reusable work whenever the pipeline boundary allow
 <summary><strong>Provider configuration</strong></summary>
 
 Translation, literary editing, critique, and consistency can use independently configured
-OpenAI-compatible profiles. A minimal DeepSeek configuration looks like this:
+provider profiles. The built-in `openai-chat` transport speaks the OpenAI-compatible Chat
+Completions protocol; each profile can select another registered transport independently. A
+minimal DeepSeek configuration looks like this:
 
 ```dotenv
 TRUCHEMAN_TRANSLATION_API_KEY=your-key
 TRUCHEMAN_EDITING_API_KEY=your-key
+TRUCHEMAN_TRANSLATION_TRANSPORT=openai-chat
+TRUCHEMAN_EDITING_TRANSPORT=openai-chat
 TRUCHEMAN_TRANSLATION_MODEL=deepseek-v4-flash
 TRUCHEMAN_EDITING_MODEL=deepseek-v4-flash
 TRUCHEMAN_CRITIC_MODEL=deepseek-v4-flash
 TRUCHEMAN_CONSISTENCY_MODEL=deepseek-v4-flash
 ```
+
+The corresponding `*_TRANSPORT` variables are also available for critic and consistency. Repair
+uses the editing transport. Application services call a single provider gateway; a new API
+protocol is added as a registry adapter without changing the translation pipeline.
 
 Omitted critic settings inherit the editing profile. Omitted consistency settings inherit the
 translation profile. Restart the service after editing `.env`.

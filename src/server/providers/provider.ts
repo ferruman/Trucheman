@@ -1,7 +1,15 @@
 import type { QualityIssue } from "./audit-contract.js";
 
+export const PROVIDER_TRANSPORTS = {
+  deterministic: "deterministic",
+  openAiChat: "openai-chat",
+  openAiBatch: "openai-batch",
+} as const;
+
 export type ProviderProfile = {
   name: string;
+  /** Transport adapter selected by the provider gateway. */
+  transport?: string;
   endpoint: string;
   model: string;
   apiKey?: string;
