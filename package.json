@@ -53,14 +53,14 @@
     "@types/yazl": "^2.4.5",
     "@vitejs/plugin-react": "^5.0.4",
     "az": "^0.2.3",
-    "eslint": "^10.8.1",
+    "eslint": "^10.9.0",
     "eslint-config-prettier": "^10.1.8",
     "jsdom": "^27.0.0",
     "prettier": "^3.6.2",
     "tsx": "^4.23.12",
     "typescript": "~6.0.0",
     "typescript-eslint": "^8.67.0",
-    "vite": "^8.2.0",
+    "vite": "^8.2.2",
     "vitest": "^4.1.11"
   }
 }
