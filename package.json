@@ -10,6 +10,7 @@
     "predev": "vite build",
     "dev": "node --import tsx/esm src/server/index.ts --dev",
     "start": "node dist/server/src/server/index.js",
+    "mcp": "node --import tsx/esm src/server/mcp/server.ts",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
@@ -30,6 +31,7 @@
     "eval:literary:review:build": "node --import tsx/esm src/server/evals/run-literary-review-build.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@xmldom/xmldom": "^0.9.12",
     "busboy": "^1.6.0",
     "express": "^5.2.1",
