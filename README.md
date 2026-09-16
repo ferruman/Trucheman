@@ -6,8 +6,9 @@
 
 <p align="center">
   <strong>Translate books, not just strings.</strong><br>
-  A local-first EPUB translation studio with literary editing, consistency control,<br>
-  resumable jobs, and validated output.
+  An open-source literary translation pipeline for EPUB books, not an LLM wrapper:<br>
+  translation → literary editing → book-wide consistency → independent critique → selective repair → validated EPUB.<br>
+  Local-first and resumable.
 </p>
 
 <p align="center">
@@ -31,6 +32,37 @@
 The demo uses the deterministic local provider: no API key, network request, or staged mockup. It
 runs the same import, translation, editing, build, validation, and reporting flow used by a live
 provider.
+
+## What the pipeline changes
+
+One paragraph from H. P. Lovecraft's _The Call of Cthulhu_ (1928, public domain), taken from a real
+Trucheman job. Both stages ran `deepseek-v4-flash`; nothing was hand-edited.
+
+> Then the men, having reached a spot where the trees were thinner, came suddenly in sight of the
+> spectacle itself. Four of them reeled, one fainted, and two were shaken into a frantic cry which
+> the mad cacophony of the orgy fortunately deadened. Legrasse dashed swamp water on the face of
+> the fainting man, and all stood trembling and nearly hypnotized with horror.
+
+**After translation** — accurate, but reads like a translation:
+
+> Затем люди, достигнув места, где деревья становились реже, внезапно увидели само зрелище.
+> Четверо из них пошатнулись, один **упал в обморок**, а двое разразились неистовым криком,
+> который, к счастью, заглушила безумная какофония оргии. Леграсс плеснул болотной водой в лицо
+> **упавшему в обморок**, и все стояли, дрожа и **почти загипнотизированные** ужасом.
+
+**After literary editing** — same meaning, native prose:
+
+> Затем люди, добравшись до места, где деревья росли реже, внезапно увидели само зрелище.
+> Четверо из них пошатнулись, один **лишился чувств**, а двое исторгли безумный крик, который,
+> к счастью, заглушила дикая какофония оргии. Леграсс плеснул болотной водой в лицо
+> **потерявшему сознание**, и все стояли, дрожа и **едва не загипнотизированные** ужасом.
+
+The editor removed the repeated clinical "упал в обморок", replaced the "reached a spot where the
+trees became thinner" calque with how a Russian narrator would put it, and fixed the awkward
+"почти загипнотизированные". The consistency stage then keeps names such as _Леграсс_ identical
+across chapters, and the optional critic audits every edited segment and repairs only validated
+findings. Run `npm run trace:segment` on any job to see the same source → draft → edit → audit →
+repair chain for any paragraph.
 
 ## Why Trucheman?
 
