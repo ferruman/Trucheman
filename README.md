@@ -199,6 +199,28 @@ uploading book text.
 
 </details>
 
+## Drive it from an AI assistant
+
+Trucheman ships an [MCP](https://modelcontextprotocol.io) server, so Claude Code, Claude Desktop
+or any MCP client can run the whole pipeline in conversation: "translate this EPUB into Russian,
+high quality" → the assistant uploads the book, starts the job, waits, and hands back the report
+and the finished file. The repository's `.mcp.json` registers it for Claude Code; for other
+clients, the command is `npm run mcp` with `TRUCHEMAN_URL` pointing at a running instance
+(default `http://127.0.0.1:4173`).
+
+| Tool              | Does                                                                                |
+| ----------------- | ----------------------------------------------------------------------------------- |
+| `translate_book`  | create job → upload `.epub` → set quality and instructions → analyze → start        |
+| `wait_for_job`    | block until the job finishes or a timeout passes; call again if it is still running |
+| `job_status`      | status, stage, batches done                                                         |
+| `job_report`      | validation, EPUBCheck, critic findings and repairs, consistency, usage per model    |
+| `download_output` | save the translated EPUB to a path                                                  |
+| `control_job`     | pause, resume, or retry                                                             |
+| `list_jobs`       | every job on this instance                                                          |
+
+The MCP server is a client of the same local HTTP API the browser UI uses; it holds no
+credentials and adds no second way into the pipeline.
+
 ## Privacy and boundaries
 
 Trucheman is a single-user local application. It stores books and job state locally, but a live

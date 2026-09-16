@@ -72,6 +72,10 @@ The legal moves live in the `transitions` table in `src/shared/domain/job.ts`; `
 3. POST `/api/jobs/:id/analyze` runs **analysis**: extracts the EPUB, parses OPF/container, extracts text segments, builds batches, validates the archive → status becomes `ready`
 4. User clicks **Start** → POST `/:id/start` → `src/server/api/jobs.ts`
 
+### 2b. MCP entry point
+
+`src/server/mcp/server.ts` (`npm run mcp`) exposes the job flow to MCP clients over stdio. It is deliberately an HTTP client of the running instance (`TRUCHEMAN_URL`) rather than a second caller of the orchestrator: one job runs process-wide, and the UI, the API and an assistant must all see that one. Each tool maps to the API calls a person would make in the UI; `translate_book` chains create → upload → config → analyze → start and waits for analysis on the single job slot before starting.
+
 ### 3. Translation Pipeline
 
 Controlled by `src/server/jobs/book-pipeline.ts` and `src/server/jobs/job-runner.ts`:
