@@ -1,0 +1,213 @@
+{
+  "version": 6,
+  "scan": {
+    "defectSegments": 0,
+    "actionableDefectSegments": 0,
+    "advisoryDefectSegments": 0,
+    "defectsByKind": {
+      "empty": 0,
+      "untranslated": 0,
+      "length_ratio": 0,
+      "missing_numbers": 0,
+      "source_residue": 0,
+      "source_interference": 0
+    },
+    "defects": []
+  },
+  "auditedSegments": 128,
+  "flaggedSegments": 9,
+  "repairedSegments": 7,
+  "remainingFlaggedSegments": 2,
+  "repairOutcomes": {
+    "changed": 7,
+    "unchanged": 1,
+    "rejected": 1,
+    "failed": 0
+  },
+  "failedRepairs": [],
+  "auditErrorSegments": 0,
+  "auditErrorsByKind": {
+    "malformed_json": 0,
+    "invalid_issues": 0
+  },
+  "rejectedIssues": 6,
+  "rejectedRepairs": [
+    {
+      "batchId": "document-2-batch-3",
+      "id": "document-2:1j",
+      "reason": "repair duplicates an adjacent fragment"
+    }
+  ],
+  "unrepairedSegments": [
+    {
+      "batchId": "document-2-batch-2",
+      "id": "document-2:14"
+    }
+  ],
+  "unresolvedFindings": [
+    {
+      "batchId": "document-2-batch-2",
+      "id": "document-2:14",
+      "issues": [
+        {
+          "span": "«в несколько миль высотой»",
+          "type": "semantic_error",
+          "severity": "high",
+          "reason": "Оригинал «miles high» означает «высотой в мили» (во множественном числе), а «несколько миль» добавляет неопределённость, отсутствующую в исходном тексте."
+        }
+      ],
+      "rejectedIssues": 0
+    },
+    {
+      "batchId": "document-2-batch-3",
+      "id": "document-2:1j",
+      "issues": [
+        {
+          "span": "Головоногое существо наклонило голову вперёд",
+          "type": "semantic_error",
+          "severity": "high",
+          "reason": "В оригинале голова наклонена: \"The cephalopod head was bent forward\", то есть голова существа была наклонена, а не само существо наклоняло голову; перевод добавляет действие, меняя смысл."
+        }
+      ],
+      "rejectedIssues": 0
+    }
+  ],
+  "cachedCheckpoints": {
+    "translation": 0,
+    "editing": 0,
+    "audit": 0,
+    "repair": 0
+  },
+  "findings": [
+    {
+      "batchId": "document-2-batch-1",
+      "id": "document-2:4",
+      "issues": [
+        {
+          "span": "«Weird Tales», февраль 1928 года.",
+          "type": "source_language_interference",
+          "severity": "medium",
+          "reason": "Название журнала оставлено латиницей в русском тексте; по правилам следует либо транслитерировать («Уирд Тейлз»), либо передать переводом, но не оставлять непереведённым в русской фразе."
+        }
+      ],
+      "rejectedIssues": 0
+    },
+    {
+      "batchId": "document-2-batch-1",
+      "id": "document-2:7",
+      "issues": [
+        {
+          "span": "… нечто, дожившее с неизмеримо далёких времён",
+          "type": "unnatural_language",
+          "severity": "medium",
+          "reason": "Нарушено управление: «дожившее с времён» вместо «дожившее с неизмеримо далёких времён» — глагол «дожить» не управляет предлогом «с» в значении сохранения от прошлого; правильно «сохранившееся с тех времён» или «уцелевшее с тех времён»."
+        }
+      ],
+      "rejectedIssues": 0
+    },
+    {
+      "batchId": "document-2-batch-1",
+      "id": "document-2:d",
+      "issues": [
+        {
+          "span": "далеко заплывать",
+          "type": "source_language_interference",
+          "severity": "medium",
+          "reason": "Калька с английского «voyage far»: в русском языке «заплывать» не передаёт значение дальнего путешествия/плавания в целом, а означает лишь плавание вплавь или заплыв; естественно «плавать далеко»."
+        }
+      ],
+      "rejectedIssues": 0
+    },
+    {
+      "batchId": "document-2-batch-1",
+      "id": "document-2:g",
+      "issues": [
+        {
+          "span": "перстень",
+          "type": "semantic_error",
+          "severity": "medium",
+          "reason": "Неправильный перевод: «personal ring» означает связку ключей (кольцо для ключей), а не перстень; «перстень» искажает смысл, так как профессор всегда носил в кармане кольцо с ключами, а не ювелирное украшение."
+        }
+      ],
+      "rejectedIssues": 0
+    },
+    {
+      "batchId": "document-2-batch-2",
+      "id": "document-2:14",
+      "issues": [
+        {
+          "span": "«в несколько миль высотой»",
+          "type": "semantic_error",
+          "severity": "high",
+          "reason": "Оригинал «miles high» означает «высотой в мили» (во множественном числе), а «несколько миль» добавляет неопределённость, отсутствующую в исходном тексте."
+        }
+      ],
+      "rejectedIssues": 0
+    },
+    {
+      "batchId": "document-2-batch-3",
+      "id": "document-2:1j",
+      "issues": [
+        {
+          "span": "Головоногое существо наклонило голову вперёд",
+          "type": "semantic_error",
+          "severity": "high",
+          "reason": "В оригинале голова наклонена: \"The cephalopod head was bent forward\", то есть голова существа была наклонена, а не само существо наклоняло голову; перевод добавляет действие, меняя смысл."
+        }
+      ],
+      "rejectedIssues": 0
+    },
+    {
+      "batchId": "document-2-batch-6",
+      "id": "document-2:5a",
+      "issues": [
+        {
+          "span": "извергах культа",
+          "type": "unnatural_language",
+          "severity": "medium",
+          "reason": "Калька; по-русски следует «сектантах» или «культистах», а не «извергах культа»."
+        },
+        {
+          "span": "ведомый Богом",
+          "type": "semantic_error",
+          "severity": "high",
+          "reason": "Исходное восклицание «God knows» означает «одному Богу известно», а не то, что Юхансен был ведом Богом."
+        }
+      ],
+      "rejectedIssues": 0
+    },
+    {
+      "batchId": "document-2-batch-7",
+      "id": "document-2:5t",
+      "issues": [
+        {
+          "span": "судя по украшенным притолоке, порогу и косякам вокруг неё",
+          "type": "unnatural_language",
+          "severity": "high",
+          "reason": "Прилагательное «украшенным» не согласовано с существительным «притолоке»: правильно «украшенной притолоке». Несогласованное определение — грубая грамматическая ошибка."
+        }
+      ],
+      "rejectedIssues": 0
+    },
+    {
+      "batchId": "document-2-batch-7",
+      "id": "document-2:66",
+      "issues": [
+        {
+          "span": "корма демонического галеона",
+          "type": "unnatural_language",
+          "severity": "medium",
+          "reason": "Слово «галеон» в русском языке не употребляется как существительное мужского рода с формой «галеона»; нормативная форма — «галион». Искажение термина делает фразу грамматически и лексически ошибочной."
+        }
+      ],
+      "rejectedIssues": 0
+    }
+  ],
+  "scanStage": "post_consistency",
+  "postConsistencyRepair": {
+    "attempted": 0,
+    "changed": 0,
+    "rejected": 0,
+    "failed": 0
+  }
+}

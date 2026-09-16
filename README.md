@@ -64,6 +64,12 @@ across chapters, and the optional critic audits every edited segment and repairs
 findings. Run `npm run trace:segment` on any job to see the same source → draft → edit → audit →
 repair chain for any paragraph.
 
+For a whole book rather than a paragraph, see
+[examples/call-of-cthulhu](examples/call-of-cthulhu/README.md): the complete v0.2.0 run on
+Lovecraft's _The Call of Cthulhu_ — source and output EPUBs, every critic finding and repair, the
+consistency and usage reports, five blocks traced stage by stage, and an honest list of what the
+run got wrong.
+
 ## Why Trucheman?
 
 |                         |                                                                                                      |
@@ -234,6 +240,7 @@ These commands use the configured editing provider and write ignored reports und
 - [Architecture](ARCHITECTURE.md)
 - [Language modules](docs/language-modules.md)
 - [Roadmap](ROADMAP.md)
+- [Showcase: The Call of Cthulhu, complete run](examples/call-of-cthulhu/README.md)
 - [Docker operations](docs/docker.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)

@@ -1,0 +1,540 @@
+{
+  "entries": [
+    {
+      "id": "generated-entity-1",
+      "source": "Cthulhu",
+      "target": "Ктулху",
+      "category": "other",
+      "note": "established Russian transliteration of the Great Old One's name; keep consistently, including in the ritual phrase",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-2",
+      "source": "Johansen",
+      "target": "Юхансен",
+      "category": "person",
+      "note": "transliterate Norwegian surname per Russian tradition",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-3",
+      "source": "Wilcox",
+      "target": "Уилкокс",
+      "category": "person",
+      "note": "transliterate personal surname",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-4",
+      "source": "Legrasse",
+      "target": "Леграсс",
+      "category": "person",
+      "note": "transliterate French-derived surname",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-5",
+      "source": "Angell",
+      "target": "Энджелл",
+      "category": "person",
+      "note": "transliterate personal surname",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-6",
+      "source": "Alert",
+      "target": "Алерт",
+      "category": "ship",
+      "note": "transliterate ship name",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-7",
+      "source": "R'lyeh",
+      "target": "Р'лайе",
+      "category": "place",
+      "note": "transliterate the invented city name, preserving the apostrophe",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-8",
+      "source": "Castro",
+      "target": "Кастро",
+      "category": "person",
+      "note": "transliterate personal surname",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-9",
+      "source": "Emma",
+      "target": "Эмма",
+      "category": "ship",
+      "note": "transliterate ship name",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-10",
+      "source": "Old Ones",
+      "target": "Древние",
+      "category": "other",
+      "note": "established Russian rendering of the mythos term; keep Great Old Ones distinct",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-11",
+      "source": "Cyclopean",
+      "target": "циклопический",
+      "category": "term",
+      "note": "translate as a descriptive adjective, lowercase in Russian",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-12",
+      "source": "Inspector",
+      "target": "инспектор",
+      "category": "term",
+      "note": "translate the rank; capitalize only when used as a title",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-13",
+      "source": "Webb",
+      "target": "Уэбб",
+      "category": "person",
+      "note": "transliterate personal surname",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-14",
+      "source": "Dunedin",
+      "target": "Данидин",
+      "category": "place",
+      "note": "transliterate New Zealand city name",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-15",
+      "source": "Sydney",
+      "target": "Сидней",
+      "category": "place",
+      "note": "established Russian form of the city name",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-16",
+      "source": "Briden",
+      "target": "Брайден",
+      "category": "person",
+      "note": "transliterate personal surname",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-17",
+      "source": "New Orleans",
+      "target": "Новый Орлеан",
+      "category": "place",
+      "note": "established Russian form of the city name",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-18",
+      "source": "Vigilant",
+      "target": "Вигилант",
+      "category": "ship",
+      "note": "transliterate ship name",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-19",
+      "source": "Auckland",
+      "target": "Окленд",
+      "category": "place",
+      "note": "transliterate established place name",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-20",
+      "source": "Call of Cthulhu",
+      "target": "Зов Ктулху",
+      "category": "work",
+      "note": "established Russian title of the story",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-21",
+      "source": "Greenland",
+      "target": "Гренландия",
+      "category": "place",
+      "note": "established Russian exonym",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-22",
+      "source": "Oslo",
+      "target": "Осло",
+      "category": "place",
+      "note": "established Russian exonym",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-23",
+      "source": "Providence",
+      "target": "Провиденс",
+      "category": "place",
+      "note": "transliterate city name",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-24",
+      "source": "University",
+      "target": "университет",
+      "category": "term",
+      "note": "translate the common noun; keep the full institution name translated consistently",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-25",
+      "source": "American",
+      "target": "американский",
+      "category": "term",
+      "note": "translate the adjective, lowercase",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-26",
+      "source": "CTHULHU CULT",
+      "target": "КУЛЬТ КТУЛХУ",
+      "category": "term",
+      "note": "translate on first occurrence; keep spelling Ктулху; the typeset heading may stand in caps",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-27",
+      "source": "Donovan",
+      "target": "Донован",
+      "category": "person",
+      "note": "transliterate personal name",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-28",
+      "source": "Eskimos",
+      "target": "эскимосы",
+      "category": "term",
+      "note": "established Russian ethnonym",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-29",
+      "source": "London",
+      "target": "Лондон",
+      "category": "place",
+      "note": "established Russian exonym",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-30",
+      "source": "Norwegian",
+      "target": "норвежец",
+      "category": "term",
+      "note": "translate as nationality, not transliterate",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-31",
+      "source": "African",
+      "target": "африканский",
+      "category": "term",
+      "note": "translate adjective, lowercase",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-32",
+      "source": "America",
+      "target": "Америка",
+      "category": "place",
+      "note": "established Russian exonym",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-33",
+      "source": "American Archeological Society",
+      "target": "Американское археологическое общество",
+      "category": "organization",
+      "note": "translate institution name; keep «America» root",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-34",
+      "source": "Babylon",
+      "target": "Вавилон",
+      "category": "place",
+      "note": "established Russian exonym",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-35",
+      "source": "Boston",
+      "target": "Бостон",
+      "category": "place",
+      "note": "transliterate city name",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-36",
+      "source": "Bulletin",
+      "target": "бюллетень",
+      "category": "work",
+      "note": "translate the journal word; keep Sydney Bulletin as «Сиднейский бюллетень» if the proper name is required",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-37",
+      "source": "Capt",
+      "target": "капитан",
+      "category": "term",
+      "note": "abbreviation of a title; expand to Russian «капитан»",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-38",
+      "source": "Chinamen",
+      "target": "китайцы",
+      "category": "term",
+      "note": "archaic/derogatory English plural; render with neutral Russian «китайцы»",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-39",
+      "source": "Cthulhu R'lyeh",
+      "target": "Ктулху Р'лайх",
+      "category": "term",
+      "note": "keep the incantation names; R'lyeh transliterated «Р'лайх»; do not translate the ritual phrase",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-40",
+      "source": "Dr",
+      "target": "д-р",
+      "category": "term",
+      "note": "abbreviation of a title; Russian «д-р» or «доктор», keep consistent",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-41",
+      "source": "Egeberg",
+      "target": "Эгеберг",
+      "category": "place",
+      "note": "transliterate the hill name",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-42",
+      "source": "England",
+      "target": "Англия",
+      "category": "place",
+      "note": "established Russian exonym",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-43",
+      "source": "English",
+      "target": "английский",
+      "category": "term",
+      "note": "translate as language/nationality adjective",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-44",
+      "source": "Eskimo",
+      "target": "эскимос",
+      "category": "other",
+      "note": "перевод нарицательного этнонима; в контексте — язык/народ",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-45",
+      "source": "Fleur-de-Lys",
+      "target": "Флёр-де-Лис",
+      "category": "place",
+      "note": "транслитерация имени здания с сохранением французского облика",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-46",
+      "source": "Fleur-de-Lys Building",
+      "target": "здание «Флёр-де-Лис»",
+      "category": "place",
+      "note": "транслитерация названия здания",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-47",
+      "source": "Gustaf",
+      "target": "Густав",
+      "category": "person",
+      "note": "транслитерация личного имени",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-48",
+      "source": "Gustaf Johansen",
+      "target": "Густав Юхансен",
+      "category": "person",
+      "note": "транслитерация имени и фамилии по норвежскому произношению",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-49",
+      "source": "Indians",
+      "target": "индейцы",
+      "category": "other",
+      "note": "перевод; применительно к Вест-Индии — «уроженцы Вест-Индии»/«индийцы» по контексту, единообразно",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-50",
+      "source": "John",
+      "target": "Джон",
+      "category": "person",
+      "note": "транслитерация личного имени",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-51",
+      "source": "Louisiana",
+      "target": "Луизиана",
+      "category": "place",
+      "note": "устоявшаяся транслитерация топонима",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-52",
+      "source": "Mate Johansen",
+      "target": "помощник Юхансен",
+      "category": "person",
+      "note": "перевод должности + транслитерация фамилии",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-53",
+      "source": "Ph'nglui",
+      "target": "Пх'нглуи",
+      "category": "term",
+      "note": "транслитерация кощунственной формулы, сохранять единообразно",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-54",
+      "source": "Portuguese",
+      "target": "португалец",
+      "category": "other",
+      "note": "перевод этнонима",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-55",
+      "source": "Rhode",
+      "target": "Род",
+      "category": "place",
+      "note": "транслитерация в составе Rhode Island → Род-Айленд",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-56",
+      "source": "Sydney Bulletin",
+      "target": "«Сиднейский бюллетень»",
+      "category": "work",
+      "note": "перевод названия газеты с сохранением в «ёлочках»",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-57",
+      "source": "Thomas",
+      "target": "Томас",
+      "category": "person",
+      "note": "транслитерация личного имени",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-58",
+      "source": "Valparaiso",
+      "target": "Вальпараисо",
+      "category": "place",
+      "note": "устоявшаяся транслитерация топонима",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-59",
+      "source": "William",
+      "target": "Уильям",
+      "category": "person",
+      "note": "транслитерация личного имени",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-60",
+      "source": "Bienville St",
+      "target": "Бьенвилл-стрит",
+      "category": "place",
+      "note": "транслитерация названия + -стрит",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-61",
+      "source": "College Street",
+      "target": "Колледж-стрит",
+      "category": "place",
+      "note": "транслитерация названия + -стрит",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-62",
+      "source": "Thayer Street",
+      "target": "Тейер-стрит",
+      "category": "place",
+      "note": "транслитерация названия + -стрит",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-63",
+      "source": "Thomas St",
+      "target": "Томас-стрит",
+      "category": "place",
+      "note": "транслитерация названия + -стрит, единообразно с Thomas Street",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-64",
+      "source": "Thomas Street",
+      "target": "Томас-стрит",
+      "category": "place",
+      "note": "транслитерация названия + -стрит",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-65",
+      "source": "Waterman Street",
+      "target": "Уотерман-стрит",
+      "category": "place",
+      "note": "транслитерация названия + -стрит",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-66",
+      "source": "West Street",
+      "target": "Уэст-стрит",
+      "category": "place",
+      "note": "транслитерация названия + -стрит",
+      "enabled": true
+    },
+    {
+      "id": "generated-entity-67",
+      "source": "Williams Street",
+      "target": "Уильямс-стрит",
+      "category": "place",
+      "note": "транслитерация названия + -стрит",
+      "enabled": true
+    }
+  ]
+}
