@@ -298,7 +298,12 @@ function adjacentStemRepetitions(text: string): number {
     // «Пустая, пустее некуда» is an adjective followed by its comparative, not a fragment
     // duplicated by repair.
     if (/(?:ее|ей)$/u.test(current.value)) continue;
-    if (commonPrefixLength(previous.value, current.value) >= 4) count++;
+    // A duplicated fragment repeats most of the word («кролика кролик», «норе норе»); a word
+    // followed by its compound («голова головоногого») shares only a stem, and a correct
+    // repair of a Cthulhu block was thrown away here for that.
+    const shared = commonPrefixLength(previous.value, current.value);
+    if (shared >= 4 && shared >= 0.6 * Math.max(previous.value.length, current.value.length))
+      count++;
   }
   return count;
 }

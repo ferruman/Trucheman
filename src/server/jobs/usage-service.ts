@@ -59,11 +59,22 @@ export type UsageBreakdown = {
   totalTokens: number;
 };
 
+export type UsageTotals = Omit<UsageBreakdown, "stage" | "profile" | "endpoint" | "model">;
+
 export type UsageReport = {
   version: 2;
   generatedAt: string;
-  totals: Omit<UsageBreakdown, "stage" | "profile" | "endpoint" | "model">;
+  /** The latest execution: what a resume or a selective re-run cost. */
+  totals: UsageTotals;
   breakdown: UsageBreakdown[];
+  /**
+   * Every execution of the job together. Retry counts do not carry across runs (a re-run
+   * repeats operation ids), so only requests and tokens are summed.
+   */
+  lifetime?: Pick<
+    UsageTotals,
+    "requests" | "promptTokens" | "cachedPromptTokens" | "completionTokens" | "totalTokens"
+  > & { runs: number };
 };
 
 const STAGE_ORDER: UsageStage[] = ["translation", "editing", "audit", "repair", "consistency"];
@@ -197,9 +208,18 @@ export async function readUsageReport(root: string, runId?: string): Promise<Usa
   // look like a retry because both executions shared the same operation ids.
   const selectedRunId =
     runId ?? [...records].reverse().find((record) => record.runId !== undefined)?.runId;
-  return buildUsageReport(
+  const report = buildUsageReport(
     selectedRunId ? records.filter((record) => record.runId === selectedRunId) : records,
   );
+  const runs = new Set(records.map((record) => record.runId ?? "")).size;
+  if (runs < 2) return report;
+  // The showcase run's report said 220k tokens after a two-batch re-run; the book had cost 1M.
+  const { requests, promptTokens, cachedPromptTokens, completionTokens, totalTokens } =
+    buildUsageReport(records).totals;
+  return {
+    ...report,
+    lifetime: { runs, requests, promptTokens, cachedPromptTokens, completionTokens, totalTokens },
+  };
 }
 
 async function recordUsage(

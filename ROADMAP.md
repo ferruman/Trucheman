@@ -28,13 +28,7 @@ consistency, durable checkpoints, and local-first storage.
    caching, and Batch API support.
 4. Route models by measured quality, latency, and cost only after the evaluation corpus is large
    enough to support the decision.
-5. Fix what the [Call of Cthulhu showcase run](examples/call-of-cthulhu/README.md) exposed: the
-   duplicate-guard in `applySelectiveRepairs` rejected a correct repair as "duplicates an adjacent
-   fragment"; the entity registry let a multi-word entity (`Cthulhu R'lyeh → Р'лайх`) contradict
-   its component (`R'lyeh → Р'лайе`), so the consistency pass kept both; `usage-report.json` is
-   rewritten per run instead of accumulated from `usage.ndjson`; `trace:segment` labels profiles
-   with hard-coded `deepseek-*` names regardless of the configured transport.
-6. Let the repair profile own its endpoint and key, or escalate a repair the editing model returns
+5. Let the repair profile own its endpoint and key, or escalate a repair the editing model returns
    unchanged to the critic's model. A `high` finding (an untranslated English word) survived two
    repair passes on `deepseek-v4-flash` before a stronger repairer fixed it.
 

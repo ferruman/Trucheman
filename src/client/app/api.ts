@@ -75,6 +75,11 @@ export type JobResults = {
         model: string;
       }
     >;
+    /** Present after a second execution: all runs of the job together. */
+    lifetime?: Pick<
+      UsageNumbers,
+      "requests" | "promptTokens" | "cachedPromptTokens" | "completionTokens" | "totalTokens"
+    > & { runs: number };
   };
 };
 

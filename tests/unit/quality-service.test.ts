@@ -96,6 +96,15 @@ describe("selective literary quality service", () => {
     ]);
   });
 
+  it("keeps a repair whose adjacent words merely share a stem", () => {
+    const edited = "Головоногое существо наклонило голову вперёд";
+    const repaired = "Голова головоногого существа была наклонена вперёд";
+    expect(reviewRepair(edited, repaired)).toBeUndefined();
+    expect(reviewRepair("Она вздрогнула", "Она вздрогнула, увидев чудовища чудовищем")).toBe(
+      "repair duplicates an adjacent fragment",
+    );
+  });
+
   it("rejects empty, source-language, quote-breaking, and structure-changing repairs", () => {
     const cases = [
       { edited: "Хороший текст", repaired: "   ", reason: "empty repair" },

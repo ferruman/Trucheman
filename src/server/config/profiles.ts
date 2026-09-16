@@ -101,6 +101,8 @@ export function resolveProfiles(
   const editingPromptVersion =
     secrets.editingPromptVersion ?? envValue(env, "EDITING_PROMPT_VERSION");
   const timeoutMs = requestTimeout(secrets.timeoutMs ?? envValue(env, "TIMEOUT_MS"));
+  // Profile names are part of every checkpoint key, so the historical "deepseek-" labels stay
+  // whatever transport a profile uses; journals record the model next to them.
   const translation: ProviderProfile = {
     name: useExternal ? "deepseek-translation" : "deterministic-local",
     transport: translationTransport,

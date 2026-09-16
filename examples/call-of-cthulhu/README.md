@@ -141,7 +141,8 @@ _is_ bent, the creature does not bend it), and the repair produced the right sen
 головоногого существа была наклонена вперёд»_ — but `applySelectiveRepairs` rejected it with
 "repair duplicates an adjacent fragment", a false positive of the duplicate-guard, so the reader
 gets the editor's version. This is one of the two unresolved `high` findings and the reason the job
-is `needs_attention`. It is also a bug on the roadmap.
+is `needs_attention`. The guard has since been fixed to require most of a word to repeat, not
+just a stem.
 
 ### 5. Mythos terminology and the couplet
 
@@ -165,8 +166,8 @@ from the model. _грезя_ for "dreaming" is the editor earning its keep. _Р'
 glossary carried `R'lyeh → Р'лайе` and the consistency pass kept all eight prose occurrences on
 it, but the entity registry had also produced a separate two-word entry `Cthulhu R'lyeh → Ктулху
 Р'лайх`, which legitimized the variant inside the chant. The two chant lines in the output read
-_Р'лайх_, the rest of the book _Р'лайе_. Fixing the registry so that a multi-word entity cannot
-contradict its component is on the roadmap.
+_Р'лайх_, the rest of the book _Р'лайе_. The registry now rewrites a multi-word entity to spell a
+contained name the way that name's own entry does.
 
 The couplet needed no help from anyone downstream of the translator:
 
