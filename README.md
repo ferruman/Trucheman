@@ -126,6 +126,24 @@ Import → Inspect → Translate → Literary edit → Consistency → Build →
 Pausing or restarting Trucheman preserves completed checkpoints and submitted batch identifiers.
 Changing a quality mode keeps reusable work whenever the pipeline boundary allows it.
 
+## Language support
+
+The UI offers English, Russian, German, Polish, and Japanese in any direction. The pipeline itself
+is language-generic: every stage receives the source and target language and works from the
+model's own knowledge. Language modules add deterministic rules on top of that:
+
+| Module                 | Adds                                                                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Russian** (target)   | Typography (ё, «ёлочки», dialogue dashes), name-ending awareness for consistency checks, written-number detection, an EPUB audit, and agreement repair. |
+| **Japanese** (source)  | Vertical-to-horizontal layout conversion, furigana-driven readings, honorific and name-order policy, sentence-final particle handling, smaller batches. |
+| **Japanese → Russian** | Polivanov transliteration rules.                                                                                                                        |
+
+English, German, and Polish currently run on the generic pipeline alone. Everything shipped so far
+has been exercised on English → Russian and Japanese → Russian books, and the regression corpus
+covers those two pairs; treat other directions as untested and start with a short book. Adding a
+language is a registry entry plus optional capabilities, described in
+[Language modules](docs/language-modules.md).
+
 <details>
 <summary><strong>Provider configuration</strong></summary>
 
