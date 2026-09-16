@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Cthulhu Translation Sample</title>
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;0,7..72,600;1,7..72,400&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+    />
+    <style>
+      :root {
+        --paper: #f6f6f3;
+        --sheet: #ffffff;
+        --ink: #1b1e24;
+        --ink-soft: #4b5260;
+        --label: #6b7280;
+        --rule: #d8dbd5;
+        --sea: #0f6e63;
+        --sea-wash: rgba(15, 110, 99, 0.14);
+        --alert: #9a4a1f;
+        --alert-wash: rgba(154, 74, 31, 0.13);
+        --serif: "Literata", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+        --sans: "IBM Plex Sans", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --paper: #14171c;
+          --sheet: #1b1f26;
+          --ink: #e8e8e3;
+          --ink-soft: #b3b8c2;
+          --label: #8a919e;
+          --rule: #2e333c;
+          --sea: #4fb3a6;
+          --sea-wash: rgba(79, 179, 166, 0.18);
+          --alert: #d9905f;
+          --alert-wash: rgba(217, 144, 95, 0.16);
+        }
+      }
+      :root[data-theme="dark"] {
+        --paper: #14171c;
+        --sheet: #1b1f26;
+        --ink: #e8e8e3;
+        --ink-soft: #b3b8c2;
+        --label: #8a919e;
+        --rule: #2e333c;
+        --sea: #4fb3a6;
+        --sea-wash: rgba(79, 179, 166, 0.18);
+        --alert: #d9905f;
+        --alert-wash: rgba(217, 144, 95, 0.16);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 16px;
+        line-height: 1.55;
+        padding-block: 0 4rem;
+        padding-inline: 16px;
+      }
+      .page {
+        max-width: 72rem;
+        margin: 0 auto;
+      }
+      header.masthead {
+        padding-block: 2.5rem 1.75rem;
+        border-bottom: 1px solid var(--rule);
+        display: grid;
+        gap: 0.75rem;
+      }
+      .eyebrow {
+        font-size: 0.78rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--label);
+        font-weight: 500;
+      }
+      h1 {
+        font-family: var(--serif);
+        font-weight: 500;
+        font-size: clamp(1.9rem, 4vw, 2.7rem);
+        line-height: 1.15;
+        margin: 0;
+        text-wrap: balance;
+      }
+      .lede {
+        font-size: 1.05rem;
+        color: var(--ink-soft);
+        max-width: 62ch;
+        margin: 0;
+      }
+      .facts {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+        gap: 1px;
+        background: var(--rule);
+        border: 1px solid var(--rule);
+        margin-block: 1.75rem;
+      }
+      .facts div {
+        background: var(--sheet);
+        padding: 0.9rem 1rem;
+      }
+      .facts b {
+        display: block;
+        font-family: var(--serif);
+        font-weight: 500;
+        font-size: 1.35rem;
+        font-variant-numeric: tabular-nums;
+      }
+      .facts span {
+        font-size: 0.82rem;
+        color: var(--label);
+      }
+      h2 {
+        font-family: var(--serif);
+        font-weight: 500;
+        font-size: 1.5rem;
+        margin: 3rem 0 0.5rem;
+        text-wrap: balance;
+      }
+      h2 small {
+        font-family: var(--sans);
+        font-size: 0.8rem;
+        color: var(--label);
+        font-weight: 500;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        display: block;
+        margin-bottom: 0.4rem;
+      }
+      p.intro {
+        max-width: 68ch;
+        color: var(--ink-soft);
+        margin-top: 0;
+      }
+      .sample {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(14rem, 19rem);
+        gap: 2rem;
+        align-items: start;
+        margin-top: 1.25rem;
+      }
+      .stages {
+        display: grid;
+        gap: 1.25rem;
+      }
+      .stage {
+        border-left: 2px solid var(--rule);
+        padding-left: 1.1rem;
+      }
+      .stage.final {
+        border-left-color: var(--sea);
+      }
+      .stage .eyebrow {
+        margin-bottom: 0.35rem;
+      }
+      .stage p {
+        margin: 0;
+        font-family: var(--serif);
+        font-size: 1.06rem;
+        line-height: 1.6;
+        max-width: 66ch;
+      }
+      .stage p[lang="en"] {
+        color: var(--ink-soft);
+      }
+      mark {
+        background: var(--alert-wash);
+        color: inherit;
+        padding: 0 0.12em;
+        border-radius: 2px;
+        box-decoration-break: clone;
+        -webkit-box-decoration-break: clone;
+      }
+      mark.good {
+        background: var(--sea-wash);
+      }
+      aside.note {
+        background: var(--sheet);
+        border: 1px solid var(--rule);
+        padding: 1rem 1.1rem;
+        font-size: 0.92rem;
+        line-height: 1.5;
+        position: sticky;
+        top: env(safe-area-inset-top, 0px);
+      }
+      aside.note .eyebrow {
+        color: var(--sea);
+        margin-bottom: 0.4rem;
+      }
+      aside.note p {
+        margin: 0 0 0.6rem;
+      }
+      aside.note p:last-child {
+        margin-bottom: 0;
+      }
+      aside.note q {
+        font-style: italic;
+      }
+      .verdict {
+        display: inline-block;
+        font-size: 0.75rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        font-weight: 600;
+        color: var(--sea);
+      }
+      .verdict.open {
+        color: var(--alert);
+      }
+      ul.plain {
+        padding-left: 1.1rem;
+        max-width: 68ch;
+        color: var(--ink-soft);
+      }
+      ul.plain li {
+        margin-bottom: 0.45rem;
+      }
+      footer {
+        margin-top: 3.5rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid var(--rule);
+        font-size: 0.9rem;
+        color: var(--ink-soft);
+        display: grid;
+        gap: 0.4rem;
+      }
+      a {
+        color: var(--sea);
+        text-underline-offset: 0.15em;
+      }
+      a:focus-visible {
+        outline: 2px solid var(--sea);
+        outline-offset: 2px;
+      }
+      @media (max-width: 760px) {
+        .sample {
+          grid-template-columns: 1fr;
+          gap: 1.25rem;
+        }
+        aside.note {
+          position: static;
+        }
+      }
+      @media print {
+        body {
+          background: #fff;
+          color: #000;
+          font-size: 11pt;
+          padding: 0;
+        }
+        .page {
+          max-width: none;
+        }
+        .facts,
+        aside.note {
+          border-color: #bbb;
+        }
+        h2 {
+          break-before: page;
+          margin-top: 0;
+        }
+        h2.first {
+          break-before: auto;
+        }
+        .sample {
+          break-inside: avoid;
+        }
+        a {
+          color: inherit;
+        }
+        a[href^="http"]::after {
+          content: " (" attr(href) ")";
+          font-size: 0.85em;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="masthead">
+        <div class="eyebrow">
+          Trucheman v0.2.0 · Literary translation sample · English → Russian
+        </div>
+        <h1>
+          H. P. Lovecraft, <em>The Call of Cthulhu</em>, translated and edited by a pipeline, not a
+          prompt
+        </h1>
+        <p class="lede">
+          Four passages from one unattended run: what the translation model wrote, what the reader
+          gets, and — where a second model stepped in — why. Nothing on this page was corrected by
+          hand. The complete book, both EPUBs and every report are public.
+        </p>
+      </header>
+
+      <div class="facts" aria-label="Run at a glance">
+        <div><b>11,948</b><span>English words, 128 paragraphs</span></div>
+        <div><b>6 min</b><span>wall-clock, one job</span></div>
+        <div><b>&lt; $0.50</b><span>API spend, 452k tokens</span></div>
+        <div><b>105 / 128</b><span>paragraphs improved by the editor</span></div>
+        <div><b>10 → 8</b><span>critic findings → fixed automatically</span></div>
+        <div><b>0</b><span>EPUBCheck errors on the output</span></div>
+      </div>
+
+      <p class="intro">
+        Trucheman runs a book through separate roles: a <strong>translator</strong> produces a
+        faithful draft; a <strong>literary editor</strong> rewrites it as prose in the target
+        language; a <strong>critic</strong> from a different model family reads original, draft and
+        edit side by side and reports meaning errors, calques and grammar; a
+        <strong>repairer</strong> fixes only what the critic proved; a
+        <strong>consistency pass</strong> keeps every name and term identical across the book; the
+        result is rebuilt into a validated EPUB. In this run the translator was
+        <code>deepseek-v4-flash</code>, the editor <code>gpt-5.6-luna</code>, the critic
+        <code>deepseek-v4-pro</code>.
+      </p>
+
+      <!-- 1 -->
+      <h2 class="first"><small>Passage 1 · Atmosphere</small>The opening paragraph</h2>
+      <p class="intro">
+        The most quoted lines in Lovecraft. The draft is correct; the editor makes it read; the
+        critic catches the one place the editor overreached.
+      </p>
+      <div class="sample">
+        <div class="stages">
+          <div class="stage">
+            <div class="eyebrow">Original</div>
+            <p lang="en">
+              The most merciful thing in the world, I think, is the inability of the human mind to
+              correlate all its contents. We live on a placid island of ignorance in the midst of
+              black seas of infinity, and it was not meant that we should voyage far. The sciences,
+              each straining in its own direction, have hitherto harmed us little; but some day the
+              piecing together of dissociated knowledge will open up such terrifying vistas of
+              reality, and of our frightful position therein, that we shall either go mad from the
+              revelation or flee from the deadly light into the peace and safety of a new dark age.
+            </p>
+          </div>
+          <div class="stage">
+            <div class="eyebrow">First draft — translator</div>
+            <p lang="ru">
+              Самое милосердное в мире, думаю я, это неспособность человеческого разума
+              <mark>увязать между собою всё, что он содержит</mark>. Мы живём на спокойном островке
+              неведения посреди чёрных морей бесконечности, и не суждено нам плавать далеко. Науки,
+              каждая в своём направлении, доселе мало нам вредили; но однажды соединение
+              разрозненных знаний откроет перед нами столь устрашающие виды действительности и того
+              ужасного положения, которое мы в ней занимаем, что мы либо сойдём с ума от этого
+              откровения, либо <mark>отвратимся от гибельного света и укроемся</mark> в покое и
+              безопасности нового тёмного века.
+            </p>
+          </div>
+          <div class="stage final">
+            <div class="eyebrow">Final — after editor, critic and repair</div>
+            <p lang="ru">
+              Самое милосердное в мире, думаю я, — это неспособность человеческого разума
+              <mark class="good">связать воедино всё, что в нём содержится</mark>. Мы живём на
+              безмятежном островке неведения посреди чёрных морей бесконечности, и не суждено нам
+              <mark class="good">далеко плавать</mark>. Науки, каждая из которых стремится в своём
+              направлении, до сих пор мало нам вредили; но однажды соединение разрозненных знаний
+              откроет перед нами столь устрашающие виды действительности и нашего ужасного положения
+              в ней, что мы либо сойдём с ума от этого откровения, либо
+              <mark class="good">бежим от гибельного света в покой и безопасность</mark> нового
+              тёмного века.
+            </p>
+          </div>
+        </div>
+        <aside class="note">
+          <div class="eyebrow">Critic intervention</div>
+          <p>
+            The editor had written <q>не суждено нам далеко заплывать</q> — a calque of
+            <q>voyage far</q>; in Russian <q>заплывать</q> is what a swimmer does. The critic
+            flagged it as source-language interference; the repairer restored
+            <q>плавать далеко</q> and kept every other change the editor made.
+          </p>
+          <span class="verdict">Resolved automatically</span>
+        </aside>
+      </div>
+
+      <!-- 2 -->
+      <h2><small>Passage 2 · Meaning</small>The locked box</h2>
+      <p class="intro">
+        A stronger prose model can make a mistake a cheaper, more literal one did not. This is why
+        the critic reads the original, not just the Russian.
+      </p>
+      <div class="sample">
+        <div class="stages">
+          <div class="stage">
+            <div class="eyebrow">Original</div>
+            <p lang="en">
+              It had been locked, and I did not find the key till it occurred to me to examine the
+              personal ring which the professor carried always in his pocket. Then, indeed, I
+              succeeded in opening it, but when I did so seemed only to be confronted by a greater
+              and more closely locked barrier.
+            </p>
+          </div>
+          <div class="stage">
+            <div class="eyebrow">First draft — translator</div>
+            <p lang="ru">
+              Он был заперт, и я нашёл ключ лишь тогда, когда мне пришло в голову осмотреть
+              <mark>личную связку ключей</mark>, которую профессор всегда носил в кармане. Тогда мне
+              действительно удалось его открыть, но, сделав это, я, казалось, столкнулся лишь с ещё
+              большей и ещё крепче запертой преградой.
+            </p>
+          </div>
+          <div class="stage final">
+            <div class="eyebrow">Final — after editor, critic and repair</div>
+            <p lang="ru">
+              Он был заперт, и я нашёл ключ лишь тогда, когда мне пришло в голову осмотреть
+              <mark class="good">связку ключей</mark>, которую профессор всегда носил в кармане. Я
+              действительно сумел открыть ящик, но, сделав это, словно столкнулся лишь с ещё большей
+              и ещё надёжнее запертой преградой.
+            </p>
+          </div>
+        </div>
+        <aside class="note">
+          <div class="eyebrow">Critic intervention</div>
+          <p>
+            Polishing the sentence, the editor turned the key ring into a signet ring:
+            <q>осмотреть перстень, который профессор всегда носил в кармане</q>. The critic marked a
+            meaning error — <q>personal ring</q> here is a ring of keys, not jewellery — and the
+            repairer put the keys back while keeping the editor's smoother second sentence.
+          </p>
+          <span class="verdict">Resolved automatically</span>
+        </aside>
+      </div>
+
+      <!-- 3 -->
+      <h2><small>Passage 3 · Idiom</small>Johansen's voyage</h2>
+      <p class="intro">
+        The last sentence of a long paragraph about the yacht <em>Emma</em>, the cult, and the
+        drowned city. Two findings in one block, one of them high severity.
+      </p>
+      <div class="sample">
+        <div class="stages">
+          <div class="stage">
+            <div class="eyebrow">Original</div>
+            <p lang="en">
+              Of the swarthy cult-fiends on the <em>Alert</em> he speaks with significant horror.
+              […] There lay great Cthulhu and his hordes, hidden in green slimy vaults and sending
+              out at last, after cycles incalculable, the thoughts that spread fear to the dreams of
+              the sensitive and called imperiously to the faithful to come on a pilgrimage of
+              liberation and restoration. All this Johansen did not suspect, but God knows he soon
+              saw enough!
+            </p>
+          </div>
+          <div class="stage">
+            <div class="eyebrow">First draft — translator</div>
+            <p lang="ru">
+              О смуглых <mark>культовых извергах</mark> на «Алерте» он говорит со многозначительным
+              ужасом. […] Там лежал великий Ктулху и его орды, сокрытые в зелёных илистых сводах и
+              посылавшие наконец, после неисчислимых циклов, мысли, что сеяли страх в снах
+              чувствительных и властно звали верных в паломничество освобождения и восстановления.
+              Ничего этого Юхансен не подозревал, но <mark>Бог знает, что</mark> вскоре он увидел
+              достаточно!
+            </p>
+          </div>
+          <div class="stage final">
+            <div class="eyebrow">Final — after editor, critic and repair</div>
+            <p lang="ru">
+              О смуглых <mark class="good">культистах</mark> на «Алерте» он говорит с
+              многозначительным ужасом. […] Там лежал великий Ктулху и его орды, сокрытые в зелёных
+              илистых сводах и наконец, после неисчислимых циклов, посылавшие мысли, что сеяли страх
+              в снах чувствительных людей и властно звали верных в паломничество ради освобождения и
+              восстановления. Ничего этого Юхансен не подозревал, но,
+              <mark class="good">одному Богу известно</mark>, он вскоре увидел достаточно!
+            </p>
+          </div>
+        </div>
+        <aside class="note">
+          <div class="eyebrow">Critic intervention</div>
+          <p>
+            The editor rendered <q>God knows he soon saw enough</q> as
+            <q>ведомый Богом, вскоре увидел достаточно</q> — <em>guided by God</em>. The critic
+            rated it a high-severity meaning error and, in the same block, called
+            <q>извергах культа</q> a calque. The repairer fixed both and left the paragraph's other
+            gains — <q>«Эмма», принявшая балласт</q>, <q>за неизмеримые эоны до начала истории</q> —
+            in place.
+          </p>
+          <span class="verdict">Resolved automatically</span>
+        </aside>
+      </div>
+
+      <!-- 4 -->
+      <h2><small>Passage 4 · Syntax</small>The statuette</h2>
+      <p class="intro">
+        A long descriptive sentence, the kind that turns into a breathless list when translated word
+        for word. Also the one place in this run where the human editor still has a decision to
+        make.
+      </p>
+      <div class="sample">
+        <div class="stages">
+          <div class="stage">
+            <div class="eyebrow">Original</div>
+            <p lang="en">
+              It represented a monster of vaguely anthropoid outline, but with an octopuslike head
+              whose face was a mass of feelers, a scaly, rubbery-looking body, prodigious claws on
+              hind and fore feet, and long, narrow wings behind. […] The cephalopod head was bent
+              forward, so that the ends of the facial feelers brushed the backs of huge forepaws
+              which clasped the croucher's elevated knees.
+            </p>
+          </div>
+          <div class="stage">
+            <div class="eyebrow">First draft — translator</div>
+            <p lang="ru">
+              Она изображала чудовище с неясно человекоподобными очертаниями, но
+              <mark
+                >с головой осьминога, чьё лицо представляло собой массу щупалец, с чешуйчатым,
+                словно резиновым телом, чудовищными когтями на задних и передних лапах и длинными
+                узкими крыльями за спиной</mark
+              >. […] Головоногая голова была наклонена вперёд, так что концы лицевых щупалец
+              задевали тыл огромных передних лап, обхвативших возвышенные колени сидящего.
+            </p>
+          </div>
+          <div class="stage final">
+            <div class="eyebrow">Final — after editor, critic and repair</div>
+            <p lang="ru">
+              Она изображала чудовище с неясно человекоподобными очертаниями, но
+              <mark class="good"
+                >с головой осьминога: лицо его представляло собой сплошную массу щупалец; тело было
+                чешуйчатым, словно резиновым; на задних и передних лапах росли огромные когти, а за
+                спиной тянулись длинные узкие крылья</mark
+              >. […] <mark>Головоногое существо наклонило голову вперёд</mark>, так что концы
+              лицевых щупалец касались тыльной стороны огромных передних лап, обхвативших поднятые
+              колени сидевшей на корточках твари.
+            </p>
+          </div>
+        </div>
+        <aside class="note">
+          <div class="eyebrow">Critic intervention</div>
+          <p>
+            The editor's restructuring of the first sentence is the literary pass earning its keep.
+            Further down it wrote <q>the creature bent its head forward</q> where Lovecraft has the
+            head simply <em>bent</em>. The critic flagged the shift in agency; the repairer produced
+            the right sentence — and a deterministic safety check wrongly discarded it.
+          </p>
+          <p>
+            So the reader gets the editor's version, and the job finished as
+            <em>needs attention</em> with this finding listed for a human. The check has since been
+            corrected; the run is shown as it happened.
+          </p>
+          <span class="verdict open">Left for the human editor</span>
+        </aside>
+      </div>
+
+      <h2><small>What a publisher should know</small>Before you judge the sample</h2>
+      <ul class="plain">
+        <li>
+          <strong>Names hold across the book.</strong> A glossary of 67 entities was generated
+          before translation and enforced afterwards: <em>Ктулху</em> 27/27 occurrences,
+          <em>Юхансен</em> 21/21, <em>Леграсс</em> and <em>Уилкокс</em> 19/19. The one slip —
+          <em>Р'лайе</em> spelled <em>Р'лайх</em> twice inside the chant — is documented with the
+          run and fixed in the code.
+        </li>
+        <li>
+          <strong>Nothing is hidden.</strong> Two critic findings the pipeline could not settle are
+          reported, not buried; a human editor sees exactly which paragraphs and why. The full run
+          lists every other place a careful reader may disagree with a model's choice.
+        </li>
+        <li>
+          <strong>The author's vocabulary is kept.</strong> Lovecraft's 1928 words for race and
+          ethnicity are carried over as written. The pipeline does not modernize, soften or annotate
+          a text on its own; a house policy for period vocabulary is given as job instructions and
+          reaches every stage.
+        </li>
+        <li>
+          <strong>Public-domain source, machine-made Russian.</strong> No published Russian
+          translation was consulted. The English text is Lovecraft's; the Russian is this run's
+          output, released with the project under the MIT license.
+        </li>
+      </ul>
+
+      <footer>
+        <div>
+          Full reproducible run — both EPUBs, every critic finding, consistency and usage reports,
+          and the paragraph-by-paragraph trace:
+          <a href="https://github.com/ferruman/Trucheman/tree/main/examples/call-of-cthulhu"
+            >github.com/ferruman/Trucheman → examples/call-of-cthulhu</a
+          >
+        </div>
+        <div>
+          Trucheman is open source (MIT) and runs on your own machine; book text goes only to the
+          model providers you configure.
+          <a href="https://github.com/ferruman/Trucheman">github.com/ferruman/Trucheman</a>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>

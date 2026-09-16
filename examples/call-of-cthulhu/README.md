@@ -5,16 +5,17 @@ English → Russian by Trucheman v0.2.0 in one job, high quality mode, with no m
 output. This folder holds the whole run so you can check the claims in the main README against a
 real book rather than three curated paragraphs:
 
-| File                                                                 | What it is                                                                                                                                 |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`source.epub`](source.epub)                                         | The input. A Project Gutenberg build with the Gutenberg header, license and references removed, as their license permits. EPUBCheck-clean. |
-| [`output.epub`](output.epub)                                         | The result exactly as Trucheman built it. Open it in any reader.                                                                           |
-| [`reports/quality-report.json`](reports/quality-report.json)         | Every critic finding, what the repair did with it, and what stayed unresolved.                                                             |
-| [`reports/consistency-report.json`](reports/consistency-report.json) | Entity evidence, book-wide naming decisions, glossary adherence per block.                                                                 |
-| [`reports/glossary.json`](reports/glossary.json)                     | The 67-entry glossary the entity registry generated before translation started.                                                            |
-| [`reports/style-profile.json`](reports/style-profile.json)           | The style profile the preflight derived and appended to every prompt.                                                                      |
-| [`reports/usage-report.json`](reports/usage-report.json)             | Requests and tokens per stage and model.                                                                                                   |
-| [`reports/epubcheck.txt`](reports/epubcheck.txt)                     | `0 fatals / 0 errors / 0 warnings` on the output.                                                                                          |
+| File                                                                 | What it is                                                                                                                                                      |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`source.epub`](source.epub)                                         | The input. A Project Gutenberg build with the Gutenberg header, license and references removed, as their license permits. EPUBCheck-clean.                      |
+| [`output.epub`](output.epub)                                         | The result exactly as Trucheman built it. Open it in any reader.                                                                                                |
+| [`reports/quality-report.json`](reports/quality-report.json)         | Every critic finding, what the repair did with it, and what stayed unresolved.                                                                                  |
+| [`reports/consistency-report.json`](reports/consistency-report.json) | Entity evidence, book-wide naming decisions, glossary adherence per block.                                                                                      |
+| [`reports/glossary.json`](reports/glossary.json)                     | The 67-entry glossary the entity registry generated before translation started.                                                                                 |
+| [`reports/style-profile.json`](reports/style-profile.json)           | The style profile the preflight derived and appended to every prompt.                                                                                           |
+| [`reports/usage-report.json`](reports/usage-report.json)             | Requests and tokens per stage and model.                                                                                                                        |
+| [`reports/epubcheck.txt`](reports/epubcheck.txt)                     | `0 fatals / 0 errors / 0 warnings` on the output.                                                                                                               |
+| [`sample.html`](sample.html)                                         | A four-passage, print-ready sample for a non-technical reader: draft vs. final with the critic's interventions, no JSON. Open it in a browser and print to PDF. |
 
 ## The run
 
