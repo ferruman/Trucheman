@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "sourceFingerprint": "9535c7ddfe3994d1767ef5bf6b6bc564ea2e7bffe7b4d65596d05e4b04aa325c",
+  "preparationVersion": 1,
+  "createdAt": "2026-09-16T09:44:03.664Z",
+  "updatedAt": "2026-09-16T09:49:57.152Z",
+  "status": "needs_attention",
+  "stage": "complete",
+  "recovery": {
+    "eligible": true,
+    "reason": "Prepared source and compatible checkpoints will be reused where valid."
+  },
+  "units": {
+    "translation": {
+      "completed": 10,
+      "total": 10,
+      "pending": 0
+    },
+    "editing": {
+      "completed": 10,
+      "total": 10,
+      "pending": 0
+    },
+    "audit": {
+      "completed": 10,
+      "total": 10,
+      "pending": 0
+    },
+    "repair": {
+      "completed": 5,
+      "total": 5,
+      "pending": 0
+    }
+  }
+}
