@@ -393,6 +393,7 @@ export async function runQualityPipeline(
         attempts: translated.attempts,
         warnings: translated.warnings,
         profile: options.translationProfile.name,
+        model: options.translationProfile.model,
       });
     }
     drafts.set(batch.id, draft);
@@ -435,6 +436,7 @@ export async function runQualityPipeline(
         attempts: edited.attempts,
         warnings: edited.warnings,
         profile: options.editingProfile.name,
+        model: options.editingProfile.model,
       });
     }
     if (savedEdit) cachedCheckpoints.editing++;
@@ -478,6 +480,7 @@ export async function runQualityPipeline(
           attempts: audited.attempts,
           warnings: audited.warnings,
           profile: criticProfile.name,
+          model: criticProfile.model,
         });
       }
       findings = mergeFindings(
@@ -557,6 +560,7 @@ export async function runQualityPipeline(
               attempts,
               warnings,
               profile: repairProfile.name,
+              model: repairProfile.model,
             });
           } catch (error) {
             // Pausing must still pause; anything else is one batch's polish, not the book.

@@ -114,7 +114,7 @@ Prompts are assembled in `providers/prompts.ts` from composable blocks: common r
 - `invalid_response` — the model broke the contract. Retried a bounded number of times, then the **caller halves the batch**, because the same prompt asked again gets the same answer. The consistency pass halves its chunks the same way.
 - `configuration` — never retried.
 
-Every call, including a rejected one, appends a record to `usage.ndjson` with its tokens, outcome and, when it failed, the reason. A retry that succeeds discards the error, so that record is the only place the reason survives.
+Every call, including a rejected one, appends a record to `usage.ndjson` with its tokens, outcome and, when it failed, the reason. A retry that succeeds discards the error, so that record is the only place the reason survives. `usage-report.json` describes the latest execution, so a resume or a selective re-run reports what it cost and a repeated operation id is not mistaken for a retry; once a job has run more than once the report also carries `lifetime` — requests and tokens over every run — because a two-batch re-run otherwise looked like the whole book had cost 220k tokens.
 
 **Implementations:**
 
@@ -134,7 +134,7 @@ All job data lives under `data/jobs/<uuid>/`:
 - `job.json` — job metadata (title, languages, status, stage, progress)
 - `source.epub` — original uploaded file, `staging/` — the extracted working copy, `output.epub` — the built translation
 - `prepared.json` — documents, segments, logical blocks and batches from the analysis
-- `drafts.ndjson`, `edits.ndjson`, `audits.ndjson`, `repairs.ndjson` — one checkpoint journal per pipeline stage
+- `drafts.ndjson`, `edits.ndjson`, `audits.ndjson`, `repairs.ndjson` — one checkpoint journal per pipeline stage; each record names the profile and, since v0.2.1, the model that produced it (profile names are checkpoint-key inputs and keep their historical `deepseek-` labels whatever the transport)
 - `style-profile.json`, `entity-registry.json`, `chapter-cards.json`, `consistency-resolution.json` — cached preflight and consistency answers
 - `quality-report.json`, `consistency-report.json`, `output-consistency-audit.json`, `epubcheck.txt` — diagnostics
 

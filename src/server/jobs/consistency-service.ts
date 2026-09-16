@@ -677,7 +677,45 @@ export async function resolveEntityRegistry(
       enabled: true,
     });
   }
-  return { entries, ...run };
+  return { entries: reconcileCompositeEntries(entries), ...run };
+}
+
+/**
+ * A multi-word entity must not spell a name differently from the entity it contains. The
+ * registry answered `R'lyeh → Р'лайе` and, in another chunk, `Cthulhu R'lyeh → Ктулху Р'лайх`;
+ * the consistency pass then treated both as canonical and the chant kept the variant. Only a
+ * near-identical word is rewritten (same length within one, all but the last two letters
+ * shared): «Сиднейский» stays next to `Sydney → Сидней`, an inflected adjective is not a name.
+ * Limited to categories that name something, where the target is a nominative form.
+ */
+export function reconcileCompositeEntries(entries: GlossaryEntry[]): GlossaryEntry[] {
+  const named = new Map(
+    entries
+      .filter((entry) => ["person", "place", "ship"].includes(entry.category))
+      .filter((entry) => !/\s/u.test(entry.source) && !/\s/u.test(entry.target))
+      .map((entry) => [entry.source.toLocaleLowerCase(), entry.target]),
+  );
+  const nearlySame = (word: string, target: string) => {
+    const a = word.toLocaleLowerCase(),
+      b = target.toLocaleLowerCase();
+    if (a === b || Math.abs(a.length - b.length) > 1) return false;
+    let shared = 0;
+    while (shared < Math.min(a.length, b.length) && a[shared] === b[shared]) shared++;
+    return shared >= 3 && shared >= Math.min(a.length, b.length) - 2;
+  };
+  return entries.map((entry) => {
+    const parts = entry.source.split(/\s+/u);
+    if (parts.length < 2) return entry;
+    let target = entry.target;
+    for (const part of parts) {
+      const canonical = named.get(part.toLocaleLowerCase());
+      if (!canonical) continue;
+      target = target.replace(/[\p{L}\p{M}'’-]+/gu, (word) =>
+        nearlySame(word, canonical) ? canonical : word,
+      );
+    }
+    return target === entry.target ? entry : { ...entry, target };
+  });
 }
 
 export type ConsistencyResolution = ChunkedRun & {

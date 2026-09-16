@@ -24,6 +24,7 @@ type JournalRecord = {
   checkpointKey?: string;
   attempts?: number;
   profile?: string;
+  model?: string;
 };
 
 const prepared: PreparedBook = JSON.parse(await readFile(`${root}/prepared.json`, "utf8"));
@@ -87,8 +88,10 @@ try {
   final = undefined;
 }
 
+// Older journals carry only the profile's role name, which said "deepseek-" whatever the
+// transport; the model is what a reader of the trace actually wants to know.
 const describe = (record?: JournalRecord) =>
-  record ? ` (${record.profile ?? "?"}, ${record.attempts ?? 1} attempt(s))` : "";
+  record ? ` (${record.model ?? record.profile ?? "?"}, ${record.attempts ?? 1} attempt(s))` : "";
 const show = (label: string, value: string | undefined, note = "") =>
   console.log(`\n${label}${note}\n${value?.trim() ? value : "—"}`);
 

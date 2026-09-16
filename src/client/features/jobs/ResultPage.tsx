@@ -208,6 +208,14 @@ export function ResultPage({
               <p>
                 <strong>{tokens(results.usage.totals.totalTokens)}</strong> tokens across{" "}
                 {tokens(results.usage.totals.requests)} requests
+                {results.usage.lifetime && (
+                  <>
+                    {" "}
+                    in the latest run; {tokens(results.usage.lifetime.totalTokens)} tokens across{" "}
+                    {tokens(results.usage.lifetime.requests)} requests over{" "}
+                    {results.usage.lifetime.runs} runs
+                  </>
+                )}
               </p>
             </div>
             {results.usage.breakdown.length === 0 ? (

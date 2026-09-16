@@ -12,6 +12,7 @@ import {
   measureGlossaryAdherence,
   mergeGlossaries,
   normalizeRussianConsistencyMechanics,
+  reconcileCompositeEntries,
   resolveConsistencyConflicts,
   resolveEntityRegistry,
   type ConsistencyDocument,
@@ -1255,5 +1256,42 @@ describe("book-wide consistency", () => {
     expect(values[2].editedSegments[0].text).toBe(" ГЛАВА I. Вниз по кроличьей норе ");
     // Prose that never appears in a navigation document is left alone.
     expect(values[2].editedSegments[1].text).toBe("Ветер не стихал.");
+  });
+});
+
+describe("reconcileCompositeEntries", () => {
+  const entry = (source: string, target: string, category = "place") => ({
+    id: source,
+    source,
+    target,
+    category,
+    enabled: true,
+  });
+
+  it("makes a multi-word entity spell a contained name the way its own entry does", () => {
+    const entries = [
+      entry("R'lyeh", "Р'лайе"),
+      entry("Cthulhu R'lyeh", "Ктулху Р'лайх", "term"),
+      entry("Sydney", "Сидней"),
+      entry("Sydney Bulletin", "«Сиднейский бюллетень»", "work"),
+      entry("American", "американский", "term"),
+      entry(
+        "American Archeological Society",
+        "Американское археологическое общество",
+        "organization",
+      ),
+      entry("Johansen", "Юхансен", "person"),
+      entry("Mate Johansen", "помощник Юхансен", "person"),
+    ];
+    expect(reconcileCompositeEntries(entries).map((e) => e.target)).toEqual([
+      "Р'лайе",
+      "Ктулху Р'лайе",
+      "Сидней",
+      "«Сиднейский бюллетень»",
+      "американский",
+      "Американское археологическое общество",
+      "Юхансен",
+      "помощник Юхансен",
+    ]);
   });
 });

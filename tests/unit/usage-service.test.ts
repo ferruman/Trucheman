@@ -166,6 +166,7 @@ describe("model usage tracking", () => {
 
     expect(await readUsageReport(root)).toMatchObject({
       totals: { requests: 1, logicalOperations: 1, retriedOperations: 0, totalTokens: 120 },
+      lifetime: { runs: 2, requests: 2, totalTokens: 240 },
     });
     expect((await readFile(join(root, "usage.ndjson"), "utf8")).trim().split("\n")).toHaveLength(2);
   });
