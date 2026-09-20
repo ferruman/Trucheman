@@ -51,6 +51,13 @@ function parseBody<T>(schema: z.ZodType<T>, value: unknown): T {
     );
   return result.data;
 }
+function validateLanguagePair(source: string, target: string) {
+  try {
+    assertLanguagePair(source, target);
+  } catch (error) {
+    throw new DomainError("invalid_request", (error as Error).message, 400);
+  }
+}
 export function parseJobConfig(value: unknown) {
   return parseBody(configSchema, value);
 }
@@ -61,7 +68,7 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
   router.post("/", async (req, res) => {
     try {
       const { title, sourceLanguage, targetLanguage } = parseBody(createJobSchema, req.body);
-      assertLanguagePair(sourceLanguage, targetLanguage);
+      validateLanguagePair(sourceLanguage, targetLanguage);
       const id = newJobId(),
         now = new Date().toISOString();
       const job: PersistedJob = {
@@ -100,6 +107,11 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
       const job = await repo.get(req.params.id);
       orchestrator.assertMutable(job.id, job);
       const body = parseJobConfig(req.body);
+      // Reject the complete candidate before invalidation removes any paid work.
+      validateLanguagePair(
+        body.sourceLanguage ?? job.sourceLanguage,
+        body.targetLanguage ?? job.targetLanguage,
+      );
       const changesContent =
         (body.sourceLanguage !== undefined && body.sourceLanguage !== job.sourceLanguage) ||
         (body.targetLanguage !== undefined && body.targetLanguage !== job.targetLanguage) ||
@@ -122,7 +134,6 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
         executionMode: body.executionMode ?? base.executionMode,
         updatedAt: new Date().toISOString(),
       };
-      assertLanguagePair(next.sourceLanguage, next.targetLanguage);
       await repo.save(next);
       res.json(toJobView(next));
     } catch (error) {
