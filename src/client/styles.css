@@ -241,6 +241,31 @@ p {
   letter-spacing: 0.07em;
   text-transform: uppercase;
 }
+/* Nothing sits above a heading: context goes under it, the path is a breadcrumb (DESIGN.md → Headings). */
+.page-meta {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font: 0.8125rem/1.4 var(--mono);
+}
+.breadcrumb {
+  margin-bottom: 0.35rem;
+  color: var(--muted);
+  font:
+    0.8125rem/1.4 system-ui,
+    sans-serif;
+}
+.breadcrumb a {
+  color: var(--muted);
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+.breadcrumb a:hover {
+  color: var(--accent-hover);
+  text-decoration-color: currentColor;
+}
+.breadcrumb [aria-current] {
+  font-family: var(--mono);
+}
 .language-route {
   margin: 0.45rem 0 0;
   color: var(--muted);

@@ -156,10 +156,7 @@ export function NewJobPage() {
   return (
     <section className="page new-job-page">
       <header className="page-header">
-        <div>
-          <span className="section-label">Create job</span>
-          <h1>New book</h1>
-        </div>
+        <h1>New book</h1>
       </header>
       <form onSubmit={submit} aria-busy={busy}>
         <label>

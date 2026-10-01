@@ -39,10 +39,7 @@ export function JobLogPanel({ events }: { events: JobEvent[] }) {
   return (
     <section className="job-log-panel" aria-labelledby="log-heading">
       <div className="panel-heading log-heading">
-        <div>
-          <span className="section-label">Live transcript</span>
-          <h2 id="log-heading">Execution log</h2>
-        </div>
+        <h2 id="log-heading">Execution log</h2>
         <button
           className="secondary log-copy"
           type="button"

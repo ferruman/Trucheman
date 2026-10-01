@@ -50,7 +50,7 @@ describe("ResultPage EPUBCheck report", () => {
       omittedMessages: 0,
     });
 
-    expect(markup).toContain("Conformance log");
+    expect(markup).toContain("EPUBCheck conformance log");
     expect(markup).toContain("RSC-005");
     expect(markup).toContain("Repair EPUB");
   });

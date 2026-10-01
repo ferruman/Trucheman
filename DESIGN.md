@@ -217,6 +217,10 @@ Corners are precise but not severe: controls use `4px`, panels and dialogs use `
 
 Navigation is compact, persistent, and label-led. Active state uses cyan text and a structural marker plus `aria-current="page"`. No index numbers in front of items: the order carries no information. Links remain recognizable; keyboard focus is always visible.
 
+### Headings
+
+Nothing sits above a heading — no uppercase label or "eyebrow". Context about the thing goes under the heading as a mono meta line (`.page-meta`, like the language route); the way back is a breadcrumb `nav` (`.breadcrumb`). A label that only repeats the heading is deleted. Canonical rule: `../Fabellatrix/DESIGN.md` → Headings.
+
 ### Browser surfaces
 
 Selection is Accent Border behind Cold White; the caret is Command Cyan; scrollbars are Strong Border on Midnight Canvas.

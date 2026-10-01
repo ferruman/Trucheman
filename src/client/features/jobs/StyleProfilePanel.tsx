@@ -60,7 +60,6 @@ export function StyleProfilePanel({ id, onSaved }: { id: string; onSaved: () => 
   return (
     <section className="operation-panel" aria-labelledby="style-profile-heading">
       <div className="panel-heading">
-        <span className="section-label">Preflight</span>
         <h2 id="style-profile-heading">Book style profile</h2>
       </div>
       {!editing && (

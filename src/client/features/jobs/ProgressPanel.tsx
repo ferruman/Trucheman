@@ -65,7 +65,6 @@ export function ProgressPanel({ job }: { job: JobView }) {
       </ol>
       <div className="stage-summary">
         <div>
-          <span className="section-label">Current stage</span>
           <h3>
             {["translation", "editing", "audit", "repair"].includes(job.stage)
               ? job.qualityMode === "high"
