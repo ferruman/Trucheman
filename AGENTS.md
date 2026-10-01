@@ -31,3 +31,7 @@ Recent commits use short, imperative summaries, sometimes with a conventional pr
 ## Agent-Specific Instructions
 
 For code discovery, prefer the repository knowledge graph (`search_graph`, `trace_path`, and `get_code_snippet`) before text search. Preserve unrelated working-tree changes and keep generated artifacts out of commits.
+
+## Lessons from the other tools
+
+[`../LESSONS.md`](../LESSONS.md) (in the Codicora folder this repo sits in) collects what has already gone wrong across all of these tools — model transports, language assumptions, prompt traps — because none of it is covered by the workspace contract and each repo has otherwise learned it alone. Read it before debugging a model call that behaves strangely, and add to it when you find the next one.
