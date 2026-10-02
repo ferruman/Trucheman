@@ -6,9 +6,12 @@ colors:
   surface: "#111722"
   surface-raised: "#171f2d"
   border: "#263041"
+  border-strong: "#46536a"
+  field-border: "#5b6a82"
   text: "#e7edf5"
   text-muted: "#8b98aa"
   accent: "#59c2ff"
+  accent-hover: "#9bdcff"
   accent-soft: "#10283a"
   accent-border: "#245c7d"
   success: "#66d9a3"
@@ -118,6 +121,8 @@ components:
 
 **Creative North Star: "The Command Workbench"**
 
+The tokens and shared components below are a copy of the Codicora command workbench, whose canonical copy is `../Fabellatrix/DESIGN.md` (shared with Chartularius too). A change to a shared token lands there first and here in the same pass.
+
 Trucheman should feel like a precise local tool operated by one person, not a public SaaS dashboard and not a theatrical terminal simulation. Its visual language borrows the legibility, compactness, explicit state, and keyboard confidence of excellent command-line tools while preserving familiar web controls.
 
 The interface is dark, quiet, and information-forward. Hierarchy comes from topology, labels, borders, and typographic contrast rather than cards, illustration, or ornamental effects.
@@ -136,13 +141,16 @@ The palette is a matte midnight work surface with cool text and a single cyan in
 ### Primary
 
 - **Command Cyan** (`#59c2ff`): primary actions, active navigation, focus, and the current pipeline stage.
+- **Cyan Hover** (`#9bdcff`): the hover step of a cyan control or link; never a resting color.
 
 ### Neutral
 
 - **Midnight Canvas** (`#0b0e14`): application background and inset fields.
 - **Workbench Surface** (`#111722`): primary panels and navigation.
 - **Raised Instrument** (`#171f2d`): controls and selected secondary surfaces.
-- **Circuit Border** (`#263041`): structure, separators, and table rules.
+- **Circuit Border** (`#263041`): structure, separators, and table rules — never the only edge of a control.
+- **Strong Border** (`#46536a`): dialogs, status pills, hover on structure, scrollbar thumb.
+- **Field Border** (`#5b6a82`): the resting edge of inputs, selects and textareas; ≥3:1 against canvas, surface and raised surface (WCAG 1.4.11). Hover lifts it to Slate Readout.
 - **Cold White** (`#e7edf5`): primary text.
 - **Slate Readout** (`#8b98aa`): secondary text and inactive metadata.
 
@@ -207,7 +215,15 @@ Corners are precise but not severe: controls use `4px`, panels and dialogs use `
 
 ### Navigation
 
-Navigation is compact, persistent, and label-led. Active state uses cyan text and a structural marker. Links remain recognizable; keyboard focus is always visible.
+Navigation is compact, persistent, and label-led. Active state uses cyan text and a structural marker plus `aria-current="page"`. No index numbers in front of items: the order carries no information. Links remain recognizable; keyboard focus is always visible.
+
+### Headings
+
+Nothing sits above a heading — no uppercase label or "eyebrow". Context about the thing goes under the heading as a mono meta line (`.page-meta`, like the language route); the way back is a breadcrumb `nav` (`.breadcrumb`). A label that only repeats the heading is deleted. Canonical rule: `../Fabellatrix/DESIGN.md` → Headings.
+
+### Browser surfaces
+
+Selection is Accent Border behind Cold White; the caret is Command Cyan; scrollbars are Strong Border on Midnight Canvas.
 
 ### Pipeline and State Snapshot
 

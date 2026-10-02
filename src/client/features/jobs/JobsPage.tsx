@@ -44,10 +44,7 @@ export function JobsPage() {
   return (
     <section className="page jobs-page">
       <header className="page-header">
-        <div>
-          <span className="section-label">Local queue</span>
-          <h1>Translation jobs</h1>
-        </div>
+        <h1>Translation jobs</h1>
         <a className="button-link" href="/new">
           New book
         </a>
@@ -63,7 +60,6 @@ export function JobsPage() {
       )}
       {jobs?.length === 0 && !error && (
         <div className="empty-state">
-          <span className="section-label">Queue empty</span>
           <h2>No translation jobs yet</h2>
           <p>Import an EPUB to inspect its structure and prepare the first run.</p>
           <a className="button-link" href="/new">

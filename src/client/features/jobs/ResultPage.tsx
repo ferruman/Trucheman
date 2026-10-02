@@ -45,7 +45,6 @@ export function ResultPage({
   return (
     <section className="result-panel" aria-labelledby="result-heading">
       <div className="panel-heading">
-        <span className="section-label">Output</span>
         <h2 id="result-heading">Translated EPUB ready</h2>
       </div>
       {!results && !error && <p role="status">Loading validation results…</p>}
@@ -167,10 +166,7 @@ export function ResultPage({
               aria-labelledby="epubcheck-heading"
             >
               <div className="epubcheck-heading">
-                <div>
-                  <span className="section-label">EPUBCheck</span>
-                  <h3 id="epubcheck-heading">Conformance log</h3>
-                </div>
+                <h3 id="epubcheck-heading">EPUBCheck conformance log</h3>
                 <p role="status">{epubCheckSummary(results.epubCheck)}</p>
               </div>
               {!results.epubCheck.ok && (
@@ -201,10 +197,7 @@ export function ResultPage({
           )}
           <section className="usage-section" aria-labelledby="usage-heading">
             <div className="usage-heading">
-              <div>
-                <span className="section-label">Model usage</span>
-                <h3 id="usage-heading">Tokens by pipeline stage</h3>
-              </div>
+              <h3 id="usage-heading">Tokens by pipeline stage</h3>
               <p>
                 <strong>{tokens(results.usage.totals.totalTokens)}</strong> tokens across{" "}
                 {tokens(results.usage.totals.requests)} requests

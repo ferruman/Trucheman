@@ -140,7 +140,11 @@ export function JobPage({ id }: { id: string }) {
     <section className="page job-page">
       <header className="page-header job-header">
         <div>
-          <span className="section-label">Job / {job.id}</span>
+          <nav className="breadcrumb" aria-label="Breadcrumb">
+            <a href="/">Jobs</a>
+            <span aria-hidden="true"> / </span>
+            <span aria-current="page">{job.id}</span>
+          </nav>
           <h1>{job.title}</h1>
           <p className="language-route">
             {job.sourceLanguage.toUpperCase()} <span aria-hidden="true">→</span>{" "}
@@ -190,8 +194,8 @@ export function JobPage({ id }: { id: string }) {
           {!built(job) && (
             <section className="operation-panel" aria-labelledby="operation-heading">
               <div className="panel-heading">
-                <span className="section-label">Active operation</span>
                 <h2 id="operation-heading">{job.stage.replace("_", " ")}</h2>
+                <p className="page-meta">Active operation</p>
               </div>
               <dl className="detail-list">
                 <div>
@@ -220,7 +224,6 @@ export function JobPage({ id }: { id: string }) {
         </div>
         <aside className="job-transcript" aria-labelledby="snapshot-heading">
           <div className="panel-heading">
-            <span className="section-label">Session</span>
             <h2 id="snapshot-heading">Current state snapshot</h2>
           </div>
           <dl className="state-snapshot">

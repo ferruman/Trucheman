@@ -23,9 +23,11 @@ FORM: Command Workbench, approved split-desk composition with the horizontal ins
   --surface-raised: #171f2d;
   --border: #263041;
   --border-strong: #46536a;
+  --field-border: #5b6a82;
   --text: #e7edf5;
   --muted: #8b98aa;
   --accent: #59c2ff;
+  --accent-hover: #9bdcff;
   --accent-soft: #10283a;
   --accent-border: #245c7d;
   --success: #66d9a3;
@@ -48,6 +50,15 @@ FORM: Command Workbench, approved split-desk composition with the horizontal ins
 html {
   min-width: 320px;
   background: var(--canvas);
+  scrollbar-color: var(--border-strong) var(--canvas);
+}
+::selection {
+  background: var(--accent-border);
+  color: var(--text);
+}
+input,
+textarea {
+  caret-color: var(--accent);
 }
 body {
   margin: 0;
@@ -67,7 +78,7 @@ a {
   color: var(--accent);
 }
 a:hover {
-  color: #9bdcff;
+  color: var(--accent-hover);
 }
 
 :focus-visible {
@@ -126,8 +137,7 @@ a:hover {
   gap: 0.25rem;
 }
 .command-rail nav a {
-  display: grid;
-  grid-template-columns: 2rem 1fr;
+  display: flex;
   align-items: center;
   min-height: 2.75rem;
   padding: 0.65rem 1.25rem;
@@ -138,10 +148,6 @@ a:hover {
   text-decoration: none;
   text-transform: uppercase;
 }
-.command-rail nav a span {
-  color: var(--border-strong);
-  font-weight: 400;
-}
 .command-rail nav a:hover {
   color: var(--text);
   background: var(--surface-raised);
@@ -150,9 +156,6 @@ a:hover {
   color: var(--accent);
   border-left-color: var(--accent);
   background: var(--accent-soft);
-}
-.command-rail nav a.active span {
-  color: var(--accent);
 }
 
 .local-status {
@@ -238,6 +241,31 @@ p {
   letter-spacing: 0.07em;
   text-transform: uppercase;
 }
+/* Nothing sits above a heading: context goes under it, the path is a breadcrumb (DESIGN.md → Headings). */
+.page-meta {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font: 0.8125rem/1.4 var(--mono);
+}
+.breadcrumb {
+  margin-bottom: 0.35rem;
+  color: var(--muted);
+  font:
+    0.8125rem/1.4 system-ui,
+    sans-serif;
+}
+.breadcrumb a {
+  color: var(--muted);
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+.breadcrumb a:hover {
+  color: var(--accent-hover);
+  text-decoration-color: currentColor;
+}
+.breadcrumb [aria-current] {
+  font-family: var(--mono);
+}
 .language-route {
   margin: 0.45rem 0 0;
   color: var(--muted);
@@ -274,7 +302,7 @@ button,
 }
 button:hover,
 .button-link:hover {
-  background: #9bdcff;
+  background: var(--accent-hover);
   color: var(--canvas);
 }
 button.secondary {
@@ -955,7 +983,7 @@ textarea {
   width: 100%;
   min-height: 2.75rem;
   padding: 0.65rem 0.75rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 4px;
   background: var(--canvas);
   color: var(--text);
@@ -966,7 +994,7 @@ textarea {
 input:hover,
 select:hover,
 textarea:hover {
-  border-color: var(--border-strong);
+  border-color: var(--muted);
 }
 input:focus,
 select:focus,

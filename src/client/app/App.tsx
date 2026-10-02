@@ -13,11 +13,19 @@ export function App() {
           <span>Trucheman</span>
         </a>
         <nav aria-label="Primary navigation">
-          <a className={path === "/" || path.startsWith("/jobs/") ? "active" : ""} href="/">
-            <span aria-hidden="true">01</span> Jobs
+          <a
+            className={path === "/" || path.startsWith("/jobs/") ? "active" : ""}
+            aria-current={path === "/" || path.startsWith("/jobs/") ? "page" : undefined}
+            href="/"
+          >
+            Jobs
           </a>
-          <a className={path === "/new" ? "active" : ""} href="/new">
-            <span aria-hidden="true">02</span> New book
+          <a
+            className={path === "/new" ? "active" : ""}
+            aria-current={path === "/new" ? "page" : undefined}
+            href="/new"
+          >
+            New book
           </a>
         </nav>
         <div className="local-status">
