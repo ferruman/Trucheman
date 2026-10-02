@@ -31,7 +31,8 @@
 
 The demo uses the deterministic local provider: no API key, network request, or staged mockup. It
 runs the same import, translation, editing, build, validation, and reporting flow used by a live
-provider.
+provider. It was recorded in the dark _workbench_ theme; the app now opens in the light _field_
+theme, and the switch at the foot of the rail flips between the two (remembered per browser).
 
 ## What the pipeline changes
 
