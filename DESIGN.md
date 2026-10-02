@@ -26,6 +26,12 @@ colors:
   danger-text: "#ffb4bd"
   modal-backdrop: "rgb(3 5 8 / 0.78)"
 typography:
+  headline-field:
+    fontFamily: 'Literata, "PT Serif", Georgia, serif'
+    fontSize: "clamp(1.5rem, 3vw, 2.25rem)"
+    fontWeight: 400
+    lineHeight: 1.15
+    letterSpacing: "-0.02em"
   headline:
     fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
     fontSize: "clamp(1.5rem, 3vw, 2.25rem)"
@@ -180,6 +186,10 @@ The palette is a matte midnight work surface with cool text and a single cyan in
 ## Layout
 
 Desktop uses a persistent command rail and a bounded work area. Job screens organize the pipeline, active-stage details, metrics, log, and actions in a clear grid without nesting every region inside a card. Spacing follows a 4/8/12/16/24/32px rhythm. At narrow widths the rail becomes a compact top bar, multi-column areas stack, and tables scroll horizontally without hiding columns.
+
+## Themes
+
+Two worlds share every component; the choice lives on `<html data-theme>` (set in `index.html` before first paint, remembered per browser as `trucheman.theme`, switched from the rail foot — on phones, at the right of the brand row). Everything above describes **workbench**, the dark system. **field** — cream grounds, an olive rail with a chartreuse current marker, burnt-terracotta actions, sentence-case sans controls, headings in Literata 400 (`headline-field`, bundled in `src/client/fonts/literata/` with its OFL licence) — is the pilot default. Its tokens, contrast checks and rules are canonical in `../Fabellatrix/DESIGN.md` → Themes and copied here unchanged; mono stays for data (metrics, logs, table heads, identifiers, the pipeline's stage numbers). Radii (`--r-control`, `--r-panel`), the dialog backdrop and the selection are tokens, so a component carries both worlds unchanged.
 
 ## Elevation & Depth
 

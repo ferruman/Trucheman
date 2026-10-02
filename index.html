@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1.0" />
     <title>Trucheman</title>
+    <script>
+      // Theme before first paint, so the page never flashes the other one. Pilot: "field" by default.
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem("trucheman.theme") || "field";
+      } catch {
+        document.documentElement.dataset.theme = "field";
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
