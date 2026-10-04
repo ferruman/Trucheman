@@ -32,6 +32,9 @@ export function NewJobPage() {
   const [source, setSource] = useState("en");
   const [target, setTarget] = useState("ru");
   const [file, setFile] = useState<File>();
+  const [from, setFrom] = useState<"epub" | "workspace">("epub");
+  const [workspacePath, setWorkspacePath] = useState("");
+  const [workspaceText, setWorkspaceText] = useState<"auto" | "edited" | "manuscript">("auto");
   const [instructions, setInstructions] = useState("");
   const [qualityMode, setQualityMode] = useState<"standard" | "high">("standard");
   const [executionMode, setExecutionMode] = useState<"standard" | "batch">("standard");
@@ -98,7 +101,7 @@ export function NewJobPage() {
     }
   }
 
-  async function prepare(jobId: string, selectedFile: File) {
+  async function prepare(jobId: string, selectedFile: File | undefined) {
     await jobActions.configure(jobId, {
       instructions,
       qualityMode,
@@ -109,15 +112,21 @@ export function NewJobPage() {
         note: entry.note || undefined,
       })),
     });
-    await uploadSource(jobId, selectedFile);
+    if (from === "workspace")
+      await jobActions.linkWorkspace(jobId, workspacePath.trim(), workspaceText);
+    else await uploadSource(jobId, selectedFile!);
     await jobActions.analyze(jobId);
     location.href = `/jobs/${jobId}`;
   }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!file) {
+    if (from === "epub" && !file) {
       setError("Choose an EPUB file first");
+      return;
+    }
+    if (from === "workspace" && !workspacePath.trim()) {
+      setError("Enter the path of the Codicora project folder");
       return;
     }
     if (source === target) {
@@ -139,7 +148,8 @@ export function NewJobPage() {
       let jobId = createdJobId;
       if (!jobId) {
         const job = await api.create({
-          title: title || file.name.replace(/\.epub$/i, ""),
+          // A workspace job takes the project's title unless one was typed.
+          ...(title || file ? { title: title || file!.name.replace(/\.epub$/i, "") } : {}),
           sourceLanguage: source,
           targetLanguage: target,
         });
@@ -159,16 +169,70 @@ export function NewJobPage() {
         <h1>New book</h1>
       </header>
       <form onSubmit={submit} aria-busy={busy}>
-        <label>
-          EPUB file
-          <input
-            disabled={busy}
-            required
-            type="file"
-            accept=".epub,application/epub+zip"
-            onChange={(event) => setFile(event.target.files?.[0])}
-          />
-        </label>
+        <fieldset className="source-choice" disabled={busy || Boolean(createdJobId)}>
+          <legend>Book</legend>
+          <label>
+            <input
+              type="radio"
+              name="from"
+              checked={from === "epub"}
+              onChange={() => setFrom("epub")}
+            />
+            An EPUB file
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="from"
+              checked={from === "workspace"}
+              onChange={() => setFrom("workspace")}
+            />
+            A Codicora project
+          </label>
+        </fieldset>
+        {from === "epub" ? (
+          <label>
+            EPUB file
+            <input
+              disabled={busy}
+              required
+              type="file"
+              accept=".epub,application/epub+zip"
+              onChange={(event) => setFile(event.target.files?.[0])}
+            />
+          </label>
+        ) : (
+          <>
+            <label>
+              Project folder
+              <input
+                disabled={busy}
+                required
+                placeholder="~/books/my-book — the folder with codicora.yaml"
+                value={workspacePath}
+                onChange={(event) => setWorkspacePath(event.target.value)}
+              />
+            </label>
+            <label>
+              Text to translate
+              <select
+                disabled={busy}
+                value={workspaceText}
+                onChange={(event) => setWorkspaceText(event.target.value as typeof workspaceText)}
+              >
+                <option value="auto">
+                  The copy-edited text if there is one, else the manuscript
+                </option>
+                <option value="edited">The copy-edited text (edited/)</option>
+                <option value="manuscript">The manuscript (manuscript/)</option>
+              </select>
+            </label>
+            <p className="field-help">
+              The translation is written back into the project as localization/&lt;language&gt;/,
+              with the same chapters and scenes. The project&rsquo;s own files are never changed.
+            </p>
+          </>
+        )}
         <label>
           Title
           <input

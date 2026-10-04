@@ -35,6 +35,14 @@ export const persistedJobSchema = z.object({
    * actually published, in either order.
    */
   epubRepaired: z.boolean().default(false),
+  /**
+   * Workspace mode: the Codicora project this job translates and the text it read. Completion
+   * exports `localization/<target>/` there. The path stays server-side; the view carries only
+   * which text was read.
+   */
+  workspace: z
+    .object({ path: z.string(), text: z.enum(["edited", "manuscript"]), sourceHash: z.string() })
+    .optional(),
 });
 export type PersistedJob = z.infer<typeof persistedJobSchema>;
 export function validateJob(value: unknown): PersistedJob {
@@ -62,5 +70,6 @@ export function toJobView(job: PersistedJob) {
     warnings: job.warnings,
     qualityMode: job.qualityMode,
     executionMode: job.executionMode,
+    workspaceText: job.workspace?.text,
   });
 }

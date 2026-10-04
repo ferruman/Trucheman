@@ -24,6 +24,8 @@ export const jobViewSchema = z.object({
   warnings: z.number().int().nonnegative(),
   qualityMode: z.enum(QUALITY_MODES),
   executionMode: z.enum(EXECUTION_MODES),
+  /** Set when the job translates a Codicora workspace instead of an uploaded EPUB. */
+  workspaceText: z.enum(["edited", "manuscript"]).optional(),
 });
 export const glossaryEntrySchema = z.object({
   id: z.string(),

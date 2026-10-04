@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { createReadStream } from "node:fs";
-import { access, mkdir, rm } from "node:fs/promises";
+import { access, mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { assertLanguagePair } from "../../shared/languages.js";
@@ -12,12 +12,20 @@ import { problemResponse } from "./problem.js";
 import { DomainError } from "../domain/errors.js";
 import { JobOrchestrator } from "../jobs/job-orchestrator.js";
 import { atomicWrite } from "../storage/atomic-file.js";
+import { isLanguageTag } from "../../shared/languages.js";
+import { buildWorkspaceEpub, readWorkspace } from "../workspace/codicora.js";
 
 const createJobSchema = z
   .object({
     title: z.string().trim().min(1).max(500).default("Untitled book"),
     sourceLanguage: languageSchema.default("en"),
     targetLanguage: languageSchema,
+  })
+  .strict();
+const workspaceSchema = z
+  .object({
+    path: z.string().trim().min(1).max(4096),
+    text: z.enum(["auto", "edited", "manuscript"]).default("auto"),
   })
   .strict();
 const configSchema = z
@@ -157,11 +165,58 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
         stage: "import",
         progress: { translated: 0, edited: 0, total: 0, failed: 0 },
         currentDocument: undefined,
+        // An uploaded EPUB replaces the workspace text, so completion must not export into it.
+        workspace: undefined,
         updatedAt: new Date().toISOString(),
       });
       res.status(204).end();
     } catch (error) {
       console.error("EPUB upload failed", error instanceof Error ? error.message : "unknown error");
+      problemResponse(res, error, req);
+    }
+  });
+  // Workspace mode: the book is a Codicora project on this machine, not an upload. Its text is
+  // wrapped as a synthetic source.epub and from then on the job is an ordinary one.
+  router.put("/:id/workspace", async (req, res) => {
+    try {
+      const { path, text } = parseBody(workspaceSchema, req.body);
+      const job = await repo.get(req.params.id);
+      orchestrator.assertMutable(job.id, job);
+      const book = await readWorkspace(path, text);
+      const sourceLanguage = isLanguageTag(book.language) ? book.language : job.sourceLanguage;
+      validateLanguagePair(sourceLanguage, job.targetLanguage);
+      const root = jobRoot(repo.dataDir, job.id);
+      await mkdir(root, { recursive: true });
+      const base = job.status === "created" ? job : await orchestrator.invalidate(job.id);
+      const temporary = join(root, `source.epub.${process.pid}.tmp`);
+      try {
+        await buildWorkspaceEpub(book, temporary);
+        await atomicWrite(join(root, "source.epub"), await readFile(temporary));
+      } finally {
+        await rm(temporary, { force: true });
+      }
+      await rm(join(root, "run-manifest.json"), { force: true });
+      const next: PersistedJob = {
+        ...base,
+        title: job.title === "Untitled book" ? book.title : job.title,
+        sourceLanguage,
+        status: "created",
+        stage: "import",
+        progress: { translated: 0, edited: 0, total: 0, failed: 0 },
+        currentDocument: undefined,
+        workspace: { path: book.root, text: book.text, sourceHash: book.sourceHash },
+        updatedAt: new Date().toISOString(),
+      };
+      await repo.save(next);
+      res.json(toJobView(next));
+    } catch (error) {
+      problemResponse(res, error, req);
+    }
+  });
+  router.post("/:id/export-workspace", async (req, res) => {
+    try {
+      res.json(await orchestrator.exportWorkspace(req.params.id));
+    } catch (error) {
       problemResponse(res, error, req);
     }
   });

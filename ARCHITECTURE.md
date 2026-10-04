@@ -72,6 +72,12 @@ The legal moves live in the `transitions` table in `src/shared/domain/job.ts`; `
 3. POST `/api/jobs/:id/analyze` runs **analysis**: extracts the EPUB, parses OPF/container, extracts text segments, builds batches, validates the archive → status becomes `ready`
 4. User clicks **Start** → POST `/:id/start` → `src/server/api/jobs.ts`
 
+### 2a. Workspace mode (Codicora)
+
+A job can translate a Codicora project on this machine instead of an uploaded EPUB (`src/server/workspace/codicora.ts`). `PUT /api/jobs/:id/workspace { path, text }` reads `codicora.yaml` and `edited/` — or `manuscript/` when there is no `edited/`, or whichever the author picked — and writes a **synthetic `source.epub`**: one `OEBPS/text/<slug>.xhtml` per chapter, the title as `<h1>`, one `<section data-scene="<id>">` per scene, one `<p>` (or `<hN>`) per paragraph, `*em*`/`**strong**`/line breaks as `<em>`/`<strong>`/`<br/>`. From there the job is an ordinary one: analysis, translation, editing, audit, repair and build do not know where the EPUB came from. Attributes are never segments, so scene ids pass through every stage untouched.
+
+On completion — before the status flips to `completed`, so "complete" already means it is there — the translated `staging/` is read back (`chapterMarkdown`, the inverse of `chapterXhtml`) into `<workspace>/localization/<target>/` in the MANUSCRIPT.md format: same slugs, order and scene markers, translated titles, and `translated_from { text, hash, current, at }` in `manuscript.yaml`. The folder is swapped whole; the project's other folders are never written. `POST /:id/export-workspace` repeats the export. A failed export is a `workspace_export_failed` event, never a failed job. `job.workspace` keeps the path server-side; the view carries only `workspaceText`. An EPUB upload clears the link.
+
 ### 2b. MCP entry point
 
 `src/server/mcp/server.ts` (`npm run mcp`) exposes the job flow to MCP clients over stdio. It is deliberately an HTTP client of the running instance (`TRUCHEMAN_URL`) rather than a second caller of the orchestrator: one job runs process-wide, and the UI, the API and an assistant must all see that one. Each tool maps to the API calls a person would make in the UI; `translate_book` chains create → upload → config → analyze → start and waits for analysis on the single job slot before starting.

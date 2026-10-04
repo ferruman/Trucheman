@@ -168,4 +168,11 @@ export const jobActions = {
   repairEpub: (id: string) =>
     request<AcceptedResponse>(`/jobs/${id}/repair-epub`, { method: "POST" }),
   remove: (id: string) => request<void>(`/jobs/${id}`, { method: "DELETE" }),
+  linkWorkspace: (id: string, path: string, text: "auto" | "edited" | "manuscript") =>
+    request<JobView>(`/jobs/${id}/workspace`, {
+      method: "PUT",
+      body: JSON.stringify({ path, text }),
+    }),
+  exportWorkspace: (id: string) =>
+    request<{ chapters: number }>(`/jobs/${id}/export-workspace`, { method: "POST" }),
 };
