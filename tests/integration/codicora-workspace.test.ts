@@ -157,6 +157,60 @@ describe("workspace mode over HTTP", () => {
     }
   }, 60000);
 
+  it("re-reading the same project keeps the work: only the changed chapter is translated again", async () => {
+    const ws = await workspace(false);
+    const { call, close, dataDir } = await server();
+    const drafts = async (id: string) =>
+      (await readFile(join(dataDir, "jobs", id, "drafts.ndjson"), "utf8").catch(() => ""))
+        .split("\n")
+        .filter(Boolean).length;
+    const run = async (id: string) => {
+      expect((await call("POST", `/${id}/analyze`)).status).toBe(202);
+      await vi.waitFor(
+        async () => expect((await call("GET", `/${id}`)).body.status).toBe("ready"),
+        {
+          timeout: 15000,
+        },
+      );
+      expect((await call("POST", `/${id}/start`)).status).toBe(202);
+      await vi.waitFor(
+        async () => expect((await call("GET", `/${id}`)).body.stage).toBe("complete"),
+        { timeout: 30000 },
+      );
+    };
+    try {
+      const { body: job } = await call("POST", "", { targetLanguage: "ru" });
+      await call("PUT", `/${job.id}/workspace`, { path: ws });
+      await run(job.id);
+      const first = await drafts(job.id);
+      expect(first).toBeGreaterThanOrEqual(2); // one batch per chapter at least
+
+      await writeFile(
+        join(ws, "manuscript", "chapters", "02-night.md"),
+        "No markers here, one implicit scene. Now with a second sentence.\n",
+      );
+      // The run holds the job for a moment after "complete" is saved; a person never sees it.
+      await vi.waitFor(
+        async () => expect((await call("POST", `/${job.id}/refresh-workspace`)).status).toBe(200),
+        { timeout: 10000 },
+      );
+      await run(job.id);
+      expect((await drafts(job.id)) - first).toBe(1); // the edited chapter's single batch, nothing else
+
+      const night = await readFile(
+        join(ws, "localization", "ru", "chapters", "02-night.md"),
+        "utf8",
+      );
+      expect(night).toContain("second sentence");
+      const manifest = parseYaml(
+        await readFile(join(ws, "localization", "ru", "manuscript.yaml"), "utf8"),
+      );
+      expect(manifest.translated_from.current).toBe(true);
+    } finally {
+      await close();
+    }
+  }, 90000);
+
   it("reads manuscript/ when there is no edited/, and refuses a folder that is not a workspace", async () => {
     const ws = await workspace(false);
     const { call, close } = await server();

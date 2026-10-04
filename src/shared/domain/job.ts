@@ -47,6 +47,8 @@ export type JobView = {
   warnings: number;
   qualityMode: QualityMode;
   executionMode: ExecutionMode;
+  /** Set when the job translates a Codicora workspace instead of an uploaded EPUB. */
+  workspaceText?: "edited" | "manuscript";
 };
 export function progressFor(
   translated: number,

@@ -178,42 +178,70 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
   });
   // Workspace mode: the book is a Codicora project on this machine, not an upload. Its text is
   // wrapped as a synthetic source.epub and from then on the job is an ordinary one.
+  /** Wraps the project's text as source.epub and links the job to it (see ARCHITECTURE §2a). */
+  async function linkWorkspace(id: string, path: string, text: "auto" | "edited" | "manuscript") {
+    const job = await repo.get(id);
+    orchestrator.assertMutable(job.id, job);
+    const book = await readWorkspace(path, text);
+    const sourceLanguage = isLanguageTag(book.language) ? book.language : job.sourceLanguage;
+    validateLanguagePair(sourceLanguage, job.targetLanguage);
+    const root = jobRoot(repo.dataDir, job.id);
+    await mkdir(root, { recursive: true });
+    // Re-reading the same project keeps the journals: checkpoints are content-addressed, so the
+    // next run pays only for chapters whose text changed (a chapter's card is in every one of
+    // its keys, so one edited scene retranslates its chapter, not the book). Another project,
+    // or a job that was an EPUB, starts clean.
+    const refresh = job.status !== "created" && job.workspace?.path === book.root;
+    const base = job.status === "created" || refresh ? job : await orchestrator.invalidate(job.id);
+    if (refresh) {
+      await rm(join(root, "output.epub"), { force: true });
+      await rm(join(root, "quality-report.json"), { force: true });
+    }
+    const temporary = join(root, `source.epub.${process.pid}.tmp`);
+    try {
+      await buildWorkspaceEpub(book, temporary);
+      await atomicWrite(join(root, "source.epub"), await readFile(temporary));
+    } finally {
+      await rm(temporary, { force: true });
+    }
+    await rm(join(root, "run-manifest.json"), { force: true });
+    // Names from the story bible seed the glossary preflight (canon-names.json, job-private).
+    const canon = await readCanonNames(book.root);
+    if (canon.length) await atomicWrite(join(root, "canon-names.json"), JSON.stringify(canon));
+    else await rm(join(root, "canon-names.json"), { force: true });
+    const next: PersistedJob = {
+      ...base,
+      title: job.title === "Untitled book" ? book.title : job.title,
+      sourceLanguage,
+      status: "created",
+      stage: "import",
+      progress: { translated: 0, edited: 0, total: 0, failed: 0 },
+      currentDocument: undefined,
+      workspace: { path: book.root, text: book.text, sourceHash: book.sourceHash },
+      updatedAt: new Date().toISOString(),
+    };
+    await repo.save(next);
+    return toJobView(next);
+  }
   router.put("/:id/workspace", async (req, res) => {
     try {
       const { path, text } = parseBody(workspaceSchema, req.body);
+      res.json(await linkWorkspace(req.params.id, path, text));
+    } catch (error) {
+      problemResponse(res, error, req);
+    }
+  });
+  // Re-read the linked project after its text changed; only changed chapters are paid for again.
+  router.post("/:id/refresh-workspace", async (req, res) => {
+    try {
       const job = await repo.get(req.params.id);
-      orchestrator.assertMutable(job.id, job);
-      const book = await readWorkspace(path, text);
-      const sourceLanguage = isLanguageTag(book.language) ? book.language : job.sourceLanguage;
-      validateLanguagePair(sourceLanguage, job.targetLanguage);
-      const root = jobRoot(repo.dataDir, job.id);
-      await mkdir(root, { recursive: true });
-      const base = job.status === "created" ? job : await orchestrator.invalidate(job.id);
-      const temporary = join(root, `source.epub.${process.pid}.tmp`);
-      try {
-        await buildWorkspaceEpub(book, temporary);
-        await atomicWrite(join(root, "source.epub"), await readFile(temporary));
-      } finally {
-        await rm(temporary, { force: true });
-      }
-      await rm(join(root, "run-manifest.json"), { force: true });
-      // Names from the story bible seed the glossary preflight (canon-names.json, job-private).
-      const canon = await readCanonNames(book.root);
-      if (canon.length) await atomicWrite(join(root, "canon-names.json"), JSON.stringify(canon));
-      else await rm(join(root, "canon-names.json"), { force: true });
-      const next: PersistedJob = {
-        ...base,
-        title: job.title === "Untitled book" ? book.title : job.title,
-        sourceLanguage,
-        status: "created",
-        stage: "import",
-        progress: { translated: 0, edited: 0, total: 0, failed: 0 },
-        currentDocument: undefined,
-        workspace: { path: book.root, text: book.text, sourceHash: book.sourceHash },
-        updatedAt: new Date().toISOString(),
-      };
-      await repo.save(next);
-      res.json(toJobView(next));
+      if (!job.workspace)
+        throw new DomainError(
+          "not_workspace_job",
+          "This book was not translated from a workspace",
+          409,
+        );
+      res.json(await linkWorkspace(job.id, job.workspace.path, job.workspace.text));
     } catch (error) {
       problemResponse(res, error, req);
     }

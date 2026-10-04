@@ -9,6 +9,8 @@ type Props = {
   onRetry: () => void;
   onInvalidate: () => void;
   onDelete: () => void;
+  /** Set for a job translating a Codicora project: re-read its text after the author changed it. */
+  onRefreshWorkspace?: () => void;
 };
 
 export function JobControls({
@@ -20,6 +22,7 @@ export function JobControls({
   onRetry,
   onInvalidate,
   onDelete,
+  onRefreshWorkspace,
 }: Props) {
   const busy = busyAction !== "";
   const deletable = status !== "running" && status !== "stopping" && status !== "analyzing";
@@ -59,6 +62,20 @@ export function JobControls({
           Re-run part of the pipeline…
         </button>
       )}
+      {onRefreshWorkspace &&
+        ["ready", "completed", "failed", "needs_attention", "paused"].includes(status) && (
+          <button
+            disabled={busy}
+            className="secondary"
+            type="button"
+            title="Read the project's text again; only chapters that changed are translated again"
+            onClick={onRefreshWorkspace}
+          >
+            {busyAction === "refresh-workspace"
+              ? "Reading the project…"
+              : "Update from the project"}
+          </button>
+        )}
       {deletable && (
         <button disabled={busy} className="danger" type="button" onClick={onDelete}>
           Delete job

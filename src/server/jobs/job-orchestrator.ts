@@ -235,7 +235,13 @@ export class JobOrchestrator {
             );
             const ready: PersistedJob = {
               ...job,
-              sourceFingerprint: await this.sourceFingerprint(jobRoot(this.repo.dataDir, id)),
+              // The fingerprint is the source "as of the last run", and `start` compares against it
+              // before it trusts by-batch-id recovery. Overwriting it here hid a replaced source
+              // whose journals were kept (a re-read workspace): the old translation came back for
+              // the new text. Only a job that never had one takes it from analysis.
+              sourceFingerprint:
+                job.sourceFingerprint ??
+                (await this.sourceFingerprint(jobRoot(this.repo.dataDir, id))),
               status: "ready",
               stage: "analysis",
               progress: { translated: 0, edited: 0, total, failed: 0 },

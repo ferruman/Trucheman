@@ -160,6 +160,15 @@ export function JobPage({ id }: { id: string }) {
           onRetry={() => void act("retry", () => jobActions.retry(id))}
           onInvalidate={() => setInvalidationOpen(true)}
           onDelete={() => setDeletionOpen(true)}
+          onRefreshWorkspace={
+            job.workspaceText
+              ? () =>
+                  void act("refresh-workspace", async () => {
+                    await jobActions.refreshWorkspace(id);
+                    await jobActions.analyze(id);
+                  })
+              : undefined
+          }
         />
       </header>
       <ProgressPanel job={job} />

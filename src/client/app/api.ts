@@ -173,6 +173,8 @@ export const jobActions = {
       method: "PUT",
       body: JSON.stringify({ path, text }),
     }),
+  refreshWorkspace: (id: string) =>
+    request<JobView>(`/jobs/${id}/refresh-workspace`, { method: "POST" }),
   exportWorkspace: (id: string) =>
     request<{ chapters: number }>(`/jobs/${id}/export-workspace`, { method: "POST" }),
 };
