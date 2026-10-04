@@ -13,7 +13,7 @@ import { DomainError } from "../domain/errors.js";
 import { JobOrchestrator } from "../jobs/job-orchestrator.js";
 import { atomicWrite } from "../storage/atomic-file.js";
 import { isLanguageTag } from "../../shared/languages.js";
-import { buildWorkspaceEpub, readWorkspace } from "../workspace/codicora.js";
+import { buildWorkspaceEpub, readCanonNames, readWorkspace } from "../workspace/codicora.js";
 
 const createJobSchema = z
   .object({
@@ -159,6 +159,7 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
       const base = job.status === "created" ? job : await orchestrator.invalidate(job.id);
       await atomicWrite(join(root, "source.epub"), req.body);
       await rm(join(root, "run-manifest.json"), { force: true });
+      await rm(join(root, "canon-names.json"), { force: true });
       await repo.save({
         ...base,
         status: "created",
@@ -196,6 +197,10 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
         await rm(temporary, { force: true });
       }
       await rm(join(root, "run-manifest.json"), { force: true });
+      // Names from the story bible seed the glossary preflight (canon-names.json, job-private).
+      const canon = await readCanonNames(book.root);
+      if (canon.length) await atomicWrite(join(root, "canon-names.json"), JSON.stringify(canon));
+      else await rm(join(root, "canon-names.json"), { force: true });
       const next: PersistedJob = {
         ...base,
         title: job.title === "Untitled book" ? book.title : job.title,

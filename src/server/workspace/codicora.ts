@@ -7,6 +7,7 @@ import { type Element, type Node } from "@xmldom/xmldom";
 import { buildEpub } from "../epub/build.js";
 import { parseXml } from "../epub/xml-dom.js";
 import { DomainError } from "../domain/errors.js";
+import type { CanonName } from "../jobs/consistency-service.js";
 
 /**
  * Workspace mode (Codicora WORKSPACE.md, Imprimeor PRD §7.1): a book's `edited/` or
@@ -102,6 +103,60 @@ export async function readWorkspace(
     sourceHash: `sha256:${hash.digest("hex")}`,
     localizationDir: resolve(root, config.localization?.path ?? "./localization"),
   };
+}
+
+// ---------- names from the story bible ----------
+
+const CANON_CATEGORY: Record<string, string> = {
+  character: "person",
+  location: "place",
+  polity: "place",
+  organization: "organization",
+  term: "term",
+};
+
+/**
+ * Names and aliases from `canon/exports/<book>.json` (Chartularius EXPORT.md): every entity the
+ * slice carries — focus, past and world — whose type names something. An absent or unreadable
+ * export is no names, never an error: most projects have no bible.
+ */
+export async function readCanonNames(path: string): Promise<CanonName[]> {
+  const root = resolve(path.replace(/^~(?=$|\/)/, homedir()));
+  try {
+    const config = ((await yamlFile(join(root, "codicora.yaml"))) ?? {}) as {
+      canon?: { path?: string; book?: string };
+    };
+    const book = config.canon?.book?.replace(/^books\//, "");
+    if (!book) return [];
+    const exported = JSON.parse(
+      await readFile(
+        join(resolve(root, config.canon?.path ?? "./canon"), "exports", `${book}.json`),
+        "utf8",
+      ),
+    ) as unknown;
+    const names = new Map<string, CanonName>();
+    const walk = (value: unknown) => {
+      if (Array.isArray(value)) return value.forEach(walk);
+      if (!value || typeof value !== "object") return;
+      const o = value as { id?: unknown; type?: unknown; name?: unknown; aliases?: unknown };
+      if (
+        typeof o.id === "string" &&
+        typeof o.type === "string" &&
+        typeof o.name === "string" &&
+        CANON_CATEGORY[o.type]
+      ) {
+        const aliases = Array.isArray(o.aliases)
+          ? o.aliases.filter((a): a is string => typeof a === "string" && a.trim() !== "")
+          : [];
+        names.set(o.id, { name: o.name, aliases, category: CANON_CATEGORY[o.type]! });
+      }
+      Object.values(value).forEach(walk);
+    };
+    walk(exported);
+    return [...names.values()];
+  } catch {
+    return [];
+  }
 }
 
 // ---------- Markdown → XHTML ----------

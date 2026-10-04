@@ -162,6 +162,7 @@ SSE is a convenience layer. Persisted REST state remains authoritative. On recon
 - A new book may come from a Codicora project folder instead of an EPUB. Trucheman reads `edited/` when it exists, else `manuscript/`; the author may pick either.
 - The text passes through the same pipeline as an EPUB — translation, the literary edit (the translation's own copy-edit), audit, repair — wrapped as a synthetic EPUB whose scenes keep their ids.
 - On completion the translation is written to `localization/<target>/` in the project, in the `MANUSCRIPT.md` format (same chapter slugs, order and scene markers), with a record of which text and which revision it came from, so Imprimeor can build the translated edition and report a translation older than its original. The project's other folders are never written; the translated EPUB stays downloadable as before.
+- When the project has a story bible (Chartularius export), its names and aliases seed the proper-name analysis, so rare names are not missed and an alias is rendered like the name it belongs to.
 - Not yet: retranslating only the scenes that changed in the original. A changed original is visible through `translated_from.hash`; the whole book is retranslated.
 
 ## 7. Privacy and configuration
