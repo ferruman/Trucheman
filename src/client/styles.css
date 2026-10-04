@@ -6,6 +6,15 @@ FIRST VIEWPORT: A fixed command rail frames the job header; the complete pipelin
 FORM: Command Workbench, approved split-desk composition with the horizontal instrument strip; direction seed 191fee75.
 */
 
+/* Literata 400 for the field theme's headings (SIL OFL 1.1, fonts/literata/OFL.txt). */
+@font-face {
+  font-family: Literata;
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url("./fonts/literata/400.woff") format("woff");
+}
+
 :root {
   color-scheme: dark;
   font-family:
@@ -14,8 +23,8 @@ FORM: Command Workbench, approved split-desk composition with the horizontal ins
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
-  color: #e7edf5;
-  background: #0b0e14;
+  color: var(--text);
+  background: var(--canvas);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   --canvas: #0b0e14;
@@ -41,6 +50,117 @@ FORM: Command Workbench, approved split-desk composition with the horizontal ins
   --danger-border: #6b2a35;
   --danger-text: #ffb4bd;
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --r-control: 4px;
+  --r-panel: 6px;
+  --backdrop: rgb(3 5 8 / 0.78);
+  --selection: var(--accent-border);
+  --selection-text: var(--text);
+}
+
+/* ---------- theme "field": cream paper, olive ink, a chartreuse spark (canonical: ../Fabellatrix/DESIGN.md → Themes) ----------
+   Set on <html data-theme>; the workbench above stays the other theme. Every value here is a token
+   or a scoped override, so the components below carry both worlds unchanged. */
+:root[data-theme="field"] {
+  color-scheme: light;
+  --canvas: #f2ece3;
+  --surface: #faf5f1;
+  --surface-raised: #ebe5d9;
+  --border: #e2ddd1;
+  --border-strong: #b9b3a3;
+  --field-border: #827c67;
+  --text: #0e0f0a;
+  --muted: #5c5e4a;
+  --accent: #a8461f;
+  --accent-hover: #8a3816;
+  --accent-soft: #f5e2d8;
+  --accent-border: #e3b39f;
+  --success: #2f6b3a;
+  --success-soft: #e3eedc;
+  --success-border: #a7c79f;
+  --warning: #8a5a00;
+  --warning-soft: #f6ead0;
+  --warning-border: #dcbc78;
+  --danger: #b3261e;
+  --danger-soft: #f8e1dd;
+  --danger-border: #e3a49b;
+  --danger-text: #8f1f17;
+  --paper: #fffef9;
+  --paper-text: #1d1e16;
+  --paper-muted: #6e6c57;
+  --paper-rule: #e2ddd1;
+  --mark-wrong: #f6d4c8;
+  --mark-known: #a8461f;
+  --r-control: 8px;
+  --r-panel: 12px;
+  --backdrop: rgb(14 15 10 / 0.42);
+  --scrim: rgb(14 15 10 / 0.32);
+  --selection: #e1f079;
+  --selection-text: #0e0f0a;
+}
+/* The rails are an olive field: the tokens are redefined on the element, so everything inside
+   (links, labels, dots, the current marker) turns with them. Chartreuse marks the current place. */
+:root[data-theme="field"] .command-rail {
+  --surface: #3d4128;
+  --surface-raised: #4a4f31;
+  --text: #faf5f1;
+  --muted: #c4c3ad;
+  --border: #555a3c;
+  --border-strong: #7d8260;
+  --accent: #e1f079;
+  --accent-hover: #eef7a6;
+  --accent-soft: #4a4f31;
+  --success: #a9d68c;
+  --warning: #f0c46a;
+  color: var(--text);
+}
+/* Editorial register: sentence-case sans controls, a light serif for headings; mono stays for data. */
+/* Editorial register: sentence-case sans controls, a light serif for headings; mono stays for data —
+   metrics, logs, table heads, identifiers. */
+:root[data-theme="field"] h1 {
+  font-family: Literata, "PT Serif", Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+:root[data-theme="field"] :is(button, .button-link) {
+  font:
+    500 0.875rem/1.3 system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+}
+:root[data-theme="field"] .command-rail nav a {
+  font:
+    500 0.875rem/1.4 system-ui,
+    sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+}
+:root[data-theme="field"] label {
+  font:
+    500 0.8125rem/1.4 system-ui,
+    sans-serif;
+  letter-spacing: 0;
+}
+:root[data-theme="field"] .section-label {
+  font:
+    600 0.75rem/1.4 system-ui,
+    sans-serif;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+:root[data-theme="field"] .status-token {
+  font:
+    600 0.6875rem/1.2 system-ui,
+    sans-serif;
+  letter-spacing: 0.02em;
+}
+:root[data-theme="field"] .local-status strong {
+  font-family: system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  text-transform: none;
 }
 
 * {
@@ -53,8 +173,8 @@ html {
   scrollbar-color: var(--border-strong) var(--canvas);
 }
 ::selection {
-  background: var(--accent-border);
-  color: var(--text);
+  background: var(--selection);
+  color: var(--selection-text);
 }
 input,
 textarea {
@@ -127,7 +247,7 @@ a:hover {
   width: 2.25rem;
   height: 2.25rem;
   border: 1px solid var(--border-strong);
-  border-radius: 4px;
+  border-radius: var(--r-control);
   color: var(--accent);
   font: 600 0.75rem/1 var(--mono);
 }
@@ -160,6 +280,7 @@ a:hover {
 
 .local-status {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.65rem;
   margin-top: auto;
@@ -180,6 +301,10 @@ a:hover {
 }
 .local-status small {
   margin-top: 0.15rem;
+}
+.local-status .theme-toggle {
+  flex: none;
+  margin-top: 0.75rem;
 }
 .status-light {
   width: 0.5rem;
@@ -287,7 +412,7 @@ button,
   min-height: 2.5rem;
   padding: 0.6rem 0.875rem;
   border: 1px solid var(--accent);
-  border-radius: 4px;
+  border-radius: var(--r-control);
   background: var(--accent);
   color: var(--canvas);
   font: 600 0.75rem/1.3 var(--mono);
@@ -348,7 +473,7 @@ button:disabled {
   padding: 0;
   overflow-x: auto;
   border: 1px solid var(--border);
-  border-radius: 6px 6px 0 0;
+  border-radius: var(--r-panel) 6px 0 0;
   background: var(--surface);
   list-style: none;
 }
@@ -550,7 +675,7 @@ code {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(20rem, 0.85fr);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--r-panel);
   overflow: clip;
 }
 .job-primary {
@@ -786,7 +911,7 @@ dd {
 .job-log-panel {
   margin-top: 1rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--r-panel);
   background: var(--surface);
 }
 .log-heading {
@@ -865,7 +990,7 @@ dd {
 
 .job-list-wrap {
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--r-panel);
   overflow: hidden;
 }
 .job-list-head,
@@ -945,7 +1070,7 @@ dd {
 .empty-state {
   padding: clamp(2rem, 7vw, 5rem);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--r-panel);
   background: var(--surface);
 }
 .empty-state h2 {
@@ -984,7 +1109,7 @@ textarea {
   min-height: 2.75rem;
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--field-border);
-  border-radius: 4px;
+  border-radius: var(--r-control);
   background: var(--canvas);
   color: var(--text);
   font:
@@ -1042,7 +1167,7 @@ textarea {
   max-width: 100%;
   overflow-x: auto;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--r-control);
 }
 table {
   width: 100%;
@@ -1082,7 +1207,7 @@ td input {
 [role="alert"] {
   padding: 0.75rem 1rem;
   border: 1px solid var(--danger-border);
-  border-radius: 4px;
+  border-radius: var(--r-control);
   background: var(--danger-soft);
   color: var(--danger-text);
 }
@@ -1093,12 +1218,12 @@ dialog {
   width: min(90vw, 34rem);
   padding: 0;
   border: 1px solid var(--border-strong);
-  border-radius: 6px;
+  border-radius: var(--r-panel);
   background: var(--surface-raised);
   color: var(--text);
 }
 dialog::backdrop {
-  background: rgb(3 5 8 / 0.78);
+  background: var(--backdrop);
 }
 dialog h3,
 dialog p,
@@ -1192,8 +1317,23 @@ dialog .actions {
   .command-rail nav a.active {
     border-bottom-color: var(--accent);
   }
+  /* the top bar keeps only the theme switch from the rail foot, at the brand row's right */
+  .command-rail {
+    position: relative;
+  }
   .local-status {
+    position: absolute;
+    top: 0.85rem;
+    right: 1rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .local-status > :not(.theme-toggle) {
     display: none;
+  }
+  .local-status .theme-toggle {
+    margin-top: 0;
   }
   .workspace {
     padding: 1.5rem 1rem 2.5rem;
