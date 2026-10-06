@@ -42,23 +42,30 @@ const exists = (path: string) =>
     () => false,
   );
 
-/** `edited/` when it exists (WORKSPACE.md: consumers of the finished text prefer it), else `manuscript/`. */
-export async function readWorkspace(
-  path: string,
-  choice: WorkspaceText | "auto" = "auto",
-): Promise<WorkspaceBook> {
+type WorkspaceConfig = {
+  project?: { title?: string; id?: string };
+  manuscript?: { path?: string };
+  edited?: { path?: string };
+  localization?: { path?: string };
+};
+
+async function workspaceConfig(path: string) {
   const root = resolve(path.replace(/^~(?=$|\/)/, homedir()));
-  let config: {
-    project?: { title?: string; id?: string };
-    manuscript?: { path?: string };
-    edited?: { path?: string };
-    localization?: { path?: string };
-  };
+  let config: WorkspaceConfig;
   try {
     config = ((await yamlFile(join(root, "codicora.yaml"))) ?? {}) as typeof config;
   } catch {
     throw new DomainError("workspace_invalid", "No readable codicora.yaml in that folder", 400);
   }
+  return { root, config };
+}
+
+/** `edited/` when it exists (WORKSPACE.md: consumers of the finished text prefer it), else `manuscript/`. */
+export async function readWorkspace(
+  path: string,
+  choice: WorkspaceText | "auto" = "auto",
+): Promise<WorkspaceBook> {
+  const { root, config } = await workspaceConfig(path);
   const dirs: Record<WorkspaceText, string> = {
     edited: resolve(root, config.edited?.path ?? "./edited"),
     manuscript: resolve(root, config.manuscript?.path ?? "./manuscript"),
@@ -82,9 +89,13 @@ export async function readWorkspace(
   if (!Array.isArray(manifest.chapters) || !manifest.chapters.length)
     throw new DomainError("workspace_invalid", `${text}/manuscript.yaml lists no chapters`, 400);
   const chapters: WorkspaceChapter[] = [];
+  const slugs = new Set<string>();
   for (const c of manifest.chapters) {
     if (typeof c.slug !== "string" || !/^[a-z0-9][a-z0-9._-]*$/i.test(c.slug))
       throw new DomainError("workspace_invalid", `${text}: a chapter has no valid slug`, 400);
+    if (slugs.has(c.slug))
+      throw new DomainError("workspace_invalid", `${text}: duplicate chapter slug ${c.slug}`, 400);
+    slugs.add(c.slug);
     const file = typeof c.file === "string" ? c.file : `chapters/${c.slug}.md`;
     chapters.push({
       slug: c.slug,
@@ -296,7 +307,9 @@ export async function exportLocalization(
   targetLanguage: string,
 ): Promise<{ dir: string; chapters: number }> {
   const book = await readWorkspace(link.path, link.text).catch(() => null);
-  const localization = book?.localizationDir ?? resolve(link.path, "localization");
+  // The output path does not depend on whether the original text is still readable.
+  const { root, config } = await workspaceConfig(link.path);
+  const localization = resolve(root, config.localization?.path ?? "./localization");
   const slugs =
     (await readFile(join(stagingRoot, "OEBPS", "content.opf"), "utf8"))
       .match(/href="text\/([^"]+)\.xhtml"/g)
