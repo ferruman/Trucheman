@@ -1,5 +1,5 @@
 import { createServer, type Server } from "node:http";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -44,6 +44,9 @@ beforeAll(async () => {
       };
       if (req.method === "POST" && req.url === "/api/jobs") return reply(201, job("created"));
       if (req.url === "/api/jobs/j1/source") return reply(204);
+      if (req.url === "/api/jobs/j1/workspace") return reply(200, job("created"));
+      if (req.url === "/api/jobs/j1/export-workspace")
+        return reply(200, { language: "en", chapters: 1 });
       if (req.url === "/api/jobs/j1/config") return reply(200, job("created"));
       if (req.url === "/api/jobs/j1/analyze") return reply(202, job("analyzing"));
       if (req.method === "GET" && req.url === "/api/jobs/j1")
@@ -71,7 +74,7 @@ beforeAll(async () => {
     new StdioClientTransport({
       command: process.execPath,
       args: ["--import", "tsx/esm", "src/server/mcp/server.ts"],
-      env: { ...process.env, TRUCHEMAN_URL: base },
+      env: { ...process.env, TRUCHEMAN_URL: base, TRUCHEMAN_MAX_USD_PER_MILLION_CHARS: "20000" },
     }),
   );
 }, 60_000);
@@ -86,12 +89,24 @@ const text = (result: Awaited<ReturnType<Client["callTool"]>>) =>
   (result.content as Array<{ type: string; text: string }>)[0]?.text ?? "";
 
 describe("MCP server over the HTTP API", () => {
+  it("translate_book without confirm only describes the paid run and creates nothing", async () => {
+    const epub = join(root, "book.epub");
+    await writeFile(epub, Buffer.alloc(1234, 1));
+    const before = calls.length;
+    const result = await client.callTool({ name: "translate_book", arguments: { path: epub } });
+    expect(JSON.parse(text(result))).toMatchObject({
+      requires_confirm: true,
+      would_translate: { bytes: 1234, quality: "high" },
+    });
+    expect(calls.length).toBe(before);
+  });
+
   it("translate_book creates, uploads, configures, waits for analysis and starts", async () => {
     const epub = join(root, "book.epub");
     await writeFile(epub, Buffer.alloc(1234, 1));
     const result = await client.callTool({
       name: "translate_book",
-      arguments: { path: epub, quality: "high", instructions: "Keep honorifics." },
+      arguments: { path: epub, quality: "high", instructions: "Keep honorifics.", confirm: true },
     });
     expect(result.isError).toBeFalsy();
     expect(JSON.parse(text(result))).toMatchObject({ id: "j1", status: "running" });
@@ -120,5 +135,116 @@ describe("MCP server over the HTTP API", () => {
     const result = await client.callTool({ name: "job_status", arguments: { jobId: "missing" } });
     expect(result.isError).toBe(true);
     expect(text(result)).toContain("job_not_found: No such job");
+  });
+
+  describe("workspace mode under delegated authority (DELEGATION.md)", () => {
+    let ws: string;
+    const grant = async (allow: string[], extra: Record<string, unknown> = {}) =>
+      writeFile(
+        join(ws, "authority", "delegations.json"),
+        JSON.stringify({
+          schema: "codicora.delegations/0.1",
+          delegations: [
+            {
+              id: "run",
+              workspace: "vec",
+              granted_by: "author",
+              granted_at: new Date(Date.now() - 60_000).toISOString(),
+              expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+              allow,
+              limits: { max_spend: 10, currency: "USD" },
+              ...extra,
+            },
+          ],
+        }),
+      );
+    const call = (args: Record<string, unknown>) =>
+      client.callTool({
+        name: "translate_workspace",
+        arguments: { workspace: ws, targetLanguage: "en", ...args },
+      });
+
+    beforeAll(async () => {
+      ws = join(root, "ws");
+      await mkdir(join(ws, "manuscript", "chapters"), { recursive: true });
+      await mkdir(join(ws, "authority"), { recursive: true });
+      await writeFile(
+        join(ws, "codicora.yaml"),
+        "spec: codicora/v1\nproject:\n  id: vec\n  title: Vec\n",
+      );
+      await writeFile(
+        join(ws, "manuscript", "manuscript.yaml"),
+        "schema_version: 1\nlanguage: ru\nchapters:\n  - slug: ch-01\n    title: Один\n",
+      );
+      await writeFile(
+        join(ws, "manuscript", "chapters", "ch-01.md"),
+        "<!-- scene: s1 -->\n" + "Текст. ".repeat(40),
+      );
+    });
+
+    it("without confirm or delegation: a description with the worst case, nothing created", async () => {
+      const before = calls.length;
+      const plan = JSON.parse(text(await call({})));
+      expect(plan).toMatchObject({
+        requires_confirm: true,
+        would_translate: { chapters: 1, worstCaseUsd: expect.any(Number) },
+      });
+      expect(calls.length).toBe(before);
+    });
+
+    it("refuses a delegation without trucheman.translate, a revoked one, and one whose budget is too small — before any request", async () => {
+      const before = calls.length;
+      await grant(["fabellatrix.generate"]);
+      expect(text(await call({ delegation: "run" }))).toMatch(/does not allow trucheman.translate/);
+      await grant(["trucheman.translate"], {
+        revoked_at: new Date(Date.now() - 1000).toISOString(),
+      });
+      expect(text(await call({ delegation: "run" }))).toMatch(/revoked/);
+      await grant(["trucheman.translate"]);
+      await writeFile(
+        join(ws, "authority", "esgardeor.jsonl"),
+        JSON.stringify({ delegation_id: "run", cost: 9.9, currency: "USD" }) + "\n",
+      );
+      expect(text(await call({ delegation: "run" }))).toMatch(/Over the delegated budget/);
+      await rm(join(ws, "authority", "esgardeor.jsonl"));
+      expect(calls.length).toBe(before);
+    });
+
+    it("a covering delegation runs without confirmation, books the worst case and names the agent", async () => {
+      await grant(["trucheman.translate"]);
+      const before = calls.length;
+      const result = JSON.parse(text(await call({ delegation: "run", quality: "standard" })));
+      expect(result).toMatchObject({
+        status: "running",
+        authority: "delegated",
+        delegation_id: "run",
+      });
+      expect(calls.slice(before).map((c) => c.split(" ").slice(0, 2).join(" "))).toEqual([
+        "POST /api/jobs",
+        "PUT /api/jobs/j1/workspace",
+        "PUT /api/jobs/j1/config",
+        "POST /api/jobs/j1/analyze",
+        "GET /api/jobs/j1",
+        "POST /api/jobs/j1/start",
+      ]);
+      const line = JSON.parse(
+        (await readFile(join(ws, "authority", "trucheman.jsonl"), "utf8")).trim(),
+      );
+      expect(line.delegation_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
+      expect(line).toMatchObject({
+        capability: "trucheman.translate",
+        performed_by: "mcp:test",
+        authority: "delegated",
+        authorized_by: "author",
+        delegation_id: "run",
+        currency: "USD",
+        cost: result.worstCaseUsd,
+      });
+      expect(
+        JSON.parse(
+          text(await client.callTool({ name: "export_workspace", arguments: { jobId: "j1" } })),
+        ),
+      ).toEqual({ language: "en", chapters: 1 });
+    }, 30_000);
   });
 });
