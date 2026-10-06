@@ -1094,6 +1094,45 @@ label {
   font: 600 0.75rem/1.4 var(--mono);
   letter-spacing: 0.025em;
 }
+/* Where the book comes from: an EPUB file or a Codicora project. */
+.source-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.source-choice legend {
+  padding: 0;
+  margin-bottom: 0.4rem;
+  color: var(--muted);
+  font: 600 0.75rem/1.4 var(--mono);
+  letter-spacing: 0.025em;
+}
+.source-choice input[type="radio"] {
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  border-radius: 50%;
+  accent-color: var(--accent);
+}
+.source-choice input[type="radio"]:focus-visible {
+  outline-offset: 2px;
+}
+.source-choice label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text);
+  font:
+    400 0.875rem/1.4 system-ui,
+    sans-serif;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
 .field-help {
   max-width: 72ch;
   color: var(--muted);

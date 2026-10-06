@@ -5,6 +5,7 @@ import type { PersistedJob } from "../domain/job.js";
 import type { InvalidationStage } from "../../shared/domain/job.js";
 import { DomainError } from "../domain/errors.js";
 import { buildEpub } from "../epub/build.js";
+import { exportLocalization } from "../workspace/codicora.js";
 import {
   persistEpubCheckResult,
   readEpubCheckReport,
@@ -234,7 +235,13 @@ export class JobOrchestrator {
             );
             const ready: PersistedJob = {
               ...job,
-              sourceFingerprint: await this.sourceFingerprint(jobRoot(this.repo.dataDir, id)),
+              // The fingerprint is the source "as of the last run", and `start` compares against it
+              // before it trusts by-batch-id recovery. Overwriting it here hid a replaced source
+              // whose journals were kept (a re-read workspace): the old translation came back for
+              // the new text. Only a job that never had one takes it from analysis.
+              sourceFingerprint:
+                job.sourceFingerprint ??
+                (await this.sourceFingerprint(jobRoot(this.repo.dataDir, id))),
               status: "ready",
               stage: "analysis",
               progress: { translated: 0, edited: 0, total, failed: 0 },
@@ -520,6 +527,60 @@ export class JobOrchestrator {
     await this.invalidate(id);
     await this.emit(id, "style_profile_edited", "The book style profile was edited by hand");
     return profile;
+  }
+
+  /**
+   * Writes the translation into the workspace it came from (`localization/<target>/`). Runs on
+   * completion and on demand; a failure is reported as an event and never fails the job — the
+   * translated EPUB is still there to download.
+   */
+  async exportWorkspace(id: string): Promise<{ chapters: number }> {
+    const job = await this.repo.get(id);
+    if (!job.workspace)
+      throw new DomainError(
+        "not_workspace_job",
+        "This book was not translated from a workspace",
+        409,
+      );
+    if (job.stage !== "complete" || !["completed", "needs_attention"].includes(job.status))
+      throw new DomainError("output_not_ready", "The translation is not finished", 409);
+    return this.writeWorkspace(job);
+  }
+
+  private async writeWorkspace(job: PersistedJob): Promise<{ chapters: number }> {
+    const id = job.id;
+    if (!job.workspace)
+      throw new DomainError(
+        "not_workspace_job",
+        "This book was not translated from a workspace",
+        409,
+      );
+    try {
+      const result = await exportLocalization(
+        join(jobRoot(this.repo.dataDir, id), "staging"),
+        job.workspace,
+        job.targetLanguage,
+      );
+      await this.emit(
+        id,
+        "workspace_exported",
+        `Wrote localization/${job.targetLanguage}/ in the workspace`,
+        {
+          chapters: result.chapters,
+        },
+      );
+      return { chapters: result.chapters };
+    } catch (error) {
+      await this.emit(
+        id,
+        "workspace_export_failed",
+        "Could not write the translation into the workspace",
+        {
+          reason: redact(error instanceof Error ? error.message : "unknown error"),
+        },
+      );
+      throw error;
+    }
   }
 
   async rebuild(
@@ -868,6 +929,8 @@ export class JobOrchestrator {
         currentDocument: undefined,
         updatedAt: new Date().toISOString(),
       };
+      // Before the status flips, so "complete" already means the workspace has the translation.
+      if (completed.workspace) await this.writeWorkspace(completed).catch(() => undefined); // its own event says why
       await this.repo.save(completed);
       await writeRunManifest(jobRoot(this.repo.dataDir, id), completed);
       if (degraded.length || unresolvedQuality)

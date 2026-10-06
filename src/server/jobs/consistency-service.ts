@@ -38,6 +38,61 @@ export type EntityEvidence = {
   reading?: string;
 };
 
+/** A name the story bible knows (Codicora canon export): its main form, its aliases, its kind. */
+export type CanonName = { name: string; aliases: string[]; category: string };
+export type CanonEvidence = EntityEvidence & { same_as?: string; category_hint?: string };
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Adds the canon's names to the extracted candidates. The extractor only sees repeated
+ * capitalised words, so a name used once is lost and nothing says that «Тёма» is Артём Гвоздев;
+ * the bible knows both. A name the book never uses is left out — there is nothing to translate.
+ * Aliases carry `same_as` so the registry renders them as one person.
+ */
+export function withCanonNames(
+  entities: EntityEvidence[],
+  documents: ConsistencyDocument[],
+  canon: CanonName[],
+): CanonEvidence[] {
+  const out: CanonEvidence[] = entities.map((entity) => ({ ...entity }));
+  const byKey = new Map(out.map((entity) => [entity.source.toLocaleLowerCase(), entity]));
+  for (const entry of canon) {
+    for (const form of [entry.name, ...entry.aliases]) {
+      const hint = {
+        category_hint: entry.category,
+        ...(form !== entry.name ? { same_as: entry.name } : {}),
+      };
+      const known = byKey.get(form.toLocaleLowerCase());
+      if (known) {
+        Object.assign(known, hint);
+        continue;
+      }
+      // ponytail: inflection by "stem + up to two letters" (Вера → Веру, Гвоздев → Гвоздева);
+      // a language module's morphology would be exact, at the price of one per language.
+      const stem =
+        form.length >= 4 ? `${escapeRegExp(form.slice(0, -1))}\\p{L}{0,3}` : escapeRegExp(form);
+      const pattern = new RegExp(
+        `(?<![\\p{L}\\p{N}])(?:${escapeRegExp(form)}|${stem})(?![\\p{L}\\p{N}])`,
+        "gu",
+      );
+      const contexts: EntityEvidence["contexts"] = [];
+      let occurrences = 0;
+      for (const document of documents)
+        for (const segment of document.sourceSegments) {
+          const hits = segment.text.match(pattern)?.length ?? 0;
+          occurrences += hits;
+          if (hits && contexts.length < 4) contexts.push({ source: clipped(segment.text) });
+        }
+      if (!occurrences) continue;
+      const added: CanonEvidence = { source: form, occurrences, contexts, ...hint };
+      out.push(added);
+      byKey.set(form.toLocaleLowerCase(), added);
+    }
+  }
+  return out;
+}
+
 export type GlossaryEntry = {
   id: string;
   source: string;
@@ -634,12 +689,20 @@ export async function resolveEntityRegistry(
   onProgress?: (done: number, total: number) => Promise<void> | void,
   /** Furigana harvested while preparing the book, keyed by the written form it glossed. */
   readings?: Record<string, string>,
+  /** Names from the Codicora story bible, for a job translating a workspace. */
+  canon?: CanonName[],
 ): Promise<EntityRegistry> {
-  const entities = extractRepeatedSourceEntities(documents, readings).map(
-    ({ source, occurrences, contexts, reading }) => ({
+  const extracted = extractRepeatedSourceEntities(documents, readings);
+  const evidence: CanonEvidence[] = canon?.length
+    ? withCanonNames(extracted, documents, canon)
+    : extracted;
+  const entities = evidence.map(
+    ({ source, occurrences, contexts, reading, same_as, category_hint }) => ({
       source,
       occurrences,
       ...(reading ? { reading } : {}),
+      ...(same_as ? { same_as } : {}),
+      ...(category_hint ? { category_hint } : {}),
       contexts: contexts.map((context) => context.source),
     }),
   );

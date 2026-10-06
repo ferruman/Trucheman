@@ -157,6 +157,14 @@ Show validation status, blocking errors, document-linked warnings, translated an
 
 SSE is a convenience layer. Persisted REST state remains authoritative. On reconnect the client refreshes job state and resumes event replay using `Last-Event-ID`.
 
+### Codicora workspace mode (added 2026-10-04)
+
+- A new book may come from a Codicora project folder instead of an EPUB. Trucheman reads `edited/` when it exists, else `manuscript/`; the author may pick either.
+- The text passes through the same pipeline as an EPUB — translation, the literary edit (the translation's own copy-edit), audit, repair — wrapped as a synthetic EPUB whose scenes keep their ids.
+- On completion the translation is written to `localization/<target>/` in the project, in the `MANUSCRIPT.md` format (same chapter slugs, order and scene markers), with a record of which text and which revision it came from, so Imprimeor can build the translated edition and report a translation older than its original. The project's other folders are never written; the translated EPUB stays downloadable as before.
+- When the project has a story bible (Chartularius export), its names and aliases seed the proper-name analysis, so rare names are not missed and an alias is rendered like the name it belongs to.
+- *Update from the project* re-reads the original after it changed and translates again only the chapters whose text changed; the rest is reused from the previous run. A changed original is visible through `translated_from.hash` (Imprimeor warns `localization-stale`).
+
 ## 7. Privacy and configuration
 
 The server binds to `127.0.0.1` by default. Credentials are loaded only on the server from `.env.local` or a future secret-store adapter. Browser settings expose only `hasApiKey` flags. Credentials and full prompts must not appear in `job.json`, journals, events, logs, HTTP responses, frontend bundles, or output EPUBs. Provider errors are sanitized before persistence and display.

@@ -44,6 +44,7 @@ import {
   runConsistencyPass,
   type ConsistencyDocument,
   type GlossaryEntry,
+  type CanonName,
 } from "./consistency-service.js";
 import { formatStyleProfile, resolveStyleProfile } from "./style-profile-service.js";
 import { formatChapterCard, resolveChapterCards } from "./chapter-card-service.js";
@@ -54,6 +55,15 @@ import {
   repairBatch,
   type QualityFinding,
 } from "./quality-service.js";
+
+/** Names from the Codicora story bible, written when a job is linked to a workspace (absent otherwise). */
+async function readCanon(root: string): Promise<CanonName[] | undefined> {
+  try {
+    return JSON.parse(await readFile(join(root, "canon-names.json"), "utf8")) as CanonName[];
+  } catch {
+    return undefined;
+  }
+}
 
 export type PreparedDocument = {
   id: string;
@@ -349,6 +359,7 @@ export async function runPreparedBook(
         undefined,
         (done, total) => preflight(`Preflight: glossary ${done}/${total}`),
         prepared.readings,
+        await readCanon(root),
       );
       generatedGlossary = registry.entries;
       for (const failure of registry.failedChunks)
