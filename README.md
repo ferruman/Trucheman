@@ -218,7 +218,7 @@ clients, the command is `npm run mcp` with `TRUCHEMAN_URL` pointing at a running
 | `job_status`      | status, stage, batches done                                                         |
 | `job_report`      | validation, EPUBCheck, critic findings and repairs, consistency, usage per model    |
 | `download_output` | save the translated EPUB to a path                                                  |
-| `control_job`     | pause, resume, or retry                                                             |
+| `control_job`     | pause, resume, or retry; a retry pays again for failed work, so it needs `confirm: true`, or `delegation` + `workspace` |
 | `list_jobs`       | every job on this instance                                                          |
 
 The MCP server is a client of the same local HTTP API the browser UI uses; it holds no
@@ -228,9 +228,11 @@ credentials and adds no second way into the pipeline.
 runs without a per-run confirmation when the author's `authority/delegations.json` in that project allows
 `trucheman.translate` and its spending limit covers the worst case. Trucheman records tokens but has no price
 table, so the worst case is the source's characters × `TRUCHEMAN_MAX_USD_PER_MILLION_CHARS` (USD per million
-source characters for the whole pipeline, retries included — set it conservatively); without it a delegation
+source characters for the whole pipeline, its own internal retries included — set it conservatively); without it a delegation
 covers no run and the author confirms directly. The worst case is booked against the shared budget in
-`authority/trucheman.jsonl` when the job starts, with the agent as `performed_by`.
+`authority/trucheman.jsonl` when the job starts, with the agent as `performed_by`. A `control_job` retry
+re-sends work that may already have been paid for, which the first booking does not provably cover: under a
+delegation it books the worst case again, against what is left, and is refused when that does not fit.
 
 The web server refuses requests whose `Host` is not loopback (when bound to loopback, the default) and
 cross-origin writes, so a web page cannot drive a paid job.

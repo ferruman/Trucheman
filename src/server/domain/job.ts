@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { jobViewSchema } from "../../shared/api/schemas.js";
 import { transition, type JobStatus } from "../../shared/domain/job.js";
@@ -55,6 +56,9 @@ export function changeStatus(job: PersistedJob, status: JobStatus): PersistedJob
     updatedAt: new Date().toISOString(),
   };
 }
+export const workspaceRef = (path: string) =>
+  `sha256:${createHash("sha256").update(path, "utf8").digest("hex")}`;
+
 export function toJobView(job: PersistedJob) {
   return jobViewSchema.parse({
     id: job.id,
@@ -71,5 +75,6 @@ export function toJobView(job: PersistedJob) {
     qualityMode: job.qualityMode,
     executionMode: job.executionMode,
     workspaceText: job.workspace?.text,
+    workspaceRef: job.workspace ? workspaceRef(job.workspace.path) : undefined,
   });
 }

@@ -25,6 +25,8 @@ const job = (status: string) => ({
   executionMode: "standard",
 });
 
+// A failed workspace job, for control_job retry under a delegation; its fingerprint is set once the workspace exists.
+let retryRef = "";
 let fake: Server;
 let base: string;
 let client: Client;
@@ -52,6 +54,15 @@ beforeAll(async () => {
       if (req.method === "GET" && req.url === "/api/jobs/j1")
         return reply(200, job(++analyzePolls < 2 ? "analyzing" : "ready"));
       if (req.url === "/api/jobs/j1/start") return reply(202, job("running"));
+      if (req.method === "GET" && req.url === "/api/jobs/j2")
+        return reply(200, {
+          ...job("failed"),
+          id: "j2",
+          workspaceRef: retryRef,
+          workspaceText: "manuscript",
+        });
+      if (req.url === "/api/jobs/j2/retry") return reply(202, { ...job("running"), id: "j2" });
+      if (req.url === "/api/jobs/j1/retry") return reply(202, job("running"));
       if (req.url === "/api/jobs/j1/download") {
         res.writeHead(200, { "content-type": "application/epub+zip" });
         return res.end(Buffer.from("PK-epub-bytes"));
@@ -245,6 +256,55 @@ describe("MCP server over the HTTP API", () => {
           text(await client.callTool({ name: "export_workspace", arguments: { jobId: "j1" } })),
         ),
       ).toEqual({ language: "en", chapters: 1 });
+    }, 30_000);
+
+    it("retry pays again: described without authority, booked again under a delegation, refused when it does not fit", async () => {
+      const { createHash } = await import("node:crypto");
+      const { resolve } = await import("node:path");
+      retryRef = `sha256:${createHash("sha256").update(resolve(ws), "utf8").digest("hex")}`;
+      const retry = (jobId: string, args: Record<string, unknown> = {}) =>
+        client.callTool({
+          name: "control_job",
+          arguments: { jobId, action: "retry", workspace: ws, ...args },
+        });
+      await grant(["trucheman.translate"], { limits: { max_spend: 100, currency: "USD" } });
+      const before = calls.length;
+      expect(JSON.parse(text(await retry("j2")))).toMatchObject({
+        requires_confirm: true,
+        worstCaseUsd: expect.any(Number),
+      });
+      expect(text(await retry("j1", { delegation: "run" }))).toMatch(/EPUB outside any workspace/);
+      const { cp } = await import("node:fs/promises");
+      await cp(ws, join(root, "other"), { recursive: true });
+      expect(
+        text(await retry("j2", { delegation: "run", workspace: join(root, "other") })),
+      ).toMatch(/was not translated from/);
+      await writeFile(
+        join(ws, "authority", "esgardeor.jsonl"),
+        JSON.stringify({ delegation_id: "run", cost: 90, currency: "USD" }) + "\n",
+      );
+      expect(text(await retry("j2", { delegation: "run" }))).toMatch(/Over the delegated budget/);
+      await rm(join(ws, "authority", "esgardeor.jsonl"));
+      expect(calls.slice(before).filter((c) => c.includes("/retry"))).toEqual([]);
+
+      expect(JSON.parse(text(await retry("j2", { delegation: "run" })))).toMatchObject({
+        status: "running",
+        authority: "delegated",
+      });
+      expect(calls.at(-1)).toBe("POST /api/jobs/j2/retry");
+      const lines = (await readFile(join(ws, "authority", "trucheman.jsonl"), "utf8"))
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l));
+      expect(lines.at(-1)).toMatchObject({
+        capability: "trucheman.translate",
+        subject: "retry of job j2",
+        performed_by: "mcp:test",
+        cost_basis: "estimate",
+      });
+      expect(JSON.parse(text(await retry("j1", { confirm: true })))).toMatchObject({
+        authority: "direct",
+      });
     }, 30_000);
   });
 });

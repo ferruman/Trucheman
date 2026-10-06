@@ -17,6 +17,7 @@ import { z } from "zod";
 import { LANGUAGES } from "../../shared/languages.js";
 import { readWorkspace } from "../workspace/codicora.js";
 import { authorize, estimateUsd, journal, CURRENCY } from "./authority.js";
+import { workspaceRef } from "../domain/job.js";
 
 const BASE = (process.env.TRUCHEMAN_URL ?? "http://127.0.0.1:4173").replace(/\/$/, "");
 const TERMINAL = new Set(["completed", "needs_attention", "failed", "paused"]);
@@ -31,6 +32,8 @@ type JobView = {
   warnings: number;
   qualityMode: string;
   executionMode: string;
+  workspaceText?: "edited" | "manuscript";
+  workspaceRef?: string;
 };
 
 async function api<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
@@ -330,11 +333,71 @@ server.registerTool(
   {
     description:
       "pause a running job, resume a paused one, or retry a job that failed or needs " +
-      "attention. Completed checkpoints are reused; only unfinished work is paid for again.",
-    inputSchema: { jobId: z.string(), action: z.enum(["pause", "resume", "retry"]) },
+      "attention. Completed checkpoints are reused; only unfinished work is paid for again. " +
+      "pause and resume continue what was authorized. retry pays again for work that failed, so it is a new paid " +
+      "decision: confirm: true after the author said yes, or delegation (a workspace job only) whose remaining " +
+      "limit covers the worst case again (pass the workspace too); without either it only says what the retry could cost.",
+    inputSchema: {
+      jobId: z.string(),
+      action: z.enum(["pause", "resume", "retry"]),
+      confirm: z.boolean().default(false).describe("retry: the author's yes to paying again"),
+      delegation: z
+        .string()
+        .optional()
+        .describe("retry, instead of confirm: the author's delegation (trucheman.translate)"),
+      workspace: z
+        .string()
+        .optional()
+        .describe("retry: the project folder the job was translated from"),
+    },
   },
-  async ({ jobId, action }) =>
-    text(summary(await api<JobView>(`/jobs/${jobId}/${action}`, { method: "POST" }))),
+  async ({ jobId, action, confirm, delegation, workspace }) => {
+    if (action !== "retry")
+      return text(summary(await api<JobView>(`/jobs/${jobId}/${action}`, { method: "POST" })));
+    // A retry re-sends failed work, which may have been paid for once already: the worst case booked at the start
+    // does not provably cover it, so it is booked again against what is left (DELEGATION.md §4).
+    const job = await api<JobView>(`/jobs/${jobId}`);
+    let estimate: number | null = null;
+    let root: string | null = null;
+    if (job.workspaceRef && workspace) {
+      const book = await readWorkspace(workspace, job.workspaceText ?? "auto");
+      if (workspaceRef(book.root) !== job.workspaceRef)
+        throw new Error(
+          `Job ${jobId} was not translated from ${book.root}; a delegation there does not cover it.`,
+        );
+      estimate = estimateUsd(book.chapters.reduce((n, c) => n + c.title.length + c.text.length, 0));
+      root = book.root;
+    }
+    if (!confirm && !delegation)
+      return text({
+        requires_confirm: true,
+        retry: summary(job),
+        worstCaseUsd: estimate,
+        note: "A retry pays again for failed work. Show this to the author; call again with confirm: true after they agree, or with delegation (and workspace) when they delegated trucheman.translate.",
+      });
+    if (!confirm && !job.workspaceRef)
+      throw new Error(
+        "This job translates an EPUB outside any workspace: there is no delegation to consult, so the author must confirm the retry directly.",
+      );
+    if (!confirm && !root)
+      throw new Error(
+        "Pass workspace: the project folder this job was translated from, where the delegation lives.",
+      );
+    const granted = confirm
+      ? null
+      : await authorize(root!, delegation!, "trucheman.translate", estimate);
+    const view = await api<JobView>(`/jobs/${jobId}/retry`, { method: "POST" });
+    if (granted)
+      await journal(granted, {
+        capability: "trucheman.translate",
+        performed_by: actor(),
+        subject: `retry of job ${jobId}`,
+        cost: estimate,
+        currency: CURRENCY,
+        cost_basis: "estimate",
+      });
+    return text({ ...summary(view), authority: granted ? "delegated" : "direct" });
+  },
 );
 
 await server.connect(new StdioServerTransport());
