@@ -16,7 +16,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { LANGUAGES } from "../../shared/languages.js";
 import { readWorkspace } from "../workspace/codicora.js";
-import { authorize, estimateUsd, journal, CURRENCY } from "./authority.js";
+import { authorize, delegationHash, estimateUsd, journal, release, reserve, type Granted } from "./authority.js";
 import { workspaceRef } from "../domain/job.js";
 
 const BASE = (process.env.TRUCHEMAN_URL ?? "http://127.0.0.1:4173").replace(/\/$/, "");
@@ -169,6 +169,20 @@ async function analyzeAndStart(id: string) {
 
 // mcp:<client> from the initialize handshake (DELEGATION.md §1); the agent is never recorded as the author.
 const actor = () => `mcp:${server.server.getClientVersion()?.name ?? "unknown"}`;
+// What the job carries and Trucheman re-checks before each paid call: the author's yes, or the delegation.
+const jobAuthority = (granted: Granted | null, reservation_id?: string) =>
+  granted
+    ? {
+        authority: "delegated",
+        performed_by: actor(),
+        authorized_by: granted.delegation.granted_by,
+        delegation_id: granted.delegation.id,
+        delegation_hash: delegationHash(granted.delegation),
+        capability: "trucheman.translate",
+        ...(granted.delegation.workspace ? { workspace_id: granted.delegation.workspace } : {}),
+        ...(reservation_id ? { reservation_id } : {}),
+      }
+    : { authority: "direct", performed_by: actor() };
 
 server.registerTool(
   "translate_workspace",
@@ -221,28 +235,39 @@ server.registerTool(
         would_translate: plan,
         note: "Paid. Show this to the author; call again with confirm: true after they agree, or with delegation when they delegated trucheman.translate.",
       });
-    const granted = confirm
+    // The worst case is reserved before anything is dispatched, under the shared budget lock (DELEGATION.md §4):
+    // Trucheman knows tokens, not prices, so the reservation stays the cost of record.
+    const booked = confirm
       ? null
-      : await authorize(book.root, delegation!, "trucheman.translate", estimate);
-    const job = await api<JobView>(
-      "/jobs",
-      json("POST", { title: book.title, sourceLanguage: book.language || "en", targetLanguage }),
-    );
-    await api(`/jobs/${job.id}/workspace`, json("PUT", { path: book.root, text: choice }));
-    await api(
-      `/jobs/${job.id}/config`,
-      json("PUT", { qualityMode: quality, ...(instructions ? { instructions } : {}) }),
-    );
-    const started = await analyzeAndStart(job.id);
-    // The worst case is booked against the budget at the start: Trucheman knows tokens, not prices.
+      : await reserve(book.root, delegation!, "trucheman.translate", estimate, {
+          performed_by: actor(),
+          subject: `translation → localization/${targetLanguage}`,
+        });
+    const granted = booked?.granted ?? null;
+    let started: JobView;
+    let job: JobView | null = null;
+    try {
+      job = await api<JobView>(
+        "/jobs",
+        json("POST", { title: book.title, sourceLanguage: book.language || "en", targetLanguage }),
+      );
+      await api(`/jobs/${job.id}/workspace`, json("PUT", { path: book.root, text: choice }));
+      await api(
+        `/jobs/${job.id}/config`,
+        json("PUT", { qualityMode: quality, ...(instructions ? { instructions } : {}) }),
+      );
+      await api(`/jobs/${job.id}/authority`, json("PUT", jobAuthority(granted, booked?.reservation_id)));
+      started = await analyzeAndStart(job.id);
+    } catch (error) {
+      if (booked) await release(booked.granted, booked.reservation_id);
+      throw error;
+    }
     if (granted)
       await journal(granted, {
         capability: "trucheman.translate",
         performed_by: actor(),
         subject: `job ${job.id} → localization/${targetLanguage}`,
-        cost: estimate,
-        currency: CURRENCY,
-        cost_basis: "estimate",
+        reservation_id: booked!.reservation_id,
       });
     return text({
       ...summary(started),
@@ -334,26 +359,42 @@ server.registerTool(
     description:
       "pause a running job, resume a paused one, or retry a job that failed or needs " +
       "attention. Completed checkpoints are reused; only unfinished work is paid for again. " +
-      "pause and resume continue what was authorized. retry pays again for work that failed, so it is a new paid " +
+      "resume continues under the job's own authority, which Trucheman checks again before every paid call: when the " +
+      "delegation it ran under expired or was revoked, resume is refused — pass confirm: true (the author agreed) or " +
+      "a current delegation with workspace to continue. retry pays again for work that failed, so it is a new paid " +
       "decision: confirm: true after the author said yes, or delegation (a workspace job only) whose remaining " +
       "limit covers the worst case again (pass the workspace too); without either it only says what the retry could cost.",
     inputSchema: {
       jobId: z.string(),
       action: z.enum(["pause", "resume", "retry"]),
-      confirm: z.boolean().default(false).describe("retry: the author's yes to paying again"),
+      confirm: z.boolean().default(false).describe("retry or resume: the author's yes to paying again / continuing"),
       delegation: z
         .string()
         .optional()
-        .describe("retry, instead of confirm: the author's delegation (trucheman.translate)"),
+        .describe("retry or resume, instead of confirm: the author's delegation (trucheman.translate)"),
       workspace: z
         .string()
         .optional()
-        .describe("retry: the project folder the job was translated from"),
+        .describe("retry or resume with a delegation: the project folder the job was translated from"),
     },
   },
   async ({ jobId, action, confirm, delegation, workspace }) => {
-    if (action !== "retry")
-      return text(summary(await api<JobView>(`/jobs/${jobId}/${action}`, { method: "POST" })));
+    if (action === "pause")
+      return text(summary(await api<JobView>(`/jobs/${jobId}/pause`, { method: "POST" })));
+    if (action === "resume") {
+      // Resuming sends new paid calls: the job's own authority must still hold — Trucheman checks it and refuses
+      // when it lapsed. confirm or a delegation (with workspace) replaces it for the rest of the job.
+      if (confirm) await api(`/jobs/${jobId}/authority`, json("PUT", jobAuthority(null)));
+      else if (delegation) {
+        if (!workspace) throw new Error("Pass workspace: the project folder this job was translated from, where the delegation lives.");
+        const job = await api<JobView>(`/jobs/${jobId}`);
+        const book = await readWorkspace(workspace, job.workspaceText ?? "auto");
+        if (workspaceRef(book.root) !== job.workspaceRef)
+          throw new Error(`Job ${jobId} was not translated from ${book.root}; a delegation there does not cover it.`);
+        await api(`/jobs/${jobId}/authority`, json("PUT", jobAuthority(await authorize(book.root, delegation, "trucheman.translate", 0))));
+      }
+      return text(summary(await api<JobView>(`/jobs/${jobId}/resume`, { method: "POST" })));
+    }
     // A retry re-sends failed work, which may have been paid for once already: the worst case booked at the start
     // does not provably cover it, so it is booked again against what is left (DELEGATION.md §4).
     const job = await api<JobView>(`/jobs/${jobId}`);
@@ -383,18 +424,27 @@ server.registerTool(
       throw new Error(
         "Pass workspace: the project folder this job was translated from, where the delegation lives.",
       );
-    const granted = confirm
+    const booked = confirm
       ? null
-      : await authorize(root!, delegation!, "trucheman.translate", estimate);
-    const view = await api<JobView>(`/jobs/${jobId}/retry`, { method: "POST" });
+      : await reserve(root!, delegation!, "trucheman.translate", estimate, {
+          performed_by: actor(),
+          subject: `retry of job ${jobId}`,
+        });
+    const granted = booked?.granted ?? null;
+    let view: JobView;
+    try {
+      await api(`/jobs/${jobId}/authority`, json("PUT", jobAuthority(granted, booked?.reservation_id)));
+      view = await api<JobView>(`/jobs/${jobId}/retry`, { method: "POST" });
+    } catch (error) {
+      if (booked) await release(booked.granted, booked.reservation_id);
+      throw error;
+    }
     if (granted)
       await journal(granted, {
         capability: "trucheman.translate",
         performed_by: actor(),
         subject: `retry of job ${jobId}`,
-        cost: estimate,
-        currency: CURRENCY,
-        cost_basis: "estimate",
+        reservation_id: booked!.reservation_id,
       });
     return text({ ...summary(view), authority: granted ? "delegated" : "direct" });
   },

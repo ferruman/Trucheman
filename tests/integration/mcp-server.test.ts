@@ -50,6 +50,8 @@ beforeAll(async () => {
       if (req.url === "/api/jobs/j1/export-workspace")
         return reply(200, { language: "en", chapters: 1 });
       if (req.url === "/api/jobs/j1/config") return reply(200, job("created"));
+      if (req.method === "PUT" && /^\/api\/jobs\/j[12]\/authority$/.test(req.url ?? ""))
+        return reply(200, job("created"));
       if (req.url === "/api/jobs/j1/analyze") return reply(202, job("analyzing"));
       if (req.method === "GET" && req.url === "/api/jobs/j1")
         return reply(200, job(++analyzePolls < 2 ? "analyzing" : "ready"));
@@ -234,13 +236,17 @@ describe("MCP server over the HTTP API", () => {
         "POST /api/jobs",
         "PUT /api/jobs/j1/workspace",
         "PUT /api/jobs/j1/config",
+        "PUT /api/jobs/j1/authority",
         "POST /api/jobs/j1/analyze",
         "GET /api/jobs/j1",
         "POST /api/jobs/j1/start",
       ]);
-      const line = JSON.parse(
-        (await readFile(join(ws, "authority", "trucheman.jsonl"), "utf8")).trim(),
-      );
+      const [reserved, line] = (await readFile(join(ws, "authority", "trucheman.jsonl"), "utf8"))
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l));
+      // The worst case was reserved before the job was created and started (DELEGATION.md §4).
+      expect(reserved).toMatchObject({ event: "reserve", amount: result.worstCaseUsd, currency: "USD", delegation_id: "run" });
       expect(line.delegation_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
       expect(line).toMatchObject({
         capability: "trucheman.translate",
@@ -248,8 +254,7 @@ describe("MCP server over the HTTP API", () => {
         authority: "delegated",
         authorized_by: "author",
         delegation_id: "run",
-        currency: "USD",
-        cost: result.worstCaseUsd,
+        reservation_id: reserved.reservation_id,
       });
       expect(
         JSON.parse(
@@ -296,11 +301,12 @@ describe("MCP server over the HTTP API", () => {
         .trim()
         .split("\n")
         .map((l) => JSON.parse(l));
+      expect(lines.at(-2)).toMatchObject({ event: "reserve", subject: "retry of job j2", amount: expect.any(Number) });
       expect(lines.at(-1)).toMatchObject({
         capability: "trucheman.translate",
         subject: "retry of job j2",
         performed_by: "mcp:test",
-        cost_basis: "estimate",
+        reservation_id: lines.at(-2).reservation_id,
       });
       expect(JSON.parse(text(await retry("j1", { confirm: true })))).toMatchObject({
         authority: "direct",

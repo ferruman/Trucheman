@@ -3,8 +3,8 @@
  * `authority/delegations.json` in the workspace is read here, judged here, and what was done under it
  * is appended to `authority/trucheman.jsonl`. No other tool is asked anything.
  */
-import { appendFile, mkdir, readFile, readdir } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { appendFile, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 
@@ -67,23 +67,87 @@ function invalid(d: Delegation, ws: string | undefined, now: number): string | n
   return null;
 }
 
-/** Spent under `id`, all tools together, in `currency` (DELEGATION.md §4). */
-async function spentUnder(dir: string, id: string, currency: string) {
-  let total = 0;
+/**
+ * Spent under `id`, all tools together, in `currency` (DELEGATION.md §4): settled reservations at their actual cost,
+ * open ones at their whole amount (the work may have been billed and nobody wrote down what it cost), and the `cost`
+ * of action lines written before reservations existed.
+ */
+export async function spentUnder(dir: string, id: string, currency: string) {
+  const lines: Record<string, unknown>[] = [];
   for (const name of (await readdir(dir).catch(() => [] as string[])).filter((n) =>
     n.endsWith(".jsonl"),
   )) {
     for (const line of (await readFile(join(dir, name), "utf8")).split("\n")) {
       try {
-        const r = JSON.parse(line) as { delegation_id?: string; currency?: string; cost?: unknown };
-        if (r.delegation_id === id && r.currency === currency && typeof r.cost === "number")
-          total += r.cost;
+        const r = JSON.parse(line) as unknown;
+        if (r && typeof r === "object") lines.push(r as Record<string, unknown>);
       } catch {
         /* blank or foreign line */
       }
     }
   }
+  const settled = new Map(
+    lines
+      .filter((r) => r.event === "settle" && typeof r.cost === "number")
+      .map((r) => [r.reservation_id, r.cost as number]),
+  );
+  let total = 0;
+  for (const r of lines) {
+    if (r.delegation_id !== id || r.currency !== currency) continue;
+    if (r.event === "reserve" && typeof r.amount === "number")
+      total += settled.get(r.reservation_id) ?? r.amount;
+    else if (r.event === undefined && typeof r.cost === "number") total += r.cost;
+  }
   return total;
+}
+
+// authority/.budget.lock is held only while a reservation is checked and written, never while a job runs.
+// ponytail: a lock older than 30 s is a crashed holder and is broken; two waiters breaking the same stale lock
+// at once could both proceed — that needs a crash and a race together.
+async function withBudgetLock<T>(dir: string, fn: () => Promise<T>): Promise<T> {
+  await mkdir(dir, { recursive: true });
+  const lock = join(dir, ".budget.lock");
+  for (const started = Date.now(); ; ) {
+    try {
+      await mkdir(lock);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const age =
+        Date.now() -
+        (await stat(lock).then(
+          (s) => s.mtimeMs,
+          () => Date.now(),
+        ));
+      if (age > 30_000) {
+        await rm(lock, { recursive: true, force: true });
+        continue;
+      }
+      if (Date.now() - started > 10_000)
+        throw new Error("The budget lock authority/.budget.lock stayed held for 10 s; try again.");
+      await new Promise((r) => setTimeout(r, 5 + Math.random() * 20));
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    await rm(lock, { recursive: true, force: true });
+  }
+}
+
+/** Why delegation `id` does not cover `capability` in the workspace at `root` at `now`; null when it does. */
+export async function delegationProblem(
+  root: string,
+  id: string,
+  capability: string,
+  now = Date.now(),
+): Promise<string | null> {
+  try {
+    await authorize(root, id, capability, 0, now);
+    return null;
+  } catch (error) {
+    return (error as Error).message;
+  }
 }
 
 export type Granted = { delegation: Delegation; dir: string; spent: number };
@@ -138,6 +202,32 @@ export async function authorize(
       `Over the delegated budget: ${spent.toFixed(2)} spent + ${estimate.toFixed(2)} worst case > ${max} ${CURRENCY}. Ask the author for ${(spent + estimate - max).toFixed(2)} ${CURRENCY} more (a new delegation) or to confirm directly.`,
     );
   return { delegation: d, dir, spent };
+}
+
+/**
+ * Book `amount` against the delegation before the work it pays for is dispatched: under the budget lock the
+ * delegation is read again and every tool's spending and open reservations are added up, so two jobs cannot
+ * together reserve past the limit. Trucheman knows tokens, not prices, so the worst case is never settled to a
+ * lower actual cost — only to zero when nothing was dispatched.
+ */
+export async function reserve(
+  root: string,
+  id: string,
+  capability: string,
+  amount: number | null,
+  record: Record<string, unknown>,
+): Promise<{ granted: Granted; reservation_id: string }> {
+  const first = await authorize(root, id, capability, 0);
+  return withBudgetLock(first.dir, async () => {
+    const granted = await authorize(root, id, capability, amount);
+    const reservation_id = `trucheman:${randomUUID()}`;
+    await journal(granted, { event: "reserve", reservation_id, capability, ...record, amount, currency: CURRENCY });
+    return { granted, reservation_id };
+  });
+}
+
+export async function release(g: Granted, reservation_id: string) {
+  await journal(g, { event: "settle", reservation_id, cost: 0, currency: CURRENCY, note: "nothing was dispatched" });
 }
 
 export async function journal(g: Granted, record: Record<string, unknown>) {

@@ -2,6 +2,21 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { jobViewSchema } from "../../shared/api/schemas.js";
 import { transition, type JobStatus } from "../../shared/domain/job.js";
+export const authoritySchema = z.discriminatedUnion("authority", [
+  z.object({ authority: z.literal("direct"), performed_by: z.string().min(1) }).strict(),
+  z
+    .object({
+      authority: z.literal("delegated"),
+      performed_by: z.string().min(1),
+      authorized_by: z.string().min(1),
+      delegation_id: z.string().min(1),
+      delegation_hash: z.string().min(1),
+      capability: z.string().min(1),
+      workspace_id: z.string().min(1).optional(),
+      reservation_id: z.string().min(1).optional(),
+    })
+    .strict(),
+]);
 export const persistedJobSchema = z.object({
   version: z.literal(1),
   id: z.string(),
@@ -44,8 +59,15 @@ export const persistedJobSchema = z.object({
   workspace: z
     .object({ path: z.string(), text: z.enum(["edited", "manuscript"]), sourceHash: z.string() })
     .optional(),
+  /**
+   * Under which authority the job's paid work runs (DELEGATION.md §2). Launching a job under a delegation
+   * does not make it ambient permission: before every model call the delegation is read again, and an
+   * expired, revoked or narrowed one stops the next call. Absent: a person started it (the screen, a CLI).
+   */
+  authority: authoritySchema.optional(),
 });
 export type PersistedJob = z.infer<typeof persistedJobSchema>;
+export type JobAuthority = z.infer<typeof authoritySchema>;
 export function validateJob(value: unknown): PersistedJob {
   return persistedJobSchema.parse(value);
 }

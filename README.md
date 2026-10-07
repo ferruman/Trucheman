@@ -229,8 +229,12 @@ runs without a per-run confirmation when the author's `authority/delegations.jso
 `trucheman.translate` and its spending limit covers the worst case. Trucheman records tokens but has no price
 table, so the worst case is the source's characters × `TRUCHEMAN_MAX_USD_PER_MILLION_CHARS` (USD per million
 source characters for the whole pipeline, its own internal retries included — set it conservatively); without it a delegation
-covers no run and the author confirms directly. The worst case is booked against the shared budget in
-`authority/trucheman.jsonl` when the job starts, with the agent as `performed_by`. A `control_job` retry
+covers no run and the author confirms directly. The worst case is reserved against the shared budget in
+`authority/trucheman.jsonl` before the job is created and started (under the suite's budget lock, so two runs
+cannot together exceed the limit), with the agent as `performed_by`. The job carries that authority: before every
+model call — and before a start, resume or retry — Trucheman re-reads the delegation, and a delegation that
+expired, was revoked or was edited since refuses the next call and says why. `resume` then needs `confirm: true`
+or a current `delegation` + `workspace`. A `control_job` retry
 re-sends work that may already have been paid for, which the first booking does not provably cover: under a
 delegation it books the worst case again, against what is left, and is refused when that does not fit.
 
