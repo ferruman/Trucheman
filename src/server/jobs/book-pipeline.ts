@@ -35,6 +35,7 @@ import { sourceLanguageCapabilities } from "../languages/registry.js";
 import { LANGUAGES } from "../../shared/languages.js";
 import { buildSegmentScanReport, runQualityPipeline, type RunnerStage } from "./job-runner.js";
 import { scanSegment, type SegmentDefect } from "./segment-scan.js";
+import { assertAuthority } from "../workspace/authority.js";
 import { UsageTrackingProvider } from "./usage-service.js";
 import type { PersistedJob } from "../domain/job.js";
 import { atomicJson, syncParentDirectory } from "../storage/atomic-file.js";
@@ -308,7 +309,10 @@ export async function runPreparedBook(
         executionMode: batchMode ? "batch" : "standard",
       });
   gateway?.validateProfiles(profiles);
-  const provider = new UsageTrackingProvider(overrides?.provider ?? gateway!, root);
+  // Every model call re-reads the job's delegation first: an expired or revoked one stops the next call.
+  const provider = new UsageTrackingProvider(overrides?.provider ?? gateway!, root, undefined, () =>
+    assertAuthority(job),
+  );
   const sourceLanguage = providerLanguage(job.sourceLanguage),
     targetLanguage = providerLanguage(job.targetLanguage);
   const sourceDocuments = prepared.documents.map((document) => ({

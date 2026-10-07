@@ -7,7 +7,7 @@ import { assertLanguagePair } from "../../shared/languages.js";
 import { glossaryEntrySchema, languageSchema } from "../../shared/api/schemas.js";
 import { newJobId, jobRoot } from "../storage/job-paths.js";
 import { type JobRepository } from "../storage/job-repository.js";
-import { type PersistedJob, toJobView } from "../domain/job.js";
+import { authoritySchema, type PersistedJob, toJobView } from "../domain/job.js";
 import { problemResponse } from "./problem.js";
 import { DomainError } from "../domain/errors.js";
 import { JobOrchestrator } from "../jobs/job-orchestrator.js";
@@ -223,6 +223,21 @@ export function jobsRouter(repo: JobRepository, orchestrator: JobOrchestrator) {
     await repo.save(next);
     return toJobView(next);
   }
+  // Which authority the job's paid work runs under; replaced by whoever continues it (MCP confirm or delegation).
+  router.put("/:id/authority", async (req, res) => {
+    try {
+      const parsed = authoritySchema.safeParse(req.body);
+      if (!parsed.success)
+        throw new DomainError("invalid_request", parsed.error.issues.map((i) => i.message).join("; "), 400);
+      const job = await repo.get(req.params.id);
+      orchestrator.assertMutable(job.id, job);
+      const next: PersistedJob = { ...job, authority: parsed.data, updatedAt: new Date().toISOString() };
+      await repo.save(next);
+      res.json(toJobView(next));
+    } catch (error) {
+      problemResponse(res, error, req);
+    }
+  });
   router.put("/:id/workspace", async (req, res) => {
     try {
       const { path, text } = parseBody(workspaceSchema, req.body);
