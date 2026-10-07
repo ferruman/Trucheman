@@ -23,6 +23,7 @@ import {
   type ValidationReport,
 } from "../epub/validate.js";
 import { prepareBook, runPreparedBook } from "./book-pipeline.js";
+import { assertAuthority } from "../workspace/authority.js";
 import type { JobRepository } from "../storage/job-repository.js";
 import { jobRoot } from "../storage/job-paths.js";
 import { readJournal } from "../storage/ndjson-journal.js";
@@ -306,6 +307,8 @@ export class JobOrchestrator {
           "Analyze the uploaded EPUB before starting",
           409,
         );
+      // Start, resume and retry all dispatch new paid work: the job's authority must still hold (DELEGATION.md §2).
+      await assertAuthority(job);
       const root = jobRoot(this.repo.dataDir, id);
       const fingerprint = await this.sourceFingerprint(root);
       // A keyed checkpoint is content-addressed and safe on its own. The by-batch-id recovery

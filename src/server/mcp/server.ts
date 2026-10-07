@@ -15,6 +15,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { LANGUAGES } from "../../shared/languages.js";
+import { readWorkspace } from "../workspace/codicora.js";
+import { authorize, delegationHash, estimateUsd, journal, release, reserve, type Granted } from "./authority.js";
+import { workspaceRef } from "../domain/job.js";
 
 const BASE = (process.env.TRUCHEMAN_URL ?? "http://127.0.0.1:4173").replace(/\/$/, "");
 const TERMINAL = new Set(["completed", "needs_attention", "failed", "paused"]);
@@ -29,6 +32,8 @@ type JobView = {
   warnings: number;
   qualityMode: string;
   executionMode: string;
+  workspaceText?: "edited" | "manuscript";
+  workspaceRef?: string;
 };
 
 async function api<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
@@ -87,7 +92,9 @@ server.registerTool(
       "Translate an EPUB end to end: create a job, upload the file, configure it, analyze, and " +
       "start the pipeline. Returns immediately with the job; use wait_for_job or job_status to " +
       "follow it and job_report / download_output when it finishes. High quality adds the " +
-      "critic and selective repair on top of translation, literary editing and consistency.",
+      "critic and selective repair on top of translation, literary editing and consistency. " +
+      "It spends on every stage's model, so without confirm it only describes the job and " +
+      "creates nothing; pass confirm: true only after the author said yes in this conversation.",
     inputSchema: {
       path: z.string().describe("Absolute or cwd-relative path to the source .epub"),
       title: z.string().max(500).optional().describe("Defaults to the file name"),
@@ -99,11 +106,30 @@ server.registerTool(
         .max(100_000)
         .optional()
         .describe("Free-text guidance that reaches every stage: house style, name policy, etc."),
+      confirm: z
+        .boolean()
+        .default(false)
+        .describe("The author's yes to this paid run; without it nothing is created"),
     },
   },
-  async ({ path, title, sourceLanguage, targetLanguage, quality, instructions }) => {
+  async ({ path, title, sourceLanguage, targetLanguage, quality, instructions, confirm }) => {
     const file = resolve(path);
-    await stat(file);
+    const { size } = await stat(file);
+    // An EPUB outside any workspace has no delegations.json to consult, so only the author's direct
+    // word starts it (../DELEGATION.md §8); translate_workspace is the delegatable path.
+    if (!confirm)
+      return text({
+        requires_confirm: true,
+        would_translate: {
+          path: file,
+          bytes: size,
+          title: title ?? basename(file, ".epub"),
+          sourceLanguage,
+          targetLanguage,
+          quality,
+        },
+        note: "Paid: every stage calls its configured model. Show this to the author and call again with confirm: true only after they agree.",
+      });
     const job = await api<JobView>(
       "/jobs",
       json("POST", {
@@ -121,21 +147,145 @@ server.registerTool(
       `/jobs/${job.id}/config`,
       json("PUT", { qualityMode: quality, ...(instructions ? { instructions } : {}) }),
     );
-    // Analysis is quick (it segments the book) but runs on the single job slot; start rejects
-    // an active job, so wait for it to settle.
-    let current = await api<JobView>(`/jobs/${job.id}/analyze`, { method: "POST" });
-    for (
-      let attempt = 0;
-      attempt < 120 && ["created", "analyzing"].includes(current.status);
-      attempt++
-    ) {
-      await sleep(1000);
-      current = await api<JobView>(`/jobs/${job.id}`);
-    }
-    if (current.status !== "ready")
-      throw new Error(`Analysis ended in status "${current.status}"; check the job in the UI.`);
-    return text(summary(await api<JobView>(`/jobs/${job.id}/start`, { method: "POST" })));
+    return text(summary(await analyzeAndStart(job.id)));
   },
+);
+
+/** Analysis segments the book on the single job slot; start rejects an active job, so wait for it. */
+async function analyzeAndStart(id: string) {
+  let current = await api<JobView>(`/jobs/${id}/analyze`, { method: "POST" });
+  for (
+    let attempt = 0;
+    attempt < 120 && ["created", "analyzing"].includes(current.status);
+    attempt++
+  ) {
+    await sleep(1000);
+    current = await api<JobView>(`/jobs/${id}`);
+  }
+  if (current.status !== "ready")
+    throw new Error(`Analysis ended in status "${current.status}"; check the job in the UI.`);
+  return api<JobView>(`/jobs/${id}/start`, { method: "POST" });
+}
+
+// mcp:<client> from the initialize handshake (DELEGATION.md §1); the agent is never recorded as the author.
+const actor = () => `mcp:${server.server.getClientVersion()?.name ?? "unknown"}`;
+// What the job carries and Trucheman re-checks before each paid call: the author's yes, or the delegation.
+const jobAuthority = (granted: Granted | null, reservation_id?: string) =>
+  granted
+    ? {
+        authority: "delegated",
+        performed_by: actor(),
+        authorized_by: granted.delegation.granted_by,
+        delegation_id: granted.delegation.id,
+        delegation_hash: delegationHash(granted.delegation),
+        capability: "trucheman.translate",
+        ...(granted.delegation.workspace ? { workspace_id: granted.delegation.workspace } : {}),
+        ...(reservation_id ? { reservation_id } : {}),
+      }
+    : { authority: "direct", performed_by: actor() };
+
+server.registerTool(
+  "translate_workspace",
+  {
+    description:
+      "Workspace mode: translate a Codicora project's text (edited/ when it exists, else manuscript/) into " +
+      "localization/<lang>/ — call export_workspace when the job completes. Paid. Without confirm or delegation " +
+      "it only describes the run (chapters, characters, worst-case cost when configured) and creates nothing. " +
+      'confirm: true — the author said yes in this conversation. delegation: "<id>" — the author\'s delegation in ' +
+      "<workspace>/authority/delegations.json allows trucheman.translate and its spending limit covers the worst case; " +
+      "Trucheman checks that itself and refuses otherwise — then stop and ask the author.",
+    inputSchema: {
+      workspace: z.string().describe("The project folder (the one with codicora.yaml)"),
+      targetLanguage: languageTag,
+      text: z.enum(["auto", "edited", "manuscript"]).default("auto"),
+      quality: z.enum(["standard", "high"]).default("high"),
+      instructions: z.string().max(100_000).optional(),
+      confirm: z.boolean().default(false).describe("The author's yes to this paid run"),
+      delegation: z
+        .string()
+        .optional()
+        .describe("Instead of confirm: the id of the author's delegation"),
+    },
+  },
+  async ({
+    workspace,
+    targetLanguage,
+    text: choice,
+    quality,
+    instructions,
+    confirm,
+    delegation,
+  }) => {
+    const book = await readWorkspace(workspace, choice);
+    const chars = book.chapters.reduce((n, c) => n + c.title.length + c.text.length, 0);
+    const estimate = estimateUsd(chars);
+    const plan = {
+      workspace: book.root,
+      text: book.text,
+      chapters: book.chapters.length,
+      chars,
+      sourceLanguage: book.language,
+      targetLanguage,
+      quality,
+      worstCaseUsd: estimate,
+    };
+    if (!confirm && !delegation)
+      return text({
+        requires_confirm: true,
+        would_translate: plan,
+        note: "Paid. Show this to the author; call again with confirm: true after they agree, or with delegation when they delegated trucheman.translate.",
+      });
+    // The worst case is reserved before anything is dispatched, under the shared budget lock (DELEGATION.md §4):
+    // Trucheman knows tokens, not prices, so the reservation stays the cost of record.
+    const booked = confirm
+      ? null
+      : await reserve(book.root, delegation!, "trucheman.translate", estimate, {
+          performed_by: actor(),
+          subject: `translation → localization/${targetLanguage}`,
+        });
+    const granted = booked?.granted ?? null;
+    let started: JobView;
+    let job: JobView | null = null;
+    try {
+      job = await api<JobView>(
+        "/jobs",
+        json("POST", { title: book.title, sourceLanguage: book.language || "en", targetLanguage }),
+      );
+      await api(`/jobs/${job.id}/workspace`, json("PUT", { path: book.root, text: choice }));
+      await api(
+        `/jobs/${job.id}/config`,
+        json("PUT", { qualityMode: quality, ...(instructions ? { instructions } : {}) }),
+      );
+      await api(`/jobs/${job.id}/authority`, json("PUT", jobAuthority(granted, booked?.reservation_id)));
+      started = await analyzeAndStart(job.id);
+    } catch (error) {
+      if (booked) await release(booked.granted, booked.reservation_id);
+      throw error;
+    }
+    if (granted)
+      await journal(granted, {
+        capability: "trucheman.translate",
+        performed_by: actor(),
+        subject: `job ${job.id} → localization/${targetLanguage}`,
+        reservation_id: booked!.reservation_id,
+      });
+    return text({
+      ...summary(started),
+      authority: granted ? "delegated" : "direct",
+      ...(granted ? { delegation_id: granted.delegation.id, worstCaseUsd: estimate } : {}),
+    });
+  },
+);
+
+server.registerTool(
+  "export_workspace",
+  {
+    description:
+      "Write a completed workspace job's translation into the project's localization/<lang>/ (replacing that folder). " +
+      "No model call; the run itself was the paid, authorized step.",
+    inputSchema: { jobId: z.string() },
+  },
+  async ({ jobId }) => text(await api(`/jobs/${jobId}/export-workspace`, { method: "POST" })),
 );
 
 server.registerTool(
@@ -208,11 +358,96 @@ server.registerTool(
   {
     description:
       "pause a running job, resume a paused one, or retry a job that failed or needs " +
-      "attention. Completed checkpoints are reused; only unfinished work is paid for again.",
-    inputSchema: { jobId: z.string(), action: z.enum(["pause", "resume", "retry"]) },
+      "attention. Completed checkpoints are reused; only unfinished work is paid for again. " +
+      "resume continues under the job's own authority, which Trucheman checks again before every paid call: when the " +
+      "delegation it ran under expired or was revoked, resume is refused — pass confirm: true (the author agreed) or " +
+      "a current delegation with workspace to continue. retry pays again for work that failed, so it is a new paid " +
+      "decision: confirm: true after the author said yes, or delegation (a workspace job only) whose remaining " +
+      "limit covers the worst case again (pass the workspace too); without either it only says what the retry could cost.",
+    inputSchema: {
+      jobId: z.string(),
+      action: z.enum(["pause", "resume", "retry"]),
+      confirm: z.boolean().default(false).describe("retry or resume: the author's yes to paying again / continuing"),
+      delegation: z
+        .string()
+        .optional()
+        .describe("retry or resume, instead of confirm: the author's delegation (trucheman.translate)"),
+      workspace: z
+        .string()
+        .optional()
+        .describe("retry or resume with a delegation: the project folder the job was translated from"),
+    },
   },
-  async ({ jobId, action }) =>
-    text(summary(await api<JobView>(`/jobs/${jobId}/${action}`, { method: "POST" }))),
+  async ({ jobId, action, confirm, delegation, workspace }) => {
+    if (action === "pause")
+      return text(summary(await api<JobView>(`/jobs/${jobId}/pause`, { method: "POST" })));
+    if (action === "resume") {
+      // Resuming sends new paid calls: the job's own authority must still hold — Trucheman checks it and refuses
+      // when it lapsed. confirm or a delegation (with workspace) replaces it for the rest of the job.
+      if (confirm) await api(`/jobs/${jobId}/authority`, json("PUT", jobAuthority(null)));
+      else if (delegation) {
+        if (!workspace) throw new Error("Pass workspace: the project folder this job was translated from, where the delegation lives.");
+        const job = await api<JobView>(`/jobs/${jobId}`);
+        const book = await readWorkspace(workspace, job.workspaceText ?? "auto");
+        if (workspaceRef(book.root) !== job.workspaceRef)
+          throw new Error(`Job ${jobId} was not translated from ${book.root}; a delegation there does not cover it.`);
+        await api(`/jobs/${jobId}/authority`, json("PUT", jobAuthority(await authorize(book.root, delegation, "trucheman.translate", 0))));
+      }
+      return text(summary(await api<JobView>(`/jobs/${jobId}/resume`, { method: "POST" })));
+    }
+    // A retry re-sends failed work, which may have been paid for once already: the worst case booked at the start
+    // does not provably cover it, so it is booked again against what is left (DELEGATION.md §4).
+    const job = await api<JobView>(`/jobs/${jobId}`);
+    let estimate: number | null = null;
+    let root: string | null = null;
+    if (job.workspaceRef && workspace) {
+      const book = await readWorkspace(workspace, job.workspaceText ?? "auto");
+      if (workspaceRef(book.root) !== job.workspaceRef)
+        throw new Error(
+          `Job ${jobId} was not translated from ${book.root}; a delegation there does not cover it.`,
+        );
+      estimate = estimateUsd(book.chapters.reduce((n, c) => n + c.title.length + c.text.length, 0));
+      root = book.root;
+    }
+    if (!confirm && !delegation)
+      return text({
+        requires_confirm: true,
+        retry: summary(job),
+        worstCaseUsd: estimate,
+        note: "A retry pays again for failed work. Show this to the author; call again with confirm: true after they agree, or with delegation (and workspace) when they delegated trucheman.translate.",
+      });
+    if (!confirm && !job.workspaceRef)
+      throw new Error(
+        "This job translates an EPUB outside any workspace: there is no delegation to consult, so the author must confirm the retry directly.",
+      );
+    if (!confirm && !root)
+      throw new Error(
+        "Pass workspace: the project folder this job was translated from, where the delegation lives.",
+      );
+    const booked = confirm
+      ? null
+      : await reserve(root!, delegation!, "trucheman.translate", estimate, {
+          performed_by: actor(),
+          subject: `retry of job ${jobId}`,
+        });
+    const granted = booked?.granted ?? null;
+    let view: JobView;
+    try {
+      await api(`/jobs/${jobId}/authority`, json("PUT", jobAuthority(granted, booked?.reservation_id)));
+      view = await api<JobView>(`/jobs/${jobId}/retry`, { method: "POST" });
+    } catch (error) {
+      if (booked) await release(booked.granted, booked.reservation_id);
+      throw error;
+    }
+    if (granted)
+      await journal(granted, {
+        capability: "trucheman.translate",
+        performed_by: actor(),
+        subject: `retry of job ${jobId}`,
+        reservation_id: booked!.reservation_id,
+      });
+    return text({ ...summary(view), authority: granted ? "delegated" : "direct" });
+  },
 );
 
 await server.connect(new StdioServerTransport());
