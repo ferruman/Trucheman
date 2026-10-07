@@ -11,6 +11,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
  * requests it makes for one assistant tool call. A fake Trucheman records them.
  */
 const calls: string[] = [];
+const authorityWrites: Array<Record<string, unknown>> = [];
 let analyzePolls = 0;
 const job = (status: string) => ({
   id: "j1",
@@ -50,8 +51,10 @@ beforeAll(async () => {
       if (req.url === "/api/jobs/j1/export-workspace")
         return reply(200, { language: "en", chapters: 1 });
       if (req.url === "/api/jobs/j1/config") return reply(200, job("created"));
-      if (req.method === "PUT" && /^\/api\/jobs\/j[12]\/authority$/.test(req.url ?? ""))
+      if (req.method === "PUT" && /^\/api\/jobs\/j[12]\/authority$/.test(req.url ?? "")) {
+        authorityWrites.push(JSON.parse(body.toString()));
         return reply(200, job("created"));
+      }
       if (req.url === "/api/jobs/j1/analyze") return reply(202, job("analyzing"));
       if (req.method === "GET" && req.url === "/api/jobs/j1")
         return reply(200, job(++analyzePolls < 2 ? "analyzing" : "ready"));
@@ -63,6 +66,7 @@ beforeAll(async () => {
           workspaceRef: retryRef,
           workspaceText: "manuscript",
         });
+      if (req.url === "/api/jobs/j2/resume") return reply(202, { ...job("running"), id: "j2" });
       if (req.url === "/api/jobs/j2/retry") return reply(202, { ...job("running"), id: "j2" });
       if (req.url === "/api/jobs/j1/retry") return reply(202, job("running"));
       if (req.url === "/api/jobs/j1/download") {
@@ -246,7 +250,12 @@ describe("MCP server over the HTTP API", () => {
         .split("\n")
         .map((l) => JSON.parse(l));
       // The worst case was reserved before the job was created and started (DELEGATION.md §4).
-      expect(reserved).toMatchObject({ event: "reserve", amount: result.worstCaseUsd, currency: "USD", delegation_id: "run" });
+      expect(reserved).toMatchObject({
+        event: "reserve",
+        amount: result.worstCaseUsd,
+        currency: "USD",
+        delegation_id: "run",
+      });
       expect(line.delegation_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
       expect(line).toMatchObject({
         capability: "trucheman.translate",
@@ -262,6 +271,41 @@ describe("MCP server over the HTTP API", () => {
         ),
       ).toEqual({ language: "en", chapters: 1 });
     }, 30_000);
+
+    it("resume under a supplied delegation needs a spending limit and reserves before the API continues", async () => {
+      const { workspaceRef } = await import("../../src/server/domain/job.js");
+      retryRef = workspaceRef(ws);
+      const resume = () =>
+        client.callTool({
+          name: "control_job",
+          arguments: { jobId: "j2", action: "resume", workspace: ws, delegation: "run" },
+        });
+      const before = calls.length;
+      await grant(["trucheman.translate"], { limits: undefined });
+      expect(text(await resume())).toMatch(/sets no spending limit/);
+      await grant(["trucheman.translate"], { limits: { max_spend: 0, currency: "USD" } });
+      expect(text(await resume())).toMatch(/Over the delegated budget/);
+      expect(
+        calls.slice(before).filter((c) => c.includes("/authority") || c.includes("/resume")),
+      ).toEqual([]);
+      await grant(["trucheman.translate"], { limits: { max_spend: 100, currency: "USD" } });
+      expect(JSON.parse(text(await resume()))).toMatchObject({ id: "j2", status: "running" });
+      const records = (await readFile(join(ws, "authority/trucheman.jsonl"), "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      const reservation = records.at(-2);
+      expect(reservation).toMatchObject({
+        event: "reserve",
+        subject: "resume of job j2",
+        amount: expect.any(Number),
+      });
+      expect(authorityWrites.at(-1)).toMatchObject({
+        authority: "delegated",
+        reservation_id: reservation.reservation_id,
+      });
+      expect(calls.at(-1)).toBe("POST /api/jobs/j2/resume");
+    });
 
     it("retry pays again: described without authority, booked again under a delegation, refused when it does not fit", async () => {
       const { createHash } = await import("node:crypto");
@@ -301,7 +345,11 @@ describe("MCP server over the HTTP API", () => {
         .trim()
         .split("\n")
         .map((l) => JSON.parse(l));
-      expect(lines.at(-2)).toMatchObject({ event: "reserve", subject: "retry of job j2", amount: expect.any(Number) });
+      expect(lines.at(-2)).toMatchObject({
+        event: "reserve",
+        subject: "retry of job j2",
+        amount: expect.any(Number),
+      });
       expect(lines.at(-1)).toMatchObject({
         capability: "trucheman.translate",
         subject: "retry of job j2",

@@ -16,7 +16,14 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { LANGUAGES } from "../../shared/languages.js";
 import { readWorkspace } from "../workspace/codicora.js";
-import { authorize, delegationHash, estimateUsd, journal, release, reserve, type Granted } from "./authority.js";
+import {
+  delegationHash,
+  estimateUsd,
+  journal,
+  release,
+  reserve,
+  type Granted,
+} from "./authority.js";
 import { workspaceRef } from "../domain/job.js";
 
 const BASE = (process.env.TRUCHEMAN_URL ?? "http://127.0.0.1:4173").replace(/\/$/, "");
@@ -256,7 +263,10 @@ server.registerTool(
         `/jobs/${job.id}/config`,
         json("PUT", { qualityMode: quality, ...(instructions ? { instructions } : {}) }),
       );
-      await api(`/jobs/${job.id}/authority`, json("PUT", jobAuthority(granted, booked?.reservation_id)));
+      await api(
+        `/jobs/${job.id}/authority`,
+        json("PUT", jobAuthority(granted, booked?.reservation_id)),
+      );
       started = await analyzeAndStart(job.id);
     } catch (error) {
       if (booked) await release(booked.granted, booked.reservation_id);
@@ -361,21 +371,28 @@ server.registerTool(
       "attention. Completed checkpoints are reused; only unfinished work is paid for again. " +
       "resume continues under the job's own authority, which Trucheman checks again before every paid call: when the " +
       "delegation it ran under expired or was revoked, resume is refused — pass confirm: true (the author agreed) or " +
-      "a current delegation with workspace to continue. retry pays again for work that failed, so it is a new paid " +
+      "a current delegation with workspace to continue. Supplying a delegation books a new worst-case reservation under it before resume; the previous grant's reservation is not transferred. retry pays again for work that failed, so it is a new paid " +
       "decision: confirm: true after the author said yes, or delegation (a workspace job only) whose remaining " +
       "limit covers the worst case again (pass the workspace too); without either it only says what the retry could cost.",
     inputSchema: {
       jobId: z.string(),
       action: z.enum(["pause", "resume", "retry"]),
-      confirm: z.boolean().default(false).describe("retry or resume: the author's yes to paying again / continuing"),
+      confirm: z
+        .boolean()
+        .default(false)
+        .describe("retry or resume: the author's yes to paying again / continuing"),
       delegation: z
         .string()
         .optional()
-        .describe("retry or resume, instead of confirm: the author's delegation (trucheman.translate)"),
+        .describe(
+          "retry or resume, instead of confirm: the author's delegation (trucheman.translate)",
+        ),
       workspace: z
         .string()
         .optional()
-        .describe("retry or resume with a delegation: the project folder the job was translated from"),
+        .describe(
+          "retry or resume with a delegation: the project folder the job was translated from",
+        ),
     },
   },
   async ({ jobId, action, confirm, delegation, workspace }) => {
@@ -386,12 +403,36 @@ server.registerTool(
       // when it lapsed. confirm or a delegation (with workspace) replaces it for the rest of the job.
       if (confirm) await api(`/jobs/${jobId}/authority`, json("PUT", jobAuthority(null)));
       else if (delegation) {
-        if (!workspace) throw new Error("Pass workspace: the project folder this job was translated from, where the delegation lives.");
+        if (!workspace)
+          throw new Error(
+            "Pass workspace: the project folder this job was translated from, where the delegation lives.",
+          );
         const job = await api<JobView>(`/jobs/${jobId}`);
         const book = await readWorkspace(workspace, job.workspaceText ?? "auto");
         if (workspaceRef(book.root) !== job.workspaceRef)
-          throw new Error(`Job ${jobId} was not translated from ${book.root}; a delegation there does not cover it.`);
-        await api(`/jobs/${jobId}/authority`, json("PUT", jobAuthority(await authorize(book.root, delegation, "trucheman.translate", 0))));
+          throw new Error(
+            `Job ${jobId} was not translated from ${book.root}; a delegation there does not cover it.`,
+          );
+        const estimate = estimateUsd(
+          book.chapters.reduce((n, c) => n + c.title.length + c.text.length, 0),
+        );
+        const booked = await reserve(book.root, delegation, "trucheman.translate", estimate, {
+          performed_by: actor(),
+          subject: `resume of job ${jobId}`,
+        });
+        // A different grant cannot inherit spending reserved under the previous one.
+        await api(
+          `/jobs/${jobId}/authority`,
+          json("PUT", jobAuthority(booked.granted, booked.reservation_id)),
+        );
+        const resumed = await api<JobView>(`/jobs/${jobId}/resume`, { method: "POST" });
+        await journal(booked.granted, {
+          capability: "trucheman.translate",
+          performed_by: actor(),
+          subject: `resume of job ${jobId}`,
+          reservation_id: booked.reservation_id,
+        });
+        return text(summary(resumed));
       }
       return text(summary(await api<JobView>(`/jobs/${jobId}/resume`, { method: "POST" })));
     }
@@ -433,7 +474,10 @@ server.registerTool(
     const granted = booked?.granted ?? null;
     let view: JobView;
     try {
-      await api(`/jobs/${jobId}/authority`, json("PUT", jobAuthority(granted, booked?.reservation_id)));
+      await api(
+        `/jobs/${jobId}/authority`,
+        json("PUT", jobAuthority(granted, booked?.reservation_id)),
+      );
       view = await api<JobView>(`/jobs/${jobId}/retry`, { method: "POST" });
     } catch (error) {
       if (booked) await release(booked.granted, booked.reservation_id);
