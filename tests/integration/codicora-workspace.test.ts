@@ -226,3 +226,20 @@ describe("workspace mode over HTTP", () => {
     }
   });
 });
+
+it("indented scene markers survive the XHTML/Markdown boundary", () => {
+  const input =
+    "  <!-- scene: stable-one -->  \nFirst.\n\n\t<!-- scene: stable-two -->\t\nSecond.\n";
+  const xhtml = chapterXhtml({ slug: "one", title: "One", text: input }, "en");
+  expect([...xhtml.matchAll(/data-scene="([^"]+)"/g)].map((m) => m[1])).toEqual([
+    "stable-one",
+    "stable-two",
+  ]);
+  const output = chapterMarkdown(xhtml).text;
+  expect([...output.matchAll(/<!-- scene: (\S+) -->/g)].map((m) => m[1])).toEqual([
+    "stable-one",
+    "stable-two",
+  ]);
+  expect(output).toContain("First.");
+  expect(output).toContain("Second.");
+});

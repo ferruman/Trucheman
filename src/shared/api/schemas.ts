@@ -26,6 +26,9 @@ export const jobViewSchema = z.object({
   executionMode: z.enum(EXECUTION_MODES),
   /** Set when the job translates a Codicora workspace instead of an uploaded EPUB. */
   workspaceText: z.enum(["edited", "manuscript"]).optional(),
+  // A fingerprint of the linked project's folder, not the path (paths stay server-side): lets a client that
+  // knows the folder show that this job was translated from it.
+  workspaceRef: z.string().optional(),
 });
 export const glossaryEntrySchema = z.object({
   id: z.string(),
