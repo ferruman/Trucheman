@@ -211,16 +211,35 @@ clients, the command is `npm run mcp` with `TRUCHEMAN_URL` pointing at a running
 
 | Tool              | Does                                                                                |
 | ----------------- | ----------------------------------------------------------------------------------- |
-| `translate_book`  | create job → upload `.epub` → set quality and instructions → analyze → start        |
+| `translate_book`  | create job → upload `.epub` → set quality and instructions → analyze → start; paid, so it needs `confirm: true` after the author agreed |
+| `translate_workspace` | workspace mode: a Codicora project's `edited/` (else `manuscript/`) → a job → analyze → start; without `confirm` or `delegation` it only describes the run and its worst-case cost |
+| `export_workspace` | write a completed workspace job into `localization/<lang>/` |
 | `wait_for_job`    | block until the job finishes or a timeout passes; call again if it is still running |
 | `job_status`      | status, stage, batches done                                                         |
 | `job_report`      | validation, EPUBCheck, critic findings and repairs, consistency, usage per model    |
 | `download_output` | save the translated EPUB to a path                                                  |
-| `control_job`     | pause, resume, or retry                                                             |
+| `control_job`     | pause, resume, or retry; a retry pays again for failed work, so it needs `confirm: true`, or `delegation` + `workspace` |
 | `list_jobs`       | every job on this instance                                                          |
 
 The MCP server is a client of the same local HTTP API the browser UI uses; it holds no
 credentials and adds no second way into the pipeline.
+
+**Delegated runs** ([`../DELEGATION.md`](../DELEGATION.md)). `translate_workspace` with `delegation: "<id>"`
+runs without a per-run confirmation when the author's `authority/delegations.json` in that project allows
+`trucheman.translate` and its spending limit covers the worst case. Trucheman records tokens but has no price
+table, so the worst case is the source's characters × `TRUCHEMAN_MAX_USD_PER_MILLION_CHARS` (USD per million
+source characters for the whole pipeline, its own internal retries included — set it conservatively); without it a delegation
+covers no run and the author confirms directly. The worst case is reserved against the shared budget in
+`authority/trucheman.jsonl` before the job is created and started (under the suite's budget lock, so two runs
+cannot together exceed the limit), with the agent as `performed_by`. The job carries that authority: before every
+model call — and before a start, resume or retry — Trucheman re-reads the delegation, and a delegation that
+expired, was revoked or was edited since refuses the next call and says why. `resume` then needs `confirm: true`
+or a current `delegation` + `workspace`. A `control_job` retry
+re-sends work that may already have been paid for, which the first booking does not provably cover: under a
+delegation it books the worst case again, against what is left, and is refused when that does not fit.
+
+The web server refuses requests whose `Host` is not loopback (when bound to loopback, the default) and
+cross-origin writes, so a web page cannot drive a paid job.
 
 ## Privacy and boundaries
 
