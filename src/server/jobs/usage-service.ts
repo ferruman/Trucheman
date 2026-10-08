@@ -245,9 +245,12 @@ export class UsageTrackingProvider implements LanguageModelProvider {
     private readonly provider: LanguageModelProvider,
     private readonly root: string,
     private readonly runId = randomUUID(),
+    /** Awaited before every call is sent; throws to refuse it (a lapsed delegation). */
+    private readonly guard?: () => Promise<void>,
   ) {}
 
   async complete(request: ProviderRequest, signal?: AbortSignal): Promise<ProviderResponse> {
+    await this.guard?.();
     try {
       const response = await this.provider.complete(request, signal);
       this.writes = this.writes.then(() => recordUsage(this.root, request, response, this.runId));

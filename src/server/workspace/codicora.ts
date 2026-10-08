@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { parse as parseYaml } from "yaml";
 import { type Element, type Node } from "@xmldom/xmldom";
@@ -17,7 +17,7 @@ import type { CanonName } from "../jobs/consistency-service.js";
  * translation, editing and repair untouched — and the translated staging is read back.
  */
 export type WorkspaceText = "edited" | "manuscript";
-export type WorkspaceChapter = { slug: string; title: string; text: string };
+export type WorkspaceChapter = { slug: string; title: string; text: string; file?: string };
 export type WorkspaceBook = {
   root: string;
   text: WorkspaceText;
@@ -31,6 +31,7 @@ export type WorkspaceBook = {
 export type WorkspaceLink = { path: string; text: WorkspaceText; sourceHash: string };
 
 type Manifest = {
+  schema_version?: unknown;
   language?: unknown;
   chapters?: { slug?: unknown; title?: unknown; file?: unknown }[];
 };
@@ -86,6 +87,14 @@ export async function readWorkspace(
       400,
     );
   }
+  // MANUSCRIPT.md §5: an unsupported version, a duplicate slug, a path outside the folder or a missing chapter file stops
+  // the run with its code — a missing chapter is never translated as an empty one.
+  if (manifest.schema_version !== 1)
+    throw new DomainError(
+      "workspace_invalid",
+      `manifest-invalid: ${text}/manuscript.yaml has unsupported schema_version ${String(manifest.schema_version)}`,
+      400,
+    );
   if (!Array.isArray(manifest.chapters) || !manifest.chapters.length)
     throw new DomainError("workspace_invalid", `${text}/manuscript.yaml lists no chapters`, 400);
   const chapters: WorkspaceChapter[] = [];
@@ -94,13 +103,40 @@ export async function readWorkspace(
     if (typeof c.slug !== "string" || !/^[a-z0-9][a-z0-9._-]*$/i.test(c.slug))
       throw new DomainError("workspace_invalid", `${text}: a chapter has no valid slug`, 400);
     if (slugs.has(c.slug))
-      throw new DomainError("workspace_invalid", `${text}: duplicate chapter slug ${c.slug}`, 400);
+      throw new DomainError(
+        "workspace_invalid",
+        `manifest-invalid: ${text}: duplicate chapter slug ${c.slug}`,
+        400,
+      );
     slugs.add(c.slug);
     const file = typeof c.file === "string" ? c.file : `chapters/${c.slug}.md`;
+    const abs = resolve(dirs[text], file);
+    if (!abs.startsWith(`${dirs[text]}${sep}`))
+      throw new DomainError(
+        "workspace_invalid",
+        `manifest-invalid: ${text}: ${c.slug}: file ${file} must be a path inside the folder`,
+        400,
+      );
+    const body = await readFile(abs, "utf8").catch(() => {
+      throw new DomainError(
+        "workspace_invalid",
+        `chapter-file-missing: ${text}: ${c.slug} (${file})`,
+        400,
+      );
+    });
+    const ids = [...body.matchAll(/^[ \t]*<!--\s*scene:\s*(\S+?)\s*-->[ \t]*$/gm)].map((m) => m[1]);
+    const twice = ids.find((id, i) => ids.indexOf(id) !== i);
+    if (twice)
+      throw new DomainError(
+        "workspace_invalid",
+        `duplicate-scene-id: ${text}: ${c.slug}: ${twice}`,
+        400,
+      );
     chapters.push({
       slug: c.slug,
       title: typeof c.title === "string" ? c.title : c.slug,
-      text: (await readFile(resolve(dirs[text], file), "utf8")).replace(/\r\n?/g, "\n"),
+      file,
+      text: body.replace(/\r\n?/g, "\n"),
     });
   }
   const hash = createHash("sha256");
@@ -172,7 +208,7 @@ export async function readCanonNames(path: string): Promise<CanonName[]> {
 
 // ---------- Markdown → XHTML ----------
 
-const MARKER = /^<!--\s*scene:\s*(\S+?)\s*-->\s*$/;
+const MARKER = /^[ \t]*<!--\s*scene:\s*(\S+?)\s*-->[ \t]*$/;
 const escape = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const inline = (s: string) =>

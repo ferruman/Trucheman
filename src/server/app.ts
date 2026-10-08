@@ -16,7 +16,7 @@ import { problemResponse } from "./api/problem.js";
 
 export function createApp(
   dataDir: string,
-  options: { maxUploadBytes?: number; requestsPerMinute?: number } = {},
+  options: { maxUploadBytes?: number; requestsPerMinute?: number; loopbackOnly?: boolean } = {},
 ) {
   const app = express(),
     jobs = new JobRepository(dataDir),
@@ -27,6 +27,30 @@ export function createApp(
     },
   });
   app.disable("x-powered-by");
+  // Paid jobs start from here. Bound to loopback (the default), a page that rebinds its own name to
+  // 127.0.0.1 is still refused by its Host header; and on any bind, a write from another site's tab is
+  // refused by its Origin. No auth: on loopback the trust boundary is this machine.
+  app.use((req, res, next) => {
+    const host = req.headers.host ?? "";
+    if (options.loopbackOnly && !/^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i.test(host))
+      return problemResponse(res, new DomainError("forbidden", "loopback only", 403), req);
+    const origin = req.headers.origin;
+    if (origin && req.method !== "GET" && req.method !== "HEAD") {
+      let same = false;
+      try {
+        same = new URL(origin).host === host;
+      } catch {
+        /* malformed Origin: refused */
+      }
+      if (!same)
+        return problemResponse(
+          res,
+          new DomainError("forbidden", "cross-origin request refused", 403),
+          req,
+        );
+    }
+    next();
+  });
   app.use(
     rateLimit({
       windowMs: 60_000,
