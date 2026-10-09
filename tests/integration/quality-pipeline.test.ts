@@ -301,7 +301,7 @@ describe("two-pass pipeline", () => {
 
     expect(peak).toBeGreaterThan(1);
     expect(result.edits.size).toBe(batches.length);
-    // readJournal stops at the first unparseable line, so a torn record shows up as a short read.
+    // Raw lines, not readJournal (which skips a bad line): an interleaved record fails to parse here.
     for (const journal of ["drafts", "edits"]) {
       const lines = (await readFile(`${root}/${journal}.ndjson`, "utf8"))
         .split("\n")
