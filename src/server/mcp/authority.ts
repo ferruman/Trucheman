@@ -77,13 +77,21 @@ export async function spentUnder(dir: string, id: string, currency: string) {
   for (const name of (await readdir(dir).catch(() => [] as string[])).filter((n) =>
     n.endsWith(".jsonl"),
   )) {
-    for (const line of (await readFile(join(dir, name), "utf8")).split("\n")) {
+    for (const [n, line] of (await readFile(join(dir, name), "utf8")).split("\n").entries()) {
+      if (!line.trim()) continue;
+      let r: unknown;
       try {
-        const r = JSON.parse(line) as unknown;
-        if (r && typeof r === "object") lines.push(r as Record<string, unknown>);
+        r = JSON.parse(line);
       } catch {
-        /* blank or foreign line */
+        r = null;
       }
+      // A torn or corrupt record may be a reservation: counting around it would under-count what is held,
+      // so no new spending until someone repairs the journal (the line stays as evidence).
+      if (!r || typeof r !== "object")
+        throw new Error(
+          `authority/${name} line ${n + 1} is not a JSON record (torn or corrupt); no paid call is authorized until it is repaired`,
+        );
+      lines.push(r as Record<string, unknown>);
     }
   }
   const settled = new Map(
