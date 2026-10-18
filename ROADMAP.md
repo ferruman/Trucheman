@@ -31,6 +31,12 @@ consistency, durable checkpoints, and local-first storage.
 5. Let the repair profile own its endpoint and key, or escalate a repair the editing model returns
    unchanged to the critic's model. A `high` finding (an untranslated English word) survived two
    repair passes on `deepseek-v4-flash` before a stronger repairer fixed it.
+6. Treat Japanese → Russian as its own quality target. Five Japanese novels translated on
+   `deepseek-v4-flash` (August 2026) each ended in `needs_attention` with 25–42 unresolved
+   findings, 210 in total — source-language interference (59, 48 of them `high`), semantic errors
+   (56), unnatural Russian (47), glossary drift (31) — where English sources of the same size
+   converge to 0–2. Measure a stronger editing and repair model on this pair, and add Japanese
+   cases to the golden corpus before routing it like an English book.
 
 ## Deliberate non-goals
 
