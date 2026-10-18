@@ -31,39 +31,39 @@
     "eval:literary:review:build": "node --import tsx/esm src/server/evals/run-literary-review-build.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@xmldom/xmldom": "^0.9.12",
     "busboy": "^1.6.0",
-    "express": "^5.2.1",
-    "express-rate-limit": "^8.7.0",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.1",
     "react": "^19.2.0",
     "react-dom": "^19.3.0",
     "yaml": "^2.9.1",
     "yauzl": "^3.2.0",
     "yazl": "^3.3.1",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
+    "@playwright/test": "^1.64.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
-    "@types/busboy": "^1.5.4",
+    "@types/busboy": "^1.5.5",
     "@types/express": "^5.0.5",
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.5",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.3.0",
     "@types/yauzl": "^3.4.0",
     "@types/yazl": "^3.3.1",
-    "@vitejs/plugin-react": "^6.1.1",
+    "@vitejs/plugin-react": "^6.1.2",
     "az": "^0.2.3",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
-    "jsdom": "^30.1.1",
-    "prettier": "^3.9.9",
+    "jsdom": "^30.1.3",
+    "prettier": "^3.9.10",
     "tsx": "^4.23.15",
     "typescript": "~6.0.0",
-    "typescript-eslint": "^8.71.0",
-    "vite": "^8.3.2",
-    "vitest": "^5.0.3"
+    "typescript-eslint": "^8.71.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4"
   }
 }
